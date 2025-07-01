@@ -1,19 +1,22 @@
-[build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "align-browser"
 version = "0.1.0"
 description = "Static web application for visualizing ADM results"
+requires-python = ">=3.10"
 dependencies = [
     "jinja2",
-    "pyyaml"
+    "pyyaml",
+    "pydantic"
 ]
 
-[project.optional-dependencies]
+
+[dependency-groups]
 dev = [
     "pytest",
-    "black",
-    "ruff"
+    "pytest-cov", 
+    "ruff>=0.12.1",
+    "playwright>=1.40.0",
+    "pytest-playwright>=0.4.0",
+    "pytest-asyncio>=0.21.0",
 ]
+

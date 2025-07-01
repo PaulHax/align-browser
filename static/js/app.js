@@ -35,19 +35,28 @@ document.addEventListener('DOMContentLoaded', () => {
         availableLLMs.clear();
         validCombinations = {};
 
-        for (const key in manifest) {
-            const config = manifest[key].config;
-            if (!config) continue;
+        // Handle new manifest structure with experiment_keys
+        const experiments = manifest.experiment_keys || manifest;
+        
+        for (const experimentKey in experiments) {
+            const experiment = experiments[experimentKey];
+            
+            // Iterate through scenarios to get configs
+            for (const scenarioId in experiment.scenarios) {
+                const scenario = experiment.scenarios[scenarioId];
+                const config = scenario.config;
+                
+                if (!config) continue;
 
-            const admType = config.adm ? config.adm.name : 'unknown_adm';
-            const llmBackbone = (config.adm && config.adm.structured_inference_engine && config.adm.structured_inference_engine.model_name)
-                ? config.adm.structured_inference_engine.model_name
-                : 'no_llm';
+                const admType = config.adm ? config.adm.name : 'unknown_adm';
+                const llmBackbone = (config.adm && config.adm.structured_inference_engine && config.adm.structured_inference_engine.model_name)
+                    ? config.adm.structured_inference_engine.model_name
+                    : 'no_llm';
 
-            availableAdmTypes.add(admType);
-            availableLLMs.add(llmBackbone);
+                availableAdmTypes.add(admType);
+                availableLLMs.add(llmBackbone);
 
-            if (!validCombinations[admType]) {
+                if (!validCombinations[admType]) {
                 validCombinations[admType] = {};
             }
             if (!validCombinations[admType][llmBackbone]) {
@@ -67,6 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
         }
+        }
 
         // Convert Sets to sorted Arrays for easier use in UI
         availableAdmTypes = Array.from(availableAdmTypes).sort();
@@ -84,6 +94,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         console.log('Valid Combinations (structured):', validCombinations);
+        
+        // Make variables available globally for debugging
+        window.availableAdmTypes = availableAdmTypes;
+        window.availableKDMAs = availableKDMAs;
+        window.availableLLMs = availableLLMs;
+        window.validCombinations = validCombinations;
+        window.manifest = manifest;
     }
 
     function populateUIControls() {
@@ -228,7 +245,8 @@ document.addEventListener('DOMContentLoaded', () => {
         scenarioSelect.innerHTML = ''; // Clear existing options
 
         const selectedKey = getSelectedKey(); // Get the key for the current ADM/LLM/KDMA combination
-        const scenariosForCombination = manifest[selectedKey] ? Object.keys(manifest[selectedKey].scenarios).sort() : [];
+        const experiments = manifest.experiment_keys || manifest;
+        const scenariosForCombination = experiments[selectedKey] ? Object.keys(experiments[selectedKey].scenarios).sort() : [];
 
         if (scenariosForCombination.length > 0) {
             scenarioSelect.disabled = false;
@@ -274,8 +292,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedScenario = document.getElementById('scenario-select').value;
         console.log('Attempting to load:', selectedKey, 'Scenario:', selectedScenario);
 
-        if (manifest[selectedKey] && manifest[selectedKey].scenarios[selectedScenario]) {
-            const dataPaths = manifest[selectedKey].scenarios[selectedScenario];
+        const experiments = manifest.experiment_keys || manifest;
+        if (experiments[selectedKey] && experiments[selectedKey].scenarios[selectedScenario]) {
+            const dataPaths = experiments[selectedKey].scenarios[selectedScenario];
             try {
                 const inputOutput = await (await fetch(dataPaths.input_output)).json();
                 const scores = await (await fetch(dataPaths.scores)).json();
