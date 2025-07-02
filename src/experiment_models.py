@@ -96,7 +96,18 @@ class InputOutputFile(BaseModel):
         """Load input_output.json file."""
         with open(path) as f:
             raw_data = json.load(f)
-        return cls(data=raw_data)
+        
+        # Process data to append index to duplicate scenario_ids
+        processed_data = []
+        for i, item in enumerate(raw_data):
+            # Create a copy of the item
+            item_copy = item.copy()
+            # Append index to scenario_id to make it unique
+            original_scenario_id = item_copy["input"]["scenario_id"]
+            item_copy["input"]["scenario_id"] = f"{original_scenario_id}-{i}"
+            processed_data.append(item_copy)
+        
+        return cls(data=processed_data)
 
     @property
     def first_scenario_id(self) -> str:
@@ -202,7 +213,6 @@ class GlobalManifest(BaseModel):
     def add_experiment(self, experiment: "ExperimentData", experiments_root: Path):
         """Add an experiment to the manifest."""
         key = experiment.key
-        scenario_id = experiment.scenario_id
         
         # Calculate relative path
         relative_experiment_path = experiment.experiment_path.relative_to(experiments_root)
@@ -211,13 +221,15 @@ class GlobalManifest(BaseModel):
         if key not in self.experiment_keys:
             self.experiment_keys[key] = ScenarioManifest()
         
-        # Add scenario
-        self.experiment_keys[key].scenarios[scenario_id] = ExperimentSummary(
-            input_output=str(Path("data") / relative_experiment_path / "input_output.json"),
-            scores=str(Path("data") / relative_experiment_path / "scores.json"),
-            timing=str(Path("data") / relative_experiment_path / "timing.json"),
-            config=experiment.config.dict()
-        )
+        # Add all scenarios from the input_output data
+        for item in experiment.input_output.data:
+            scenario_id = item.input.scenario_id
+            self.experiment_keys[key].scenarios[scenario_id] = ExperimentSummary(
+                input_output=str(Path("data") / relative_experiment_path / "input_output.json"),
+                scores=str(Path("data") / relative_experiment_path / "scores.json"),
+                timing=str(Path("data") / relative_experiment_path / "timing.json"),
+                config=experiment.config.model_dump()
+            )
     
     def get_experiment_count(self) -> int:
         """Get total number of experiments in the manifest."""

@@ -18,21 +18,10 @@ import pytest
 from playwright.sync_api import sync_playwright, expect
 
 
-import socket
-
-def find_free_port():
-    """Find a free port to use for testing."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-    return port
-
-
 class FrontendTestServer:
     """HTTP server for serving the built frontend during tests."""
 
-    def __init__(self, dist_dir="dist", port=8001):
+    def __init__(self, dist_dir="dist", port=8123):
         self.dist_dir = Path(dist_dir)
         self.port = port
         self.base_url = f"http://localhost:{port}"
@@ -56,12 +45,10 @@ class FrontendTestServer:
 
                 os.chdir(self.dist_dir)
 
-            # Create server with proper socket reuse
-            class ReuseAddrTCPServer(socketserver.TCPServer):
-                allow_reuse_address = True
-            
             # Start server in background thread
-            with ReuseAddrTCPServer(("", self.port), QuietHandler) as httpd:
+            with socketserver.TCPServer(("", self.port), QuietHandler) as httpd:
+                # Enable socket reuse to avoid "Address already in use" errors
+                httpd.allow_reuse_address = True
                 self.server = httpd
                 self.server_thread = threading.Thread(
                     target=httpd.serve_forever, daemon=True
@@ -81,7 +68,6 @@ class FrontendTestServer:
 
             if self.server:
                 self.server.shutdown()
-                self.server.server_close()  # Properly close the socket
 
 
 class TestDataGenerator:
@@ -211,8 +197,9 @@ def built_frontend():
     # Create test data
     experiments_root = TestDataGenerator.create_test_experiments()
 
-    # Build frontend
-    dist_dir = Path("dist")  # Use existing dist directory
+    # Build frontend in a temporary directory
+    temp_dir = Path(tempfile.mkdtemp(prefix="test_frontend_"))
+    dist_dir = temp_dir / "dist"
 
     cmd = [
         "python",
@@ -229,7 +216,9 @@ def built_frontend():
 
     yield dist_dir
 
-    # Note: Don't cleanup the dist directory as it may be used by other processes
+    # Clean up the temporary directory after all tests complete
+    import shutil
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
@@ -261,10 +250,6 @@ def page(browser_context):
 
 def test_page_load(page, test_server):
     """Test that the page loads without errors."""
-    # Add console logging for debugging
-    console_messages = []
-    page.on("console", lambda msg: console_messages.append(f"{msg.type}: {msg.text}"))
-    
     page.goto(test_server)
 
     # Check page title
@@ -277,72 +262,6 @@ def test_page_load(page, test_server):
     expect(page.locator("#llm-selection")).to_be_visible()
     expect(page.locator("#scenario-selection")).to_be_visible()
     expect(page.locator("#results-display")).to_be_visible()
-    
-    # Give the page some time to load JavaScript
-    page.wait_for_timeout(2000)
-    
-    # Debug: Print console messages and check if manifest loading started
-    print(f"Console messages during page load: {console_messages}")
-    
-    # Check if the select element was created
-    adm_select_exists = page.evaluate("!!document.querySelector('#adm-type-select')")
-    print(f"ADM select element exists: {adm_select_exists}")
-    
-    if adm_select_exists:
-        options_count = page.evaluate("document.querySelector('#adm-type-select').options.length")
-        print(f"Number of options in ADM select: {options_count}")
-        
-        # Check if manifest was loaded
-        manifest_loaded = page.evaluate("window.manifest && Object.keys(window.manifest).length > 0")
-        print(f"Manifest appears to be loaded: {manifest_loaded}")
-
-
-def test_debug_manifest_and_js(page, test_server):
-    """Debug test to see what's happening with manifest loading."""
-    console_messages = []
-    page.on("console", lambda msg: console_messages.append(f"{msg.type}: {msg.text}"))
-    
-    page.goto(test_server)
-    
-    # Wait for page to settle
-    page.wait_for_timeout(3000)
-    
-    # Check if JavaScript ran
-    dom_content_loaded = page.evaluate("document.readyState === 'complete'")
-    print(f"DOM content loaded: {dom_content_loaded}")
-    
-    # Check console messages
-    print(f"All console messages: {console_messages}")
-    
-    # Check if manifest endpoint is accessible
-    manifest_response = page.request.get(f"{test_server}/manifest.json")
-    print(f"Manifest response status: {manifest_response.status}")
-    
-    if manifest_response.status == 200:
-        manifest_text = manifest_response.text()
-        print(f"Manifest content preview: {manifest_text[:200]}...")
-    
-    # Check if JavaScript variables exist
-    available_adm_types = page.evaluate("window.availableAdmTypes || 'not found'")
-    print(f"availableAdmTypes: {available_adm_types}")
-    
-    # Force manifest loading in the browser
-    result = page.evaluate("""
-        (async () => {
-            try {
-                const response = await fetch('/manifest.json');
-                const data = await response.json();
-                return { 
-                    success: true, 
-                    keys: Object.keys(data).length,
-                    firstKey: Object.keys(data)[0]
-                };
-            } catch (error) {
-                return { success: false, error: error.message };
-            }
-        })()
-    """)
-    print(f"Manual manifest fetch result: {result}")
 
 
 def test_manifest_loading(page, test_server):
@@ -353,27 +272,10 @@ def test_manifest_loading(page, test_server):
     adm_select = page.locator("#adm-type-select")
     expect(adm_select).to_be_visible()
 
-    # First, check if the manifest file is accessible
-    manifest_response = page.request.get(f"{test_server}/manifest.json")
-    assert manifest_response.status == 200, "Manifest should be accessible"
-
-    # Log console messages for debugging
-    console_messages = []
-    page.on("console", lambda msg: console_messages.append(f"{msg.type}: {msg.text}"))
-
-    # Wait for options to be populated with a longer timeout and better error handling
-    try:
-        page.wait_for_function(
-            "document.querySelector('#adm-type-select').options.length > 0",
-            timeout=10000  # Reduce timeout for faster feedback
-        )
-    except Exception as e:
-        # Log console messages and page content for debugging
-        print(f"Console messages: {console_messages}")
-        print(f"Page content around select: {page.locator('#adm-type-selection').inner_html()}")
-        options_count = page.evaluate('document.querySelector("#adm-type-select")?.options?.length || 0')
-        print(f"Select element options count: {options_count}")
-        raise e
+    # Wait for options to be populated
+    page.wait_for_function(
+        "document.querySelector('#adm-type-select').options.length > 0"
+    )
 
     # Check that ADM options are populated
     options = adm_select.locator("option").all()
