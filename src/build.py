@@ -13,7 +13,7 @@ from experiment_parser import (
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate static web app for ADM results visualization."
+        description="Generate static web app for ADM Results."
     )
     parser.add_argument(
         "experiments",

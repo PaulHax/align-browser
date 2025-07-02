@@ -140,8 +140,8 @@ def test_input_output_file_model():
     try:
         input_output = InputOutputFile.from_file(temp_path)
         assert len(input_output.data) == 1
-        assert input_output.first_scenario_id == "June2025-AF-train"
-        assert input_output.data[0].input.scenario_id == "June2025-AF-train"
+        assert input_output.first_scenario_id == "June2025-AF-train-0"
+        assert input_output.data[0].input.scenario_id == "June2025-AF-train-0"
     finally:
         temp_path.unlink()
 
@@ -196,7 +196,7 @@ def test_experiment_data_from_directory():
         experiment = ExperimentData.from_directory(experiment_dir)
 
         assert experiment.key == "pipeline_random_llama3.3-70b_affiliation-0.5"
-        assert experiment.scenario_id == "June2025-AF-train"
+        assert experiment.scenario_id == "June2025-AF-train-0"
         assert experiment.config.adm.name == "pipeline_random"
         assert len(experiment.input_output.data) == 1
         assert len(experiment.scores.data) == 1
@@ -282,11 +282,18 @@ def test_build_manifest_from_experiments():
         # Create mock experiment data (simplified)
         from unittest.mock import Mock
 
+        mock_input_item = Mock()
+        mock_input_item.input.scenario_id = "test_scenario"
+        
+        mock_input_output = Mock()
+        mock_input_output.data = [mock_input_item]
+        
         mock_experiment = Mock()
         mock_experiment.key = "test_key"
         mock_experiment.scenario_id = "test_scenario"
         mock_experiment.experiment_path = experiment_dir
-        mock_experiment.config.dict.return_value = {"test": "config"}
+        mock_experiment.input_output = mock_input_output
+        mock_experiment.config.model_dump.return_value = {"test": "config"}
 
         experiments = [mock_experiment]
 
@@ -406,7 +413,7 @@ def test_global_manifest_model():
         # Test experiment key structure
         expected_key = "pipeline_random_llama3.3-70b_affiliation-0.5"
         assert expected_key in manifest.experiment_keys
-        assert "June2025-AF-train" in manifest.experiment_keys[expected_key].scenarios
+        assert "June2025-AF-train-0" in manifest.experiment_keys[expected_key].scenarios
 
 
 def test_chunked_experiment_data_model():

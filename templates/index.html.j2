@@ -3,17 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ADM Results Visualization</title>
+    <title>ADM Results</title>
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
     <header>
-        <h1>ADM Results Visualization</h1>
+        <h1>ADM Results</h1>
     </header>
     <main>
         <aside class="controls">
             <h2>Parameters</h2>
-            <div id="scenario-selection"></div> 
+            <div id="scenario-selection">
+                <h3>Scenario Type</h3>
+                <select id="base-scenario-select"></select>
+                <h4 style="margin-top: 15px;">Specific Scenario</h4>
+                <select id="scenario-select"></select>
+            </div> 
             <div id="adm-type-selection"></div>
             <div id="kdma-sliders"></div>
             <div id="llm-selection"></div>
