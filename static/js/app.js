@@ -907,7 +907,7 @@ document.addEventListener("DOMContentLoaded", () => {
         
         // Get the specific element from each array using the index
         const inputOutputItem = inputOutputArray[scenarioIndex];
-        const scoreItem = Array.isArray(scoresArray) ? scoresArray[scenarioIndex] : scoresArray;
+        const scoreItem = Array.isArray(scoresArray) ? scoresArray[0] : scoresArray;
 
         // Helper function to format complex data structures cleanly
         const formatValue = (value, depth = 0) => {
@@ -1080,14 +1080,14 @@ document.addEventListener("DOMContentLoaded", () => {
       html += '<div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #e9ecef;">';
       html += '<h3 style="margin-bottom: 15px; color: #495057;">Results Summary</h3>';
       
-      // Add Average Decision Time
-      if (timingData && timingData.avg_time_s !== undefined) {
-        html += `<div style="margin: 8px 0;">Average Decision Time: ${timingData.avg_time_s.toFixed(4)}s</div>`;
+      // Add Overall Score (on top)
+      if (scoreItem && scoreItem.score !== undefined) {
+        html += `<div style="margin: 8px 0;"><strong>Score:</strong> ${scoreItem.score.toFixed(3)}</div>`;
       }
       
-      // Add Overall Score
-      if (scoreItem && scoreItem.score !== undefined) {
-        html += `<div style="margin: 8px 0;">Score: ${scoreItem.score.toFixed(3)}</div>`;
+      // Add Average Decision Time
+      if (timingData && timingData.avg_time_s !== undefined) {
+        html += `<div style="margin: 8px 0;"><strong>Average Decision Time:</strong> ${timingData.avg_time_s.toFixed(4)}s</div>`;
       }
       
       html += '</div>';
