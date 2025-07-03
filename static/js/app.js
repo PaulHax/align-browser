@@ -31,7 +31,29 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // UI state
     isUpdatingProgrammatically: false,
-    isTransitioning: false
+    isTransitioning: false,
+    
+    // Comparison state
+    pinnedRuns: new Map(), // Map<runId, runData> for pinned comparisons
+    currentInputOutput: null,
+    currentScores: null, 
+    currentTiming: null,
+
+    // Run configuration factory
+    createRunConfig: function() {
+      return {
+        id: generateRunId(),
+        timestamp: new Date().toISOString(),
+        scenario: appState.selectedScenario,
+        baseScenario: appState.selectedBaseScenario,
+        admType: appState.selectedAdmType,
+        llmBackbone: appState.selectedLLM,
+        kdmaValues: { ...appState.activeKDMAs },
+        experimentKey: getSelectedKey(),
+        displayName: generateDisplayName(),
+        loadStatus: 'pending'
+      };
+    }
   };
 
   // Function to fetch and parse manifest.json
@@ -935,6 +957,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!appState.selectedScenario) {
       runDisplay.innerHTML =
         "<p>Please select a specific scenario first.</p>";
+      
+      // Clear current data when no scenario
+      appState.currentInputOutput = null;
+      appState.currentScores = null;
+      appState.currentTiming = null;
+      updatePinnedCount(); // Disable pin button when no data
       return;
     }
 
@@ -1100,12 +1128,24 @@ document.addEventListener("DOMContentLoaded", () => {
         
         runDisplay.innerHTML = formatResults();
         
+        // Store current data for pinning
+        appState.currentInputOutput = inputOutputItem;
+        appState.currentScores = scoreItem;
+        appState.currentTiming = timingData;
+        updatePinnedCount(); // Enable pin button when data loads
+        
         // Update scores and timing in parameters section
         updateScoresTimingSection(scoreItem, timingData);
       } catch (error) {
         console.error("Error fetching experiment data:", error);
         runDisplay.innerHTML =
           "<p>Error loading data for selected parameters and scenario.</p>";
+        
+        // Clear current data on error
+        appState.currentInputOutput = null;
+        appState.currentScores = null;
+        appState.currentTiming = null;
+        updatePinnedCount(); // Disable pin button when no data
       }
     } else {
       // Generate debug information to help identify the issue
@@ -1121,6 +1161,12 @@ document.addEventListener("DOMContentLoaded", () => {
         <ul>${availableKeys.length > 0 ? availableKeys.map(key => `<li>${key}</li>`).join('') : '<li>None found</li>'}</ul>
         <p>Please ensure KDMA values match the available experiment data.</p>
       `;
+      
+      // Clear current data when no data found
+      appState.currentInputOutput = null;
+      appState.currentScores = null;
+      appState.currentTiming = null;
+      updatePinnedCount(); // Disable pin button when no data
     }
   }
 
@@ -1162,6 +1208,305 @@ document.addEventListener("DOMContentLoaded", () => {
     await loadResultsInternal();
   }
 
+  // Pin current run to comparison
+  function pinCurrentRun() {
+    if (!appState.currentInputOutput) {
+      showNotification('No data to pin - load a configuration first', 'error');
+      return;
+    }
+    
+    const runConfig = appState.createRunConfig();
+    
+    // Check for duplicates
+    const existingRunId = findExistingRun(runConfig);
+    if (existingRunId) {
+      showNotification('This configuration is already pinned', 'info');
+      return;
+    }
+    
+    // Store complete run data
+    const pinnedData = {
+      ...runConfig,
+      inputOutput: appState.currentInputOutput,
+      scores: appState.currentScores,
+      timing: appState.currentTiming,
+      loadStatus: 'loaded'
+    };
+    
+    appState.pinnedRuns.set(runConfig.id, pinnedData);
+    updatePinnedCount();
+    updateComparisonDisplay();
+    showNotification(`Configuration pinned: ${runConfig.displayName}`, 'success');
+  }
+
+  // Helper functions for comparison feature
+  function findExistingRun(runConfig) {
+    for (const [runId, pinnedRun] of appState.pinnedRuns) {
+      if (pinnedRun.experimentKey === runConfig.experimentKey &&
+          JSON.stringify(pinnedRun.kdmaValues) === JSON.stringify(runConfig.kdmaValues)) {
+        return runId;
+      }
+    }
+    return null;
+  }
+
+  function updatePinnedCount() {
+    const count = appState.pinnedRuns.size;
+    const countElement = document.querySelector('#pinned-count .count');
+    if (countElement) {
+      countElement.textContent = count;
+    }
+    
+    const clearButton = document.getElementById('clear-all-pins');
+    if (clearButton) {
+      clearButton.disabled = count === 0;
+    }
+    
+    // Enable pin button only when we have current data
+    const pinButton = document.getElementById('pin-current-run');
+    if (pinButton) {
+      pinButton.disabled = !appState.currentInputOutput;
+    }
+  }
+
+  function clearAllPins() {
+    appState.pinnedRuns.clear();
+    updatePinnedCount();
+    updateComparisonDisplay();
+    showNotification('All pinned configurations cleared', 'info');
+  }
+
+  // Update the comparison display with current + pinned runs
+  function updateComparisonDisplay() {
+    const container = document.getElementById('runs-container');
+    if (!container) return;
+    
+    // Clear existing pinned runs (keep current run)
+    const currentRunWrapper = document.getElementById('current-run-wrapper');
+    container.innerHTML = '';
+    container.appendChild(currentRunWrapper);
+    
+    // Add pinned runs
+    appState.pinnedRuns.forEach((runData, runId) => {
+      const pinnedRunElement = createPinnedRunElement(runId, runData);
+      container.appendChild(pinnedRunElement);
+    });
+  }
+
+  // Create a pinned run element
+  function createPinnedRunElement(runId, runData) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'run-wrapper';
+    wrapper.id = `pinned-run-${runId}`;
+    
+    // Create header
+    const header = document.createElement('div');
+    header.className = 'run-content-header';
+    
+    const titleArea = document.createElement('div');
+    titleArea.style.display = 'flex';
+    titleArea.style.alignItems = 'center';
+    
+    const title = document.createElement('span');
+    title.className = 'run-title';
+    title.textContent = runData.displayName;
+    
+    const badge = document.createElement('span');
+    badge.className = 'pinned-badge';
+    badge.textContent = 'Pinned';
+    badge.style.marginLeft = '8px';
+    
+    titleArea.appendChild(title);
+    titleArea.appendChild(badge);
+    
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-run-btn';
+    removeBtn.innerHTML = '×';
+    removeBtn.title = 'Remove this pinned run';
+    removeBtn.addEventListener('click', () => removePinnedRun(runId));
+    
+    header.appendChild(titleArea);
+    header.appendChild(removeBtn);
+    
+    // Create content area
+    const content = document.createElement('div');
+    content.className = 'run-content';
+    
+    // Render the pinned run data
+    renderPinnedRunData(content, runData);
+    
+    wrapper.appendChild(header);
+    wrapper.appendChild(content);
+    
+    return wrapper;
+  }
+
+  // Render pinned run data using existing display logic
+  function renderPinnedRunData(container, runData) {
+    if (!runData.inputOutput) {
+      container.innerHTML = '<p>No data available for this pinned run.</p>';
+      return;
+    }
+    
+    // Reuse the existing formatting logic from loadResultsInternal
+    const inputOutputItem = runData.inputOutput;
+    const scoreItem = runData.scores;
+    
+    // Format results using the same logic as the current run
+    const formatResults = () => {
+      let html = '';
+      
+      if (inputOutputItem && inputOutputItem.input) {
+        const input = inputOutputItem.input;
+        
+        // Simple scenario header
+        html += `<h3>${runData.scenario}</h3>`;
+        
+        // Scenario description
+        if (input.state) {
+          html += `<p style="margin-bottom: 20px; font-size: 16px; line-height: 1.6;">${input.state}</p>`;
+        }
+        
+        // Simplified choices with horizontal layout
+        if (input.choices && Array.isArray(input.choices)) {
+          html += '<h4>Choices</h4>';
+          html += '<div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px;">';
+          input.choices.forEach((choice, idx) => {
+            html += `<div style="flex: 1; min-width: 200px; padding: 12px; background-color: #f8f9fa; border-radius: 6px;">`;
+            html += `<div style="font-weight: 500; margin-bottom: 8px;">${choice.unstructured || choice.description || 'No description'}</div>`;
+            
+            // Short KDMA bars
+            if (choice.kdma_association) {
+              Object.entries(choice.kdma_association).forEach(([kdma, value]) => {
+                const percentage = Math.round(value * 100);
+                const color = value >= 0.7 ? '#28a745' : value >= 0.4 ? '#ffc107' : '#dc3545';
+                
+                html += '<div style="display: flex; align-items: center; gap: 8px; margin: 3px 0;">';
+                html += `<span style="min-width: 60px; font-size: 0.9em; color: #666;">${kdma}</span>`;
+                html += `<div style="width: 60px; height: 4px; background-color: #e9ecef; border-radius: 2px;">`;
+                html += `<div style="width: ${percentage}%; height: 100%; background-color: ${color}; border-radius: 2px;"></div>`;
+                html += '</div>';
+                html += `<span style="font-size: 0.85em; color: ${color}; font-weight: 500;">${value}</span>`;
+                html += '</div>';
+              });
+            }
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+      }
+      
+      // Simplified ADM Decision
+      if (inputOutputItem && inputOutputItem.output) {
+        const output = inputOutputItem.output;
+        
+        html += '<h4>ADM Decision</h4>';
+        
+        // Show the action text
+        if (output.action && output.action.unstructured) {
+          html += `<p style="font-weight: 600; color: #2e7d32; margin-bottom: 10px;">${output.action.unstructured}</p>`;
+        } else if (output.action && output.action.action_id) {
+          html += `<p style="font-weight: 600; color: #2e7d32; margin-bottom: 10px;">${output.action.action_id}</p>`;
+        }
+        
+        // Show the justification
+        if (output.action && output.action.justification) {
+          html += `<p style="line-height: 1.6; color: #555;"><strong>Justification:</strong> ${output.action.justification}</p>`;
+        } else if (output.justification) {
+          html += `<p style="line-height: 1.6; color: #555;"><strong>Justification:</strong> ${output.justification}</p>`;
+        }
+      } else {
+        html += '<h4>ADM Decision</h4>';
+        html += '<p style="color: #666;">No decision data available</p>';
+      }
+      
+      return html;
+    };
+    
+    container.innerHTML = formatResults();
+    
+    // Add scores section if available
+    if (scoreItem) {
+      const scoresDiv = document.createElement('div');
+      scoresDiv.style.marginTop = '20px';
+      scoresDiv.style.paddingTop = '15px';
+      scoresDiv.style.borderTop = '1px solid #e9ecef';
+      
+      let scoresHtml = '<h4>Results Summary</h4>';
+      if (scoreItem.score !== undefined) {
+        scoresHtml += `<div style="margin: 8px 0;"><strong>Score:</strong> ${scoreItem.score.toFixed(3)}</div>`;
+      }
+      
+      if (runData.timing && runData.timing.avg_time_s !== undefined) {
+        scoresHtml += `<div style="margin: 8px 0;"><strong>Average Decision Time:</strong> ${runData.timing.avg_time_s.toFixed(4)}s</div>`;
+      }
+      
+      scoresDiv.innerHTML = scoresHtml;
+      container.appendChild(scoresDiv);
+    }
+  }
+
+  // Remove a pinned run
+  function removePinnedRun(runId) {
+    appState.pinnedRuns.delete(runId);
+    updatePinnedCount();
+    updateComparisonDisplay();
+    showNotification('Pinned run removed', 'info');
+  }
+
+  function generateRunId() {
+    const timestamp = new Date().getTime();
+    const random = Math.random().toString(36).substr(2, 9);
+    return `run_${timestamp}_${random}`;
+  }
+
+  function generateDisplayName() {
+    const parts = [];
+    if (appState.selectedAdmType) {
+      parts.push(appState.selectedAdmType.replace(/_/g, ' '));
+    }
+    if (appState.selectedLLM) {
+      parts.push(appState.selectedLLM.replace(/_/g, ' '));
+    }
+    const kdmaKeys = Object.keys(appState.activeKDMAs);
+    if (kdmaKeys.length > 0) {
+      const kdmaStr = kdmaKeys.map(k => `${k}=${appState.activeKDMAs[k]}`).join(', ');
+      parts.push(`(${kdmaStr})`);
+    }
+    return parts.join(' - ') || 'Unnamed Run';
+  }
+
+  function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.textContent = message;
+    notification.style.cssText = `
+      position: fixed; top: 20px; right: 20px; padding: 10px 20px;
+      background: ${type === 'error' ? '#f44336' : type === 'success' ? '#4caf50' : '#2196F3'};
+      color: white; border-radius: 4px; z-index: 1000;
+    `;
+    document.body.appendChild(notification);
+    setTimeout(() => notification.remove(), 3000);
+  }
+
+  function initializeComparisonFeatures() {
+    const pinButton = document.getElementById("pin-current-run");
+    const clearButton = document.getElementById("clear-all-pins");
+    
+    if (pinButton) {
+      pinButton.addEventListener("click", pinCurrentRun);
+    }
+    
+    if (clearButton) {
+      clearButton.addEventListener("click", clearAllPins);
+    }
+    
+    updatePinnedCount(); // Initial state
+  }
+
   // Initial manifest fetch on page load
   fetchManifest();
+  
+  // Initialize comparison features after DOM is loaded
+  initializeComparisonFeatures();
 });
