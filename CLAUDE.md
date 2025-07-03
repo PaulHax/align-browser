@@ -4,6 +4,7 @@
 - Use the uv created .venv when trying to run python code or python tests
 - Run the uv run python src/build.py ../experiments call after you stop so you can test things manually
 - Run the build script after pausing
+- Remember to run the build script so you can manually test
 
 ## Testing
 

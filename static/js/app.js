@@ -5,18 +5,30 @@ document.addEventListener("DOMContentLoaded", () => {
   const kdmaSliders = document.getElementById("kdma-sliders");
   const llmSelection = document.getElementById("llm-selection");
   const scenarioSelection = document.getElementById("scenario-selection"); // New element
-  const resultsDisplay = document.getElementById("results-display");
+  const runDisplay = document.getElementById("run-display");
 
   let manifest = {};
-  let availableScenarios = new Set(); // All available scenarios with indexes
-  let availableBaseScenarios = new Set(); // Base scenario IDs without indexes
-  let selectedBaseScenario = null; // Currently selected base scenario
-  let selectedScenario = null; // Currently selected specific scenario
-  let availableAdmTypes = new Set();
-  let availableKDMAs = new Set(); // Stores KDMA types like 'affiliation', 'merit'
-  let availableLLMs = new Set();
-  let validCombinations = {}; // Stores hierarchical valid combinations
-  let isLoading = false; // Track loading state to prevent concurrent updates
+  
+  // Central application state
+  const appState = {
+    // Data from manifest
+    availableScenarios: new Set(),
+    availableBaseScenarios: new Set(),
+    availableAdmTypes: new Set(),
+    availableKDMAs: new Set(),
+    availableLLMs: new Set(),
+    validCombinations: {},
+    
+    // User selections
+    selectedBaseScenario: null,
+    selectedScenario: null,
+    selectedAdmType: null,
+    selectedLLM: null,
+    activeKDMAs: {},
+    
+    // UI state
+    isUpdatingProgrammatically: false
+  };
 
   // Function to fetch and parse manifest.json
   async function fetchManifest() {
@@ -29,19 +41,19 @@ document.addEventListener("DOMContentLoaded", () => {
       loadResults(); // Load results initially
     } catch (error) {
       console.error("Error fetching manifest:", error);
-      resultsDisplay.innerHTML =
+      runDisplay.innerHTML =
         "<p>Error loading experiment data. Please ensure the data is built correctly.</p>";
     }
   }
 
   // Extract unique parameters and build validCombinations structure
   function extractParametersFromManifest() {
-    availableScenarios.clear();
-    availableBaseScenarios.clear();
-    availableAdmTypes.clear();
-    availableKDMAs.clear();
-    availableLLMs.clear();
-    validCombinations = {};
+    appState.availableScenarios.clear();
+    appState.availableBaseScenarios.clear();
+    appState.availableAdmTypes.clear();
+    appState.availableKDMAs.clear();
+    appState.availableLLMs.clear();
+    appState.validCombinations = {};
 
     // Handle new manifest structure with experiment_keys
     const experiments = manifest.experiment_keys || manifest;
@@ -50,10 +62,10 @@ document.addEventListener("DOMContentLoaded", () => {
     for (const experimentKey in experiments) {
       const experiment = experiments[experimentKey];
       for (const scenarioId in experiment.scenarios) {
-        availableScenarios.add(scenarioId);
+        appState.availableScenarios.add(scenarioId);
         // Extract base scenario ID by removing index suffix
         const baseScenarioId = scenarioId.replace(/-\d+$/, "");
-        availableBaseScenarios.add(baseScenarioId);
+        appState.availableBaseScenarios.add(baseScenarioId);
       }
     }
 
@@ -73,52 +85,52 @@ document.addEventListener("DOMContentLoaded", () => {
             ? config.adm.structured_inference_engine.model_name
             : "no_llm";
 
-        availableAdmTypes.add(admType);
-        availableLLMs.add(llmBackbone);
+        appState.availableAdmTypes.add(admType);
+        appState.availableLLMs.add(llmBackbone);
 
-        if (!validCombinations[admType]) {
-          validCombinations[admType] = {};
+        if (!appState.validCombinations[admType]) {
+          appState.validCombinations[admType] = {};
         }
-        if (!validCombinations[admType][llmBackbone]) {
-          validCombinations[admType][llmBackbone] = {};
+        if (!appState.validCombinations[admType][llmBackbone]) {
+          appState.validCombinations[admType][llmBackbone] = {};
         }
 
         if (config.alignment_target && config.alignment_target.kdma_values) {
           config.alignment_target.kdma_values.forEach((kdma_entry) => {
             const kdma = kdma_entry.kdma;
             const value = kdma_entry.value;
-            availableKDMAs.add(kdma);
+            appState.availableKDMAs.add(kdma);
 
-            if (!validCombinations[admType][llmBackbone][kdma]) {
-              validCombinations[admType][llmBackbone][kdma] = new Set();
+            if (!appState.validCombinations[admType][llmBackbone][kdma]) {
+              appState.validCombinations[admType][llmBackbone][kdma] = new Set();
             }
-            validCombinations[admType][llmBackbone][kdma].add(value);
+            appState.validCombinations[admType][llmBackbone][kdma].add(value);
           });
         }
       }
     }
 
     // Convert Sets to sorted Arrays for easier use in UI
-    availableScenarios = Array.from(availableScenarios).sort();
-    availableBaseScenarios = Array.from(availableBaseScenarios).sort();
-    availableAdmTypes = Array.from(availableAdmTypes).sort();
-    availableKDMAs = Array.from(availableKDMAs).sort();
-    availableLLMs = Array.from(availableLLMs).sort();
+    appState.availableScenarios = Array.from(appState.availableScenarios).sort();
+    appState.availableBaseScenarios = Array.from(appState.availableBaseScenarios).sort();
+    appState.availableAdmTypes = Array.from(appState.availableAdmTypes).sort();
+    appState.availableKDMAs = Array.from(appState.availableKDMAs).sort();
+    appState.availableLLMs = Array.from(appState.availableLLMs).sort();
 
     // Convert inner Sets to sorted Arrays
-    for (const adm in validCombinations) {
-      for (const llm in validCombinations[adm]) {
-        for (const kdma in validCombinations[adm][llm]) {
-          validCombinations[adm][llm][kdma] = Array.from(
-            validCombinations[adm][llm][kdma],
+    for (const adm in appState.validCombinations) {
+      for (const llm in appState.validCombinations[adm]) {
+        for (const kdma in appState.validCombinations[adm][llm]) {
+          appState.validCombinations[adm][llm][kdma] = Array.from(
+            appState.validCombinations[adm][llm][kdma],
           ).sort((a, b) => a - b);
         }
       }
     }
 
-    console.log("Available base scenarios:", availableBaseScenarios);
-    console.log("Available scenarios:", availableScenarios);
-    console.log("Valid Combinations (structured):", validCombinations);
+    console.log("Available base scenarios:", appState.availableBaseScenarios);
+    console.log("Available scenarios:", appState.availableScenarios);
+    console.log("Valid Combinations (structured):", appState.validCombinations);
   }
 
   function populateUIControls() {
@@ -128,6 +140,8 @@ document.addEventListener("DOMContentLoaded", () => {
     admSelect.id = "adm-type-select";
     admTypeSelection.appendChild(admSelect);
     admSelect.addEventListener("change", () => {
+      if (appState.isUpdatingProgrammatically) return;
+      appState.selectedAdmType = admSelect.value;
       updateLLMDropdown();
       loadResults();
     });
@@ -138,6 +152,8 @@ document.addEventListener("DOMContentLoaded", () => {
     llmSelect.id = "llm-select";
     llmSelection.appendChild(llmSelect);
     llmSelect.addEventListener("change", () => {
+      if (appState.isUpdatingProgrammatically) return;
+      appState.selectedLLM = llmSelect.value;
       updateKDMASliders();
       loadResults();
     });
@@ -152,22 +168,24 @@ document.addEventListener("DOMContentLoaded", () => {
     // Base Scenario Selection - Add event listener to existing element
     const baseScenarioSelect = document.getElementById("base-scenario-select");
     baseScenarioSelect.addEventListener("change", () => {
-      selectedBaseScenario = baseScenarioSelect.value;
+      if (appState.isUpdatingProgrammatically) return;
+      appState.selectedBaseScenario = baseScenarioSelect.value;
       updateSpecificScenarioDropdown();
-      debouncedUpdate(updateAllFromScenarioChange, 100);
+      updateFromScenarioChange();
     });
 
     // Specific Scenario Selection - Add event listener to existing element
     const scenarioSelect = document.getElementById("scenario-select");
     scenarioSelect.addEventListener("change", () => {
-      selectedScenario = scenarioSelect.value;
-      debouncedUpdate(updateAllFromScenarioChange, 100);
+      if (appState.isUpdatingProgrammatically) return;
+      appState.selectedScenario = scenarioSelect.value;
+      updateFromScenarioChange();
     });
 
     // Add event handler for Add KDMA button
     document.getElementById("add-kdma-btn").addEventListener("click", () => {
       const validKDMAs = getValidKDMAsForCurrentSelection();
-      const availableToAdd = Object.keys(validKDMAs).filter(k => activeKDMAs[k] === undefined);
+      const availableToAdd = Object.keys(validKDMAs).filter(k => appState.activeKDMAs[k] === undefined);
       
       if (availableToAdd.length > 0) {
         const kdmaToAdd = availableToAdd[0]; // Pick first available
@@ -186,7 +204,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function getValidADMsForCurrentScenario() {
-    const currentScenario = selectedScenario || getFirstAvailableScenario();
+    const currentScenario = appState.selectedScenario || getFirstAvailableScenario();
     const experiments = manifest.experiment_keys || manifest;
     const validADMs = new Set();
     
@@ -232,17 +250,20 @@ document.addEventListener("DOMContentLoaded", () => {
       admSelect.appendChild(option);
     });
     
-    // Set default to first valid ADM
+    // Set default to first valid ADM and update state
+    appState.isUpdatingProgrammatically = true;
     admSelect.value = validADMs[0];
+    appState.selectedAdmType = validADMs[0];
+    appState.isUpdatingProgrammatically = false;
   }
 
   function updateLLMDropdown() {
-    const selectedAdm = document.getElementById("adm-type-select").value;
+    const selectedAdm = appState.selectedAdmType || document.getElementById("adm-type-select").value;
     const llmSelect = document.getElementById("llm-select");
     llmSelect.innerHTML = ""; // Clear existing options
 
-    const validLLMsForAdm = validCombinations[selectedAdm]
-      ? Object.keys(validCombinations[selectedAdm]).sort()
+    const validLLMsForAdm = appState.validCombinations[selectedAdm]
+      ? Object.keys(appState.validCombinations[selectedAdm]).sort()
       : [];
 
     validLLMsForAdm.forEach((llm) => {
@@ -252,9 +273,12 @@ document.addEventListener("DOMContentLoaded", () => {
       llmSelect.appendChild(option);
     });
 
-    // Set default to first valid LLM option
+    // Set default to first valid LLM option and update state
     if (validLLMsForAdm.length > 0) {
+      appState.isUpdatingProgrammatically = true;
       llmSelect.value = validLLMsForAdm[0];
+      appState.selectedLLM = validLLMsForAdm[0];
+      appState.isUpdatingProgrammatically = false;
     }
 
     // Disable LLM select if only one option is available
@@ -267,59 +291,21 @@ document.addEventListener("DOMContentLoaded", () => {
     updateKDMASliders();
   }
 
-  // Track active KDMAs
-  let activeKDMAs = {}; // { kdmaType: value }
-
-  // Loading state management
-  function showLoadingSpinner(message = "Loading...") {
-    const resultsDisplay = document.getElementById("results-display");
-    resultsDisplay.innerHTML = `
-      <div class="loading-spinner">
-        <div class="spinner"></div>
-        <div class="loading-text">${message}</div>
-      </div>
-    `;
-  }
 
 
-  // Debounced update function to handle scenario changes smoothly
-  let updateTimeout = null;
-  function debouncedUpdate(callback, delay = 300) {
-    if (updateTimeout) {
-      clearTimeout(updateTimeout);
-    }
-    updateTimeout = setTimeout(callback, delay);
-  }
 
-  // Comprehensive update function for scenario changes
-  async function updateAllFromScenarioChange() {
-    if (isLoading) return; // Prevent concurrent updates
-    
-    isLoading = true;
-    showLoadingSpinner("Updating options...");
-    
-    try {
-      // Update in the correct order with minimal delays
-      updateADMDropdown();
-      await new Promise(resolve => setTimeout(resolve, 20));
-      
-      updateLLMDropdown();
-      await new Promise(resolve => setTimeout(resolve, 20));
-      
-      // updateLLMDropdown calls updateKDMASliders, so KDMAs are already updated
-      await new Promise(resolve => setTimeout(resolve, 30));
-      
-      // Load results without loading guard
-      await loadResultsInternal();
-    } finally {
-      isLoading = false;
-    }
+
+  // Clean, synchronous update function for scenario changes
+  function updateFromScenarioChange() {
+    updateADMDropdown();
+    updateLLMDropdown();
+    loadResults();
   }
 
   function getValidKDMAsForCurrentSelection() {
     const selectedAdm = document.getElementById("adm-type-select").value;
     const selectedLLM = document.getElementById("llm-select").value;
-    const currentScenario = selectedScenario || getFirstAvailableScenario();
+    const currentScenario = appState.selectedScenario || getFirstAvailableScenario();
     
     // Find experiments that match the current scenario and ADM/LLM selection
     const experiments = manifest.experiment_keys || manifest;
@@ -367,8 +353,8 @@ document.addEventListener("DOMContentLoaded", () => {
   
   function getFirstAvailableScenario() {
     // Get first scenario from available scenarios, fallback to first in manifest
-    if (availableScenarios.length > 0) {
-      return availableScenarios[0];
+    if (appState.availableScenarios.length > 0) {
+      return appState.availableScenarios[0];
     }
     
     const experiments = manifest.experiment_keys || manifest;
@@ -382,7 +368,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function addKDMASelector(kdmaType, initialValue) {
-    if (activeKDMAs[kdmaType] !== undefined) {
+    if (appState.activeKDMAs[kdmaType] !== undefined) {
       return; // Already exists
     }
 
@@ -397,7 +383,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const availableKDMAs = getValidKDMAsForCurrentSelection();
     const availableForThisSelector = Object.keys(availableKDMAs).filter(k => 
-      k === kdmaType || activeKDMAs[k] === undefined
+      k === kdmaType || appState.activeKDMAs[k] === undefined
     );
     
     kdmaDiv.innerHTML = `
@@ -428,8 +414,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const oldKdmaType = kdmaType;
       
       // Update the active KDMAs tracking
-      const currentValue = activeKDMAs[oldKdmaType];
-      delete activeKDMAs[oldKdmaType];
+      const currentValue = appState.activeKDMAs[oldKdmaType];
+      delete appState.activeKDMAs[oldKdmaType];
       
       // Get valid values for new type and adjust value if needed
       const validValues = getValidKDMAsForCurrentSelection()[newKdmaType] || [];
@@ -438,7 +424,7 @@ document.addEventListener("DOMContentLoaded", () => {
         newValue = validValues[0]; // Use first valid value
       }
       
-      activeKDMAs[newKdmaType] = newValue;
+      appState.activeKDMAs[newKdmaType] = newValue;
       
       // Update slider value and display
       slider.value = newValue;
@@ -482,13 +468,13 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       
       valueSpan.textContent = newValue.toFixed(1);
-      activeKDMAs[kdmaType] = newValue;
+      appState.activeKDMAs[kdmaType] = newValue;
       
       validateKDMAValue(kdmaType, newValue, warningSpan);
       loadResults();
     });
     
-    activeKDMAs[kdmaType] = value;
+    appState.activeKDMAs[kdmaType] = value;
     
     // Update all KDMA dropdowns to reflect the new addition
     updateAllKDMATypeSelectors();
@@ -513,12 +499,12 @@ document.addEventListener("DOMContentLoaded", () => {
   function updateAllKDMATypeSelectors() {
     const validKDMAs = getValidKDMAsForCurrentSelection();
     
-    Object.keys(activeKDMAs).forEach(kdmaType => {
+    Object.keys(appState.activeKDMAs).forEach(kdmaType => {
       const typeSelect = document.getElementById(`${kdmaType}-type-select`);
       if (typeSelect) {
         const currentSelection = typeSelect.value;
         const availableForThisSelector = Object.keys(validKDMAs).filter(k => 
-          k === currentSelection || activeKDMAs[k] === undefined
+          k === currentSelection || appState.activeKDMAs[k] === undefined
         );
         
         typeSelect.innerHTML = '';
@@ -538,7 +524,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const kdmaDiv = document.getElementById(`kdma-selector-${kdmaType}`);
     if (kdmaDiv) {
       kdmaDiv.remove();
-      delete activeKDMAs[kdmaType];
+      delete appState.activeKDMAs[kdmaType];
       updateAllKDMATypeSelectors(); // Update all remaining KDMA dropdowns
       updateAddKDMAButton();
       loadResults();
@@ -548,7 +534,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function getMaxKDMAsForCurrentSelection() {
     const selectedAdm = document.getElementById("adm-type-select").value;
     const selectedLLM = document.getElementById("llm-select").value;
-    const currentScenario = selectedScenario || getFirstAvailableScenario();
+    const currentScenario = appState.selectedScenario || getFirstAvailableScenario();
     
     // Check actual experiment data to find max KDMAs for this ADM/LLM/Scenario combination
     const experiments = manifest.experiment_keys || manifest;
@@ -601,9 +587,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function updateAddKDMAButton() {
     const addButton = document.getElementById("add-kdma-btn");
     const validKDMAs = getValidKDMAsForCurrentSelection();
-    const availableToAdd = Object.keys(validKDMAs).filter(k => activeKDMAs[k] === undefined);
+    const availableToAdd = Object.keys(validKDMAs).filter(k => appState.activeKDMAs[k] === undefined);
     const maxKDMAs = getMaxKDMAsForCurrentSelection();
-    const currentKDMACount = Object.keys(activeKDMAs).length;
+    const currentKDMACount = Object.keys(appState.activeKDMAs).length;
     
     // Update button state based on both available KDMAs and max limit
     // Check max limit first - this takes precedence
@@ -630,21 +616,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const validKDMAs = getValidKDMAsForCurrentSelection();
     
     // Remove KDMAs that are no longer valid
-    Object.keys(activeKDMAs).forEach(kdmaType => {
+    Object.keys(appState.activeKDMAs).forEach(kdmaType => {
       if (!validKDMAs[kdmaType]) {
         removeKDMASelector(kdmaType);
       }
     });
     
     // Fix invalid values for remaining KDMAs first
-    Object.keys(activeKDMAs).forEach(kdmaType => {
+    Object.keys(appState.activeKDMAs).forEach(kdmaType => {
       const validValues = validKDMAs[kdmaType] || [];
-      const currentValue = activeKDMAs[kdmaType];
+      const currentValue = appState.activeKDMAs[kdmaType];
       
       // If current value is not valid, update to a valid value
       if (validValues.length > 0 && !validValues.includes(currentValue)) {
         const newValue = validValues[0]; // Use first valid value
-        activeKDMAs[kdmaType] = newValue;
+        appState.activeKDMAs[kdmaType] = newValue;
         
         // Update the slider and display
         const slider = document.getElementById(`${kdmaType}-slider`);
@@ -657,7 +643,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     
     // Find a valid experiment combination if we have no active KDMAs
-    if (Object.keys(activeKDMAs).length === 0) {
+    if (Object.keys(appState.activeKDMAs).length === 0) {
       // If no valid KDMAs for current selection, need to find a different combination
       if (Object.keys(validKDMAs).length === 0) {
         // Current ADM/LLM/Scenario combination has no valid experiments
@@ -688,9 +674,9 @@ document.addEventListener("DOMContentLoaded", () => {
           if (foundValidScenario) break;
         }
         
-        if (foundValidScenario && foundValidScenario !== selectedScenario) {
+        if (foundValidScenario && foundValidScenario !== appState.selectedScenario) {
           // Switch to valid scenario
-          selectedScenario = foundValidScenario;
+          appState.selectedScenario = foundValidScenario;
           
           // Update scenario selects
           const baseScenarioId = foundValidScenario.replace(/-\d+$/, "");
@@ -698,7 +684,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const scenarioSelect = document.getElementById("scenario-select");
           
           if (baseScenarioSelect && baseScenarioSelect.value !== baseScenarioId) {
-            selectedBaseScenario = baseScenarioId;
+            appState.selectedBaseScenario = baseScenarioId;
             baseScenarioSelect.value = baseScenarioId;
             updateSpecificScenarioDropdown();
           }
@@ -713,8 +699,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         
         // If no valid scenario found, try to find a valid LLM for this ADM
-        const validLLMsForAdm = validCombinations[selectedAdm] 
-          ? Object.keys(validCombinations[selectedAdm]).sort() 
+        const validLLMsForAdm = appState.validCombinations[selectedAdm] 
+          ? Object.keys(appState.validCombinations[selectedAdm]).sort() 
           : [];
         
         if (validLLMsForAdm.length > 0) {
@@ -729,7 +715,7 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         } else {
           // No valid LLMs for this ADM, switch to first valid ADM
-          const validADMs = Object.keys(validCombinations).sort();
+          const validADMs = Object.keys(appState.validCombinations).sort();
           if (validADMs.length > 0) {
             const firstValidADM = validADMs[0];
             const admSelect = document.getElementById("adm-type-select");
@@ -757,12 +743,12 @@ document.addEventListener("DOMContentLoaded", () => {
     updateAllKDMATypeSelectors();
     
     // Update values for existing KDMAs and show warnings
-    Object.keys(activeKDMAs).forEach(kdmaType => {
+    Object.keys(appState.activeKDMAs).forEach(kdmaType => {
       const slider = document.getElementById(`${kdmaType}-slider`);
       const warningSpan = document.getElementById(`${kdmaType}-warning`);
       
       if (slider && warningSpan) {
-        let currentValue = activeKDMAs[kdmaType];
+        let currentValue = appState.activeKDMAs[kdmaType];
         const validValues = validKDMAs[kdmaType] || [];
         
         // Validate current value
@@ -789,7 +775,7 @@ document.addEventListener("DOMContentLoaded", () => {
     baseScenarioSelect.innerHTML = "";
 
     // Use all available base scenarios (not filtered by ADM/KDMA)
-    if (availableBaseScenarios.length === 0) {
+    if (appState.availableBaseScenarios.length === 0) {
       const option = document.createElement("option");
       option.value = "";
       option.textContent = "No base scenarios available";
@@ -799,7 +785,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     baseScenarioSelect.disabled = false;
-    availableBaseScenarios.forEach((baseScenarioId) => {
+    appState.availableBaseScenarios.forEach((baseScenarioId) => {
       const option = document.createElement("option");
       option.value = baseScenarioId;
       option.textContent = baseScenarioId;
@@ -807,9 +793,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Set initial base scenario if none selected
-    if (!selectedBaseScenario && availableBaseScenarios.length > 0) {
-      selectedBaseScenario = availableBaseScenarios[0];
-      baseScenarioSelect.value = selectedBaseScenario;
+    if (!appState.selectedBaseScenario && appState.availableBaseScenarios.length > 0) {
+      appState.selectedBaseScenario = appState.availableBaseScenarios[0];
+      baseScenarioSelect.value = appState.selectedBaseScenario;
       updateSpecificScenarioDropdown();
     }
   }
@@ -818,7 +804,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const scenarioSelect = document.getElementById("scenario-select");
     scenarioSelect.innerHTML = "";
 
-    if (!selectedBaseScenario) {
+    if (!appState.selectedBaseScenario) {
       const option = document.createElement("option");
       option.value = "";
       option.textContent = "Select a scenario type first";
@@ -828,9 +814,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Find all scenarios that match the selected base scenario
-    const matchingScenarios = availableScenarios.filter((scenarioId) => {
+    const matchingScenarios = appState.availableScenarios.filter((scenarioId) => {
       const baseScenarioId = scenarioId.replace(/-\d+$/, "");
-      return baseScenarioId === selectedBaseScenario;
+      return baseScenarioId === appState.selectedBaseScenario;
     });
 
     if (matchingScenarios.length === 0) {
@@ -851,20 +837,20 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Set initial specific scenario if none selected
-    if (!selectedScenario || !matchingScenarios.includes(selectedScenario)) {
-      selectedScenario = matchingScenarios[0];
-      scenarioSelect.value = selectedScenario;
+    if (!appState.selectedScenario || !matchingScenarios.includes(appState.selectedScenario)) {
+      appState.selectedScenario = matchingScenarios[0];
+      scenarioSelect.value = appState.selectedScenario;
     }
   }
 
   // Function to construct the key based on current UI selections
   function getSelectedKey() {
-    const admType = document.getElementById("adm-type-select").value;
-    const llmBackbone = document.getElementById("llm-select").value;
+    const admType = appState.selectedAdmType || document.getElementById("adm-type-select").value;
+    const llmBackbone = appState.selectedLLM || document.getElementById("llm-select").value;
 
     const kdmaParts = [];
     // Use activeKDMAs instead of querying DOM
-    Object.entries(activeKDMAs).forEach(([kdma, value]) => {
+    Object.entries(appState.activeKDMAs).forEach(([kdma, value]) => {
       kdmaParts.push(`${kdma}-${value.toFixed(1)}`);
     });
     
@@ -876,8 +862,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Internal function to load results without loading guard
   async function loadResultsInternal() {
-    if (!selectedScenario) {
-      resultsDisplay.innerHTML =
+    if (!appState.selectedScenario) {
+      runDisplay.innerHTML =
         "<p>Please select a specific scenario first.</p>";
       return;
     }
@@ -887,23 +873,23 @@ document.addEventListener("DOMContentLoaded", () => {
       "Attempting to load:",
       selectedKey,
       "Scenario:",
-      selectedScenario,
+      appState.selectedScenario,
     );
 
     // Handle new manifest structure with experiment_keys
     const experiments = manifest.experiment_keys || manifest;
     if (
       experiments[selectedKey] &&
-      experiments[selectedKey].scenarios[selectedScenario]
+      experiments[selectedKey].scenarios[appState.selectedScenario]
     ) {
-      const dataPaths = experiments[selectedKey].scenarios[selectedScenario];
+      const dataPaths = experiments[selectedKey].scenarios[appState.selectedScenario];
       try {
         const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
         const scoresArray = await (await fetch(dataPaths.scores)).json();
         const timingData = await (await fetch(dataPaths.timing)).json();
 
         // Extract the index from the scenario ID (e.g., "test_scenario_1-0" → 0)
-        const scenarioIndex = parseInt(selectedScenario.split('-').pop());
+        const scenarioIndex = parseInt(appState.selectedScenario.split('-').pop());
         
         // Get the specific element from each array using the index
         const inputOutputItem = inputOutputArray[scenarioIndex];
@@ -976,7 +962,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const input = inputOutputItem.input;
             
             // Simple scenario header
-            html += `<h3>${selectedScenario}</h3>`;
+            html += `<h3>${appState.selectedScenario}</h3>`;
             
             // Scenario description
             if (input.state) {
@@ -1042,13 +1028,13 @@ document.addEventListener("DOMContentLoaded", () => {
           return html;
         };
         
-        resultsDisplay.innerHTML = formatResults();
+        runDisplay.innerHTML = formatResults();
         
         // Update scores and timing in parameters section
         updateScoresTimingSection(scoreItem, timingData);
       } catch (error) {
         console.error("Error fetching experiment data:", error);
-        resultsDisplay.innerHTML =
+        runDisplay.innerHTML =
           "<p>Error loading data for selected parameters and scenario.</p>";
       }
     } else {
@@ -1057,10 +1043,10 @@ document.addEventListener("DOMContentLoaded", () => {
         key.startsWith(`${selectedKey.split('_')[0]}_${selectedKey.split('_')[1]}_`)
       );
       
-      resultsDisplay.innerHTML = `
+      runDisplay.innerHTML = `
         <p>No data found for the selected parameters and scenario.</p>
         <p><strong>Looking for:</strong> ${selectedKey}</p>
-        <p><strong>Scenario:</strong> ${selectedScenario}</p>
+        <p><strong>Scenario:</strong> ${appState.selectedScenario}</p>
         <p><strong>Available keys for this ADM/LLM:</strong></p>
         <ul>${availableKeys.length > 0 ? availableKeys.map(key => `<li>${key}</li>`).join('') : '<li>None found</li>'}</ul>
         <p>Please ensure KDMA values match the available experiment data.</p>
@@ -1098,7 +1084,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Function to load and display results
   async function loadResults() {
-    if (isLoading) {
+    if (appState.isUpdatingProgrammatically) {
       // Don't update results while we're in the middle of updating dropdowns
       return;
     }
