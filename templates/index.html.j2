@@ -38,8 +38,16 @@
                     📌 Pin Current Configuration
                 </button>
             </div>
-            <div id="run-display"></div>
-            <div id="comparison-display"></div>
+            <div id="runs-container" class="runs-container">
+                <div id="current-run-wrapper" class="run-wrapper current-run-wrapper">
+                    <div class="run-content-header">
+                        <span class="run-title">Current Run</span>
+                        <span class="live-badge">Live</span>
+                    </div>
+                    <div id="run-display" class="run-content"></div>
+                </div>
+            </div>
+            <div id="comparison-display" style="display: none;"></div>
         </section>
     </main>
     <script src="/js/app.js"></script>
