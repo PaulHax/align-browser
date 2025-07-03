@@ -27,7 +27,8 @@ document.addEventListener("DOMContentLoaded", () => {
     activeKDMAs: {},
     
     // UI state
-    isUpdatingProgrammatically: false
+    isUpdatingProgrammatically: false,
+    isTransitioning: false
   };
 
   // Function to fetch and parse manifest.json
@@ -143,7 +144,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (appState.isUpdatingProgrammatically) return;
       appState.selectedAdmType = admSelect.value;
       updateLLMDropdown();
-      loadResults();
+      if (!appState.isTransitioning) {
+        loadResults();
+      }
     });
 
     // LLM Backbone Selection
@@ -155,7 +158,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (appState.isUpdatingProgrammatically) return;
       appState.selectedLLM = llmSelect.value;
       updateKDMASliders();
-      loadResults();
+      if (!appState.isTransitioning) {
+        loadResults();
+      }
     });
 
     // KDMA Dynamic Selection container
@@ -169,9 +174,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const baseScenarioSelect = document.getElementById("base-scenario-select");
     baseScenarioSelect.addEventListener("change", () => {
       if (appState.isUpdatingProgrammatically) return;
+      
+      // Mark as transitioning to prevent "No data found" flash
+      appState.isTransitioning = true;
+      appState.isUpdatingProgrammatically = true;
+      
       appState.selectedBaseScenario = baseScenarioSelect.value;
-      updateSpecificScenarioDropdown();
-      updateFromScenarioChange();
+      updateSpecificScenarioDropdown(); // This updates appState.selectedScenario and DOM
+      
+      appState.isUpdatingProgrammatically = false;
+      
+      updateFromScenarioChange(); // This will clear isTransitioning when done
     });
 
     // Specific Scenario Selection - Add event listener to existing element
@@ -179,7 +192,9 @@ document.addEventListener("DOMContentLoaded", () => {
     scenarioSelect.addEventListener("change", () => {
       if (appState.isUpdatingProgrammatically) return;
       appState.selectedScenario = scenarioSelect.value;
-      updateFromScenarioChange();
+      if (!appState.isTransitioning) {
+        updateFromScenarioChange();
+      }
     });
 
     // Add event handler for Add KDMA button
@@ -192,7 +207,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const validValues = validKDMAs[kdmaToAdd] || [];
         addKDMASelector(kdmaToAdd, validValues[0] || 0.5);
         updateAddKDMAButton();
-        loadResults();
+        if (!appState.isTransitioning) {
+          loadResults();
+        }
       }
     });
 
@@ -250,10 +267,14 @@ document.addEventListener("DOMContentLoaded", () => {
       admSelect.appendChild(option);
     });
     
-    // Set default to first valid ADM and update state
+    // Preserve current ADM selection if still valid, otherwise use first valid
     appState.isUpdatingProgrammatically = true;
-    admSelect.value = validADMs[0];
-    appState.selectedAdmType = validADMs[0];
+    
+    const currentAdm = appState.selectedAdmType;
+    const admToSelect = (currentAdm && validADMs.includes(currentAdm)) ? currentAdm : validADMs[0];
+    
+    admSelect.value = admToSelect;
+    appState.selectedAdmType = admToSelect;
     appState.isUpdatingProgrammatically = false;
   }
 
@@ -273,11 +294,15 @@ document.addEventListener("DOMContentLoaded", () => {
       llmSelect.appendChild(option);
     });
 
-    // Set default to first valid LLM option and update state
+    // Preserve current LLM selection if still valid, otherwise use first valid
     if (validLLMsForAdm.length > 0) {
       appState.isUpdatingProgrammatically = true;
-      llmSelect.value = validLLMsForAdm[0];
-      appState.selectedLLM = validLLMsForAdm[0];
+      
+      const currentLLM = appState.selectedLLM;
+      const llmToSelect = (currentLLM && validLLMsForAdm.includes(currentLLM)) ? currentLLM : validLLMsForAdm[0];
+      
+      llmSelect.value = llmToSelect;
+      appState.selectedLLM = llmToSelect;
       appState.isUpdatingProgrammatically = false;
     }
 
@@ -295,11 +320,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
 
-  // Clean, synchronous update function for scenario changes
+  // Show loading spinner during transitions
+  function showTransitionSpinner() {
+    const runDisplay = document.getElementById("run-display");
+    runDisplay.innerHTML = `
+      <div class="loading-spinner">
+        <div class="spinner"></div>
+        <div class="loading-text">Loading scenario...</div>
+      </div>
+    `;
+  }
+
+  // Update function for scenario changes
   function updateFromScenarioChange() {
+    // Show spinner immediately during transitions
+    if (appState.isTransitioning) {
+      showTransitionSpinner();
+    }
+    
     updateADMDropdown();
     updateLLMDropdown();
-    loadResults();
+    
+    // Clear transition flag and load results
+    appState.isTransitioning = false;
+    
+    if (appState.selectedScenario) {
+      loadResults();
+    }
   }
 
   function getValidKDMAsForCurrentSelection() {
@@ -446,7 +493,9 @@ document.addEventListener("DOMContentLoaded", () => {
       validateKDMAValue(newKdmaType, newValue, warningSpan);
       updateAllKDMATypeSelectors(); // Update all KDMA dropdowns
       updateAddKDMAButton();
-      loadResults();
+      if (!appState.isTransitioning) {
+        loadResults();
+      }
     });
     
     // Handle slider value change
@@ -471,7 +520,9 @@ document.addEventListener("DOMContentLoaded", () => {
       appState.activeKDMAs[kdmaType] = newValue;
       
       validateKDMAValue(kdmaType, newValue, warningSpan);
-      loadResults();
+      if (!appState.isTransitioning) {
+        loadResults();
+      }
     });
     
     appState.activeKDMAs[kdmaType] = value;
@@ -527,7 +578,9 @@ document.addEventListener("DOMContentLoaded", () => {
       delete appState.activeKDMAs[kdmaType];
       updateAllKDMATypeSelectors(); // Update all remaining KDMA dropdowns
       updateAddKDMAButton();
-      loadResults();
+      if (!appState.isTransitioning) {
+        loadResults();
+      }
     }
   };
 
@@ -836,11 +889,10 @@ document.addEventListener("DOMContentLoaded", () => {
       scenarioSelect.appendChild(option);
     });
 
-    // Set initial specific scenario if none selected
-    if (!appState.selectedScenario || !matchingScenarios.includes(appState.selectedScenario)) {
-      appState.selectedScenario = matchingScenarios[0];
-      scenarioSelect.value = appState.selectedScenario;
-    }
+    // Always set to first matching scenario when base scenario changes
+    // This ensures consistent state and prevents "No data found" flashes
+    appState.selectedScenario = matchingScenarios[0];
+    scenarioSelect.value = appState.selectedScenario;
   }
 
   // Function to construct the key based on current UI selections
