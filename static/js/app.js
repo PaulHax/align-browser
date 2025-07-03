@@ -31,7 +31,29 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // UI state
     isUpdatingProgrammatically: false,
-    isTransitioning: false
+    isTransitioning: false,
+    
+    // Comparison state
+    pinnedRuns: new Map(), // Map<runId, runData> for pinned comparisons
+    currentInputOutput: null,
+    currentScores: null, 
+    currentTiming: null,
+
+    // Run configuration factory
+    createRunConfig: function() {
+      return {
+        id: generateRunId(),
+        timestamp: new Date().toISOString(),
+        scenario: appState.selectedScenario,
+        baseScenario: appState.selectedBaseScenario,
+        admType: appState.selectedAdmType,
+        llmBackbone: appState.selectedLLM,
+        kdmaValues: { ...appState.activeKDMAs },
+        experimentKey: getSelectedKey(),
+        displayName: generateDisplayName(),
+        loadStatus: 'pending'
+      };
+    }
   };
 
   // Function to fetch and parse manifest.json
@@ -935,6 +957,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!appState.selectedScenario) {
       runDisplay.innerHTML =
         "<p>Please select a specific scenario first.</p>";
+      
+      // Clear current data when no scenario
+      appState.currentInputOutput = null;
+      appState.currentScores = null;
+      appState.currentTiming = null;
+      updatePinnedCount(); // Disable pin button when no data
       return;
     }
 
@@ -1100,12 +1128,24 @@ document.addEventListener("DOMContentLoaded", () => {
         
         runDisplay.innerHTML = formatResults();
         
+        // Store current data for pinning
+        appState.currentInputOutput = inputOutputItem;
+        appState.currentScores = scoreItem;
+        appState.currentTiming = timingData;
+        updatePinnedCount(); // Enable pin button when data loads
+        
         // Update scores and timing in parameters section
         updateScoresTimingSection(scoreItem, timingData);
       } catch (error) {
         console.error("Error fetching experiment data:", error);
         runDisplay.innerHTML =
           "<p>Error loading data for selected parameters and scenario.</p>";
+        
+        // Clear current data on error
+        appState.currentInputOutput = null;
+        appState.currentScores = null;
+        appState.currentTiming = null;
+        updatePinnedCount(); // Disable pin button when no data
       }
     } else {
       // Generate debug information to help identify the issue
@@ -1121,6 +1161,12 @@ document.addEventListener("DOMContentLoaded", () => {
         <ul>${availableKeys.length > 0 ? availableKeys.map(key => `<li>${key}</li>`).join('') : '<li>None found</li>'}</ul>
         <p>Please ensure KDMA values match the available experiment data.</p>
       `;
+      
+      // Clear current data when no data found
+      appState.currentInputOutput = null;
+      appState.currentScores = null;
+      appState.currentTiming = null;
+      updatePinnedCount(); // Disable pin button when no data
     }
   }
 
@@ -1162,6 +1208,125 @@ document.addEventListener("DOMContentLoaded", () => {
     await loadResultsInternal();
   }
 
+  // Pin current run to comparison
+  function pinCurrentRun() {
+    if (!appState.currentInputOutput) {
+      showNotification('No data to pin - load a configuration first', 'error');
+      return;
+    }
+    
+    const runConfig = appState.createRunConfig();
+    
+    // Check for duplicates
+    const existingRunId = findExistingRun(runConfig);
+    if (existingRunId) {
+      showNotification('This configuration is already pinned', 'info');
+      return;
+    }
+    
+    // Store complete run data
+    const pinnedData = {
+      ...runConfig,
+      inputOutput: appState.currentInputOutput,
+      scores: appState.currentScores,
+      timing: appState.currentTiming,
+      loadStatus: 'loaded'
+    };
+    
+    appState.pinnedRuns.set(runConfig.id, pinnedData);
+    updatePinnedCount();
+    showNotification(`Configuration pinned: ${runConfig.displayName}`, 'success');
+  }
+
+  // Helper functions for comparison feature
+  function findExistingRun(runConfig) {
+    for (const [runId, pinnedRun] of appState.pinnedRuns) {
+      if (pinnedRun.experimentKey === runConfig.experimentKey &&
+          JSON.stringify(pinnedRun.kdmaValues) === JSON.stringify(runConfig.kdmaValues)) {
+        return runId;
+      }
+    }
+    return null;
+  }
+
+  function updatePinnedCount() {
+    const count = appState.pinnedRuns.size;
+    const countElement = document.querySelector('#pinned-count .count');
+    if (countElement) {
+      countElement.textContent = count;
+    }
+    
+    const clearButton = document.getElementById('clear-all-pins');
+    if (clearButton) {
+      clearButton.disabled = count === 0;
+    }
+    
+    // Enable pin button only when we have current data
+    const pinButton = document.getElementById('pin-current-run');
+    if (pinButton) {
+      pinButton.disabled = !appState.currentInputOutput;
+    }
+  }
+
+  function clearAllPins() {
+    appState.pinnedRuns.clear();
+    updatePinnedCount();
+    showNotification('All pinned configurations cleared', 'info');
+  }
+
+  function generateRunId() {
+    const timestamp = new Date().getTime();
+    const random = Math.random().toString(36).substr(2, 9);
+    return `run_${timestamp}_${random}`;
+  }
+
+  function generateDisplayName() {
+    const parts = [];
+    if (appState.selectedAdmType) {
+      parts.push(appState.selectedAdmType.replace(/_/g, ' '));
+    }
+    if (appState.selectedLLM) {
+      parts.push(appState.selectedLLM.replace(/_/g, ' '));
+    }
+    const kdmaKeys = Object.keys(appState.activeKDMAs);
+    if (kdmaKeys.length > 0) {
+      const kdmaStr = kdmaKeys.map(k => `${k}=${appState.activeKDMAs[k]}`).join(', ');
+      parts.push(`(${kdmaStr})`);
+    }
+    return parts.join(' - ') || 'Unnamed Run';
+  }
+
+  function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.textContent = message;
+    notification.style.cssText = `
+      position: fixed; top: 20px; right: 20px; padding: 10px 20px;
+      background: ${type === 'error' ? '#f44336' : type === 'success' ? '#4caf50' : '#2196F3'};
+      color: white; border-radius: 4px; z-index: 1000;
+    `;
+    document.body.appendChild(notification);
+    setTimeout(() => notification.remove(), 3000);
+  }
+
+  function initializeComparisonFeatures() {
+    const pinButton = document.getElementById("pin-current-run");
+    const clearButton = document.getElementById("clear-all-pins");
+    
+    if (pinButton) {
+      pinButton.addEventListener("click", pinCurrentRun);
+    }
+    
+    if (clearButton) {
+      clearButton.addEventListener("click", clearAllPins);
+    }
+    
+    updatePinnedCount(); // Initial state
+  }
+
   // Initial manifest fetch on page load
   fetchManifest();
+  
+  // Initialize comparison features after DOM is loaded
+  initializeComparisonFeatures();
 });

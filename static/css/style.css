@@ -175,6 +175,73 @@ footer {
   color: #555;
 }
 
+/* Comparison controls styling */
+#comparison-controls {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #ddd;
+}
+
+.run-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.run-header h2 {
+    margin: 0;
+    color: #495057;
+}
+
+.btn {
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-right: 10px;
+    transition: background-color 0.2s ease;
+}
+
+.btn-primary {
+    background-color: #007bff;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: #0056b3;
+}
+
+.btn-danger {
+    background-color: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background-color: #c82333;
+}
+
+.btn:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+#pinned-count {
+    font-size: 14px;
+    color: #666;
+    display: inline-block;
+    margin-left: 10px;
+}
+
+#pinned-count .count {
+    font-weight: bold;
+    color: #333;
+}
+
 /* Responsive design for smaller screens */
 @media (max-width: 768px) {
   main {
@@ -188,5 +255,22 @@ footer {
   
   .run {
     flex: 1;
+  }
+  
+  /* Stack comparison controls on mobile */
+  #comparison-controls .btn {
+    margin-bottom: 5px;
+    display: inline-block;
+  }
+  
+  /* Stack run header on mobile */
+  .run-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .run-header h2 {
+    margin-bottom: 0;
   }
 }
