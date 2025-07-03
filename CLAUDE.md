@@ -23,3 +23,14 @@
 ## Data Modeling
 
 - We have Pydantic models that represent the input and output JSON
+
+## Data Models
+
+- **InputOutputItem**: Represents scenario input/output data with input choices and ADM decisions
+- **InputData**: Contains scenario choices array with unstructured text and KDMA associations
+- **Choice objects**: Each choice has unstructured text, action_id, action_type, character_id, kdma_association
+- **Output data**: Contains choice index (integer) and action object with justification
+- **ADM Decision extraction**: Use choice index from output.choice to get input.choices[index].unstructured for readable choice text
+- **Justification location**: Found at output.action.justification, always present
+- **Scores and timing**: Separate Pydantic models for structured score and timing data
+- Always refer to the Pydantic model definitions in src/experiment_models.py for the exact field structure and types when working with experiment data

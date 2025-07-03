@@ -135,6 +135,19 @@ class TestDataGenerator:
                 "kdmas": [{"kdma": "search", "value": 0.2}],
                 "scenario": "test_scenario_5",
             },
+            # Add pipeline_random experiments that also use Mistral LLM to test LLM preservation
+            {
+                "adm_type": "pipeline_random",
+                "llm": "mistralai/Mistral-7B-Instruct-v0.3",
+                "kdmas": [{"kdma": "affiliation", "value": 0.6}],
+                "scenario": "test_scenario_1",  # Same scenario as pipeline_baseline
+            },
+            {
+                "adm_type": "pipeline_random",
+                "llm": "mistralai/Mistral-7B-Instruct-v0.3",
+                "kdmas": [{"kdma": "merit", "value": 0.4}],
+                "scenario": "test_scenario_3",  # Same scenario as pipeline_baseline
+            },
         ]
 
         for i, config in enumerate(test_configs):
@@ -1111,6 +1124,461 @@ def test_scenario_filters_adm_options(page, test_server):
         print(f"Unique ADM sets: {len(unique_adm_sets)} out of {len(available_scenarios)} scenarios")
 
 
+def test_adm_preservation_on_specific_scenario_change(page, test_server):
+    """Test that ADM selection is preserved when changing specific scenario if still valid.
+    
+    Since our test data doesn't have multiple specific scenarios per base scenario,
+    this test focuses on the core preservation logic by testing scenario changes
+    that preserve ADM validity.
+    """
+    page.goto(test_server)
+    
+    # Wait for page to load
+    page.wait_for_function(
+        "document.querySelector('#adm-type-select').options.length > 0"
+    )
+    
+    base_scenario_select = page.locator("#base-scenario-select")
+    scenario_select = page.locator("#scenario-select")
+    adm_select = page.locator("#adm-type-select")
+    
+    # Get all available scenarios
+    base_scenario_options = base_scenario_select.locator("option").all()
+    available_base_scenarios = [opt.get_attribute("value") for opt in base_scenario_options if opt.get_attribute("value")]
+    
+    if len(available_base_scenarios) < 2:
+        pytest.skip("Need at least 2 base scenarios to test ADM preservation")
+    
+    # Test the preservation logic by changing base scenarios
+    # Select the first scenario
+    first_scenario = available_base_scenarios[0]
+    base_scenario_select.select_option(first_scenario)
+    page.wait_for_timeout(500)
+    
+    # Get available ADM types for this scenario
+    adm_options = adm_select.locator("option").all()
+    available_adms = [opt.get_attribute("value") for opt in adm_options if opt.get_attribute("value")]
+    
+    assert len(available_adms) >= 1, "Need at least one ADM type available"
+    
+    # Select an ADM type that might also be available in other scenarios
+    target_adm = None
+    for adm_type in available_adms:
+        # Check if this ADM is available in other scenarios
+        for other_scenario in available_base_scenarios[1:]:
+            base_scenario_select.select_option(other_scenario)
+            page.wait_for_timeout(500)
+            
+            other_adm_options = adm_select.locator("option").all()
+            other_adms = [opt.get_attribute("value") for opt in other_adm_options if opt.get_attribute("value")]
+            
+            if adm_type in other_adms:
+                target_adm = adm_type
+                break
+        
+        if target_adm:
+            break
+    
+    if not target_adm:
+        pytest.skip("No ADM type found that works across multiple scenarios in test data")
+    
+    # Start fresh with first scenario and select the target ADM
+    base_scenario_select.select_option(first_scenario)
+    page.wait_for_timeout(500)
+    
+    adm_select.select_option(target_adm)
+    page.wait_for_timeout(500)
+    
+    # Verify selection took
+    assert adm_select.input_value() == target_adm, f"ADM should be set to {target_adm}"
+    
+    # Change to a scenario that also supports this ADM
+    for other_scenario in available_base_scenarios[1:]:
+        base_scenario_select.select_option(other_scenario)
+        page.wait_for_timeout(500)
+        
+        # Check if target ADM is available
+        other_adm_options = adm_select.locator("option").all()
+        other_adms = [opt.get_attribute("value") for opt in other_adm_options if opt.get_attribute("value")]
+        
+        if target_adm in other_adms:
+            # Found a compatible scenario, test preservation
+            page.wait_for_timeout(750)  # Wait for all updates to complete
+            
+            preserved_adm = adm_select.input_value()
+            assert preserved_adm == target_adm, \
+                f"ADM '{target_adm}' should be preserved when changing from '{first_scenario}' to '{other_scenario}', but got '{preserved_adm}'"
+            
+            print(f"✓ ADM '{target_adm}' successfully preserved when changing from '{first_scenario}' to '{other_scenario}'")
+            return
+    
+    pytest.skip("No compatible scenario found to test ADM preservation")
+
+
+def test_adm_preservation_on_scenario_set_change(page, test_server):
+    """Test that ADM selection is preserved when changing scenario set if still valid."""
+    page.goto(test_server)
+    
+    # Wait for page to load
+    page.wait_for_function(
+        "document.querySelector('#adm-type-select').options.length > 0"
+    )
+    
+    base_scenario_select = page.locator("#base-scenario-select")
+    adm_select = page.locator("#adm-type-select")
+    
+    # Get all available scenario sets
+    base_scenario_options = base_scenario_select.locator("option").all()
+    available_base_scenarios = [opt.get_attribute("value") for opt in base_scenario_options if opt.get_attribute("value")]
+    
+    assert len(available_base_scenarios) >= 2, "Need at least 2 scenario sets for this test"
+    
+    # Select first scenario set and get its ADM options
+    first_scenario = available_base_scenarios[0]
+    base_scenario_select.select_option(first_scenario)
+    page.wait_for_timeout(500)
+    
+    adm_options = adm_select.locator("option").all()
+    first_scenario_adms = [opt.get_attribute("value") for opt in adm_options if opt.get_attribute("value")]
+    
+    # Find an ADM that exists in multiple scenario sets
+    target_adm = None
+    compatible_scenarios = []
+    
+    for adm_type in first_scenario_adms:
+        compatible_count = 0
+        temp_compatible = []
+        
+        for scenario_set in available_base_scenarios:
+            base_scenario_select.select_option(scenario_set)
+            page.wait_for_timeout(500)
+            
+            scenario_adm_options = adm_select.locator("option").all()
+            scenario_adms = [opt.get_attribute("value") for opt in scenario_adm_options if opt.get_attribute("value")]
+            
+            if adm_type in scenario_adms:
+                compatible_count += 1
+                temp_compatible.append(scenario_set)
+        
+        if compatible_count >= 2:
+            target_adm = adm_type
+            compatible_scenarios = temp_compatible
+            break
+    
+    if target_adm is None:
+        pytest.skip("No ADM type found that works with multiple scenario sets in test data")
+    
+    print(f"Testing ADM '{target_adm}' which works with scenarios: {compatible_scenarios}")
+    
+    # Start with first compatible scenario and select the target ADM
+    start_scenario = compatible_scenarios[0]
+    base_scenario_select.select_option(start_scenario)
+    page.wait_for_timeout(500)
+    
+    adm_select.select_option(target_adm)
+    page.wait_for_timeout(500)
+    
+    # Verify selection took
+    assert adm_select.input_value() == target_adm, f"ADM should be set to {target_adm}"
+    
+    # Change to a different scenario set that also supports this ADM
+    target_scenario = compatible_scenarios[1]
+    base_scenario_select.select_option(target_scenario)
+    page.wait_for_timeout(750)  # Wait for all updates to complete
+    
+    # Check if the ADM selection was preserved
+    preserved_adm = adm_select.input_value()
+    
+    # Get the new list of available ADMs after scenario set change
+    new_adm_options = adm_select.locator("option").all()
+    new_available_adms = [opt.get_attribute("value") for opt in new_adm_options if opt.get_attribute("value")]
+    
+    assert target_adm in new_available_adms, \
+        f"Target ADM '{target_adm}' should be available in scenario '{target_scenario}'"
+    
+    assert preserved_adm == target_adm, \
+        f"ADM '{target_adm}' should be preserved when changing from scenario set '{start_scenario}' to '{target_scenario}', but got '{preserved_adm}'"
+    
+    print(f"✓ ADM '{target_adm}' successfully preserved when changing scenario set from '{start_scenario}' to '{target_scenario}'")
+
+
+def test_llm_preservation_on_adm_type_change(page, test_server):
+    """Test that LLM selection preservation logic works when changing ADM types.
+    
+    Since the test data structure makes it difficult to find ADM types that share LLMs,
+    this test focuses on verifying the preservation logic works correctly by testing:
+    1. ADM with multiple LLM options preserves selection when re-selected
+    2. Fallback behavior when LLM becomes invalid
+    """
+    page.goto(test_server)
+    
+    # Wait for page to load
+    page.wait_for_function(
+        "document.querySelector('#adm-type-select').options.length > 0"
+    )
+    
+    base_scenario_select = page.locator("#base-scenario-select")
+    adm_select = page.locator("#adm-type-select")
+    llm_select = page.locator("#llm-select")
+    
+    # Find an ADM type that has multiple LLM options
+    base_scenario_options = base_scenario_select.locator("option").all()
+    available_base_scenarios = [opt.get_attribute("value") for opt in base_scenario_options if opt.get_attribute("value")]
+    
+    target_scenario = None
+    target_adm = None
+    available_llms = []
+    
+    for scenario in available_base_scenarios:
+        base_scenario_select.select_option(scenario)
+        page.wait_for_timeout(500)
+        
+        adm_options = adm_select.locator("option").all()
+        available_adms = [opt.get_attribute("value") for opt in adm_options if opt.get_attribute("value")]
+        
+        for adm_type in available_adms:
+            adm_select.select_option(adm_type)
+            page.wait_for_timeout(500)
+            
+            try:
+                page.wait_for_function(
+                    "!document.querySelector('#llm-select').disabled && document.querySelector('#llm-select').options.length > 0",
+                    timeout=2000
+                )
+                
+                llm_options = llm_select.locator("option").all()
+                llms = [opt.get_attribute("value") for opt in llm_options if opt.get_attribute("value")]
+                
+                if len(llms) >= 2:  # Found an ADM with multiple LLM options
+                    target_scenario = scenario
+                    target_adm = adm_type
+                    available_llms = llms
+                    break
+            except:
+                continue
+        
+        if target_scenario and target_adm:
+            break
+    
+    if not target_scenario or not target_adm:
+        pytest.skip("No ADM type found with multiple LLM options to test preservation logic")
+    
+    print(f"Testing LLM preservation with ADM '{target_adm}' in scenario '{target_scenario}'")
+    print(f"Available LLMs: {available_llms}")
+    
+    # Set up the test scenario
+    base_scenario_select.select_option(target_scenario)
+    page.wait_for_timeout(500)
+    
+    adm_select.select_option(target_adm)
+    page.wait_for_timeout(500)
+    
+    # Wait for LLM select to be enabled
+    page.wait_for_function(
+        "!document.querySelector('#llm-select').disabled && document.querySelector('#llm-select').options.length > 0"
+    )
+    
+    # Select a specific LLM (not the first one if possible)
+    target_llm = available_llms[-1] if len(available_llms) > 1 else available_llms[0]
+    llm_select.select_option(target_llm)
+    page.wait_for_timeout(500)
+    
+    # Verify initial selection
+    assert adm_select.input_value() == target_adm, f"ADM should be set to {target_adm}"
+    assert llm_select.input_value() == target_llm, f"LLM should be set to {target_llm}"
+    
+    # Test 1: Change to a different ADM type (if available) and back to test preservation
+    other_adm = None
+    adm_options = adm_select.locator("option").all()
+    available_adms = [opt.get_attribute("value") for opt in adm_options if opt.get_attribute("value")]
+    
+    for adm_type in available_adms:
+        if adm_type != target_adm:
+            other_adm = adm_type
+            break
+    
+    if other_adm:
+        print(f"Testing preservation by switching to '{other_adm}' and back to '{target_adm}'")
+        
+        # Change to different ADM
+        adm_select.select_option(other_adm)
+        page.wait_for_timeout(500)
+        
+        # Change back to original ADM
+        adm_select.select_option(target_adm)
+        page.wait_for_timeout(500)
+        
+        # Wait for LLM select to be enabled again
+        page.wait_for_function(
+            "!document.querySelector('#llm-select').disabled && document.querySelector('#llm-select').options.length > 0"
+        )
+        
+        # Check if LLM selection was preserved
+        preserved_llm = llm_select.input_value()
+        
+        # Get current available LLMs
+        current_llm_options = llm_select.locator("option").all()
+        current_llms = [opt.get_attribute("value") for opt in current_llm_options if opt.get_attribute("value")]
+        
+        if target_llm in current_llms:
+            assert preserved_llm == target_llm, \
+                f"LLM '{target_llm}' should be preserved when returning to ADM '{target_adm}', but got '{preserved_llm}'"
+            print(f"✓ LLM '{target_llm}' successfully preserved when returning to ADM '{target_adm}'")
+        else:
+            # LLM became invalid, should default to first available
+            expected_llm = current_llms[0] if current_llms else ""
+            assert preserved_llm == expected_llm, \
+                f"LLM should default to '{expected_llm}' when '{target_llm}' became invalid, but got '{preserved_llm}'"
+            print(f"✓ LLM correctly defaulted to '{expected_llm}' when '{target_llm}' became invalid")
+    else:
+        # Test 2: If only one ADM type, test LLM selection persistence by re-selecting same ADM
+        print(f"Only one ADM type available, testing LLM selection persistence")
+        
+        adm_select.select_option(target_adm)
+        page.wait_for_timeout(500)
+        
+        page.wait_for_function(
+            "!document.querySelector('#llm-select').disabled && document.querySelector('#llm-select').options.length > 0"
+        )
+        
+        preserved_llm = llm_select.input_value()
+        assert preserved_llm == target_llm, \
+            f"LLM '{target_llm}' should be preserved when re-selecting same ADM '{target_adm}', but got '{preserved_llm}'"
+        print(f"✓ LLM '{target_llm}' successfully preserved when re-selecting same ADM '{target_adm}'")
+
+
+def test_llm_preservation_on_scenario_change(page, test_server):
+    """Test that LLM selection is preserved when changing scenarios if still valid for the selected ADM."""
+    page.goto(test_server)
+    
+    # Wait for page to load
+    page.wait_for_function(
+        "document.querySelector('#adm-type-select').options.length > 0"
+    )
+    
+    base_scenario_select = page.locator("#base-scenario-select")
+    adm_select = page.locator("#adm-type-select")
+    llm_select = page.locator("#llm-select")
+    
+    # Get all available scenario sets
+    base_scenario_options = base_scenario_select.locator("option").all()
+    available_base_scenarios = [opt.get_attribute("value") for opt in base_scenario_options if opt.get_attribute("value")]
+    
+    assert len(available_base_scenarios) >= 2, "Need at least 2 scenario sets for this test"
+    
+    # Find an ADM and LLM combination that works across multiple scenarios
+    target_adm = None
+    target_llm = None
+    compatible_scenarios = []
+    
+    for scenario_set in available_base_scenarios[:3]:  # Test first 3 scenarios
+        base_scenario_select.select_option(scenario_set)
+        page.wait_for_timeout(500)
+        
+        adm_options = adm_select.locator("option").all()
+        scenario_adms = [opt.get_attribute("value") for opt in adm_options if opt.get_attribute("value")]
+        
+        for adm_type in scenario_adms:
+            adm_select.select_option(adm_type)
+            page.wait_for_timeout(750)  # Wait longer for LLM to update
+            
+            # Check if LLM select becomes enabled and populated (some ADMs might not have LLMs)
+            try:
+                page.wait_for_function(
+                    "!document.querySelector('#llm-select').disabled && document.querySelector('#llm-select').options.length > 0",
+                    timeout=3000
+                )
+            except:
+                # This ADM doesn't support LLMs, skip it
+                continue
+            
+            llm_options = llm_select.locator("option").all()
+            scenario_llms = [opt.get_attribute("value") for opt in llm_options if opt.get_attribute("value")]
+            
+            if len(scenario_llms) > 0:
+                # Check if this ADM/LLM combo works in other scenarios
+                test_llm = scenario_llms[0]
+                combo_count = 0
+                temp_compatible = []
+                
+                for other_scenario in available_base_scenarios:
+                    base_scenario_select.select_option(other_scenario)
+                    page.wait_for_timeout(500)
+                    
+                    other_adm_options = adm_select.locator("option").all()
+                    other_adms = [opt.get_attribute("value") for opt in other_adm_options if opt.get_attribute("value")]
+                    
+                    if adm_type in other_adms:
+                        adm_select.select_option(adm_type)
+                        page.wait_for_timeout(1000)
+                        
+                        # Wait for LLM select to be enabled
+                        try:
+                            page.wait_for_function(
+                                "!document.querySelector('#llm-select').disabled && document.querySelector('#llm-select').options.length > 0",
+                                timeout=3000
+                            )
+                            
+                            other_llm_options = llm_select.locator("option").all()
+                            other_llms = [opt.get_attribute("value") for opt in other_llm_options if opt.get_attribute("value")]
+                            
+                            if test_llm in other_llms:
+                                combo_count += 1
+                                temp_compatible.append(other_scenario)
+                        except:
+                            # LLM select didn't become enabled, skip this scenario
+                            continue
+                
+                if combo_count >= 2:
+                    target_adm = adm_type
+                    target_llm = test_llm
+                    compatible_scenarios = temp_compatible
+                    break
+        
+        if target_adm and target_llm:
+            break
+    
+    if not target_adm or not target_llm:
+        pytest.skip("No ADM/LLM combination found that works across multiple scenarios in test data")
+    
+    print(f"Testing ADM '{target_adm}' + LLM '{target_llm}' which works with scenarios: {compatible_scenarios}")
+    
+    # Start with first compatible scenario and select the target ADM/LLM
+    start_scenario = compatible_scenarios[0]
+    base_scenario_select.select_option(start_scenario)
+    page.wait_for_timeout(500)
+    
+    adm_select.select_option(target_adm)
+    page.wait_for_timeout(1000)
+    
+    # Wait for LLM select to be enabled before trying to select
+    page.wait_for_function(
+        "!document.querySelector('#llm-select').disabled"
+    )
+    
+    llm_select.select_option(target_llm)
+    page.wait_for_timeout(500)
+    
+    # Verify selections took
+    assert adm_select.input_value() == target_adm, f"ADM should be set to {target_adm}"
+    assert llm_select.input_value() == target_llm, f"LLM should be set to {target_llm}"
+    
+    # Change to a different scenario that also supports this ADM/LLM combination
+    target_scenario = compatible_scenarios[1]
+    base_scenario_select.select_option(target_scenario)
+    page.wait_for_timeout(1500)  # Wait for all updates to complete
+    
+    # Check if both ADM and LLM selections were preserved
+    preserved_adm = adm_select.input_value()
+    preserved_llm = llm_select.input_value()
+    
+    assert preserved_adm == target_adm, \
+        f"ADM '{target_adm}' should be preserved when changing scenarios, but got '{preserved_adm}'"
+    
+    assert preserved_llm == target_llm, \
+        f"LLM '{target_llm}' should be preserved when changing scenarios, but got '{preserved_llm}'"
+    
+    print(f"✓ Both ADM '{target_adm}' and LLM '{target_llm}' successfully preserved when changing from '{start_scenario}' to '{target_scenario}'")
 
 
 def test_e2e_real_data_validation(page, browser_context):

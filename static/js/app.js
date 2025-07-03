@@ -26,6 +26,9 @@ document.addEventListener("DOMContentLoaded", () => {
     selectedLLM: null,
     activeKDMAs: {},
     
+    // LLM preferences per ADM type for preservation
+    llmPreferences: {},
+    
     // UI state
     isUpdatingProgrammatically: false,
     isTransitioning: false
@@ -157,6 +160,10 @@ document.addEventListener("DOMContentLoaded", () => {
     llmSelect.addEventListener("change", () => {
       if (appState.isUpdatingProgrammatically) return;
       appState.selectedLLM = llmSelect.value;
+      // Store user's LLM preference for current ADM type
+      if (appState.selectedAdmType) {
+        appState.llmPreferences[appState.selectedAdmType] = llmSelect.value;
+      }
       updateKDMASliders();
       if (!appState.isTransitioning) {
         loadResults();
@@ -294,12 +301,23 @@ document.addEventListener("DOMContentLoaded", () => {
       llmSelect.appendChild(option);
     });
 
-    // Preserve current LLM selection if still valid, otherwise use first valid
+    // Preserve LLM selection using stored preferences per ADM type
     if (validLLMsForAdm.length > 0) {
       appState.isUpdatingProgrammatically = true;
       
+      // Check if we have a stored preference for this ADM type
+      const preferredLLM = appState.llmPreferences[appState.selectedAdmType];
       const currentLLM = appState.selectedLLM;
-      const llmToSelect = (currentLLM && validLLMsForAdm.includes(currentLLM)) ? currentLLM : validLLMsForAdm[0];
+      
+      // Priority: 1) Stored preference if valid, 2) Current LLM if valid, 3) First available
+      let llmToSelect;
+      if (preferredLLM && validLLMsForAdm.includes(preferredLLM)) {
+        llmToSelect = preferredLLM;
+      } else if (currentLLM && validLLMsForAdm.includes(currentLLM)) {
+        llmToSelect = currentLLM;
+      } else {
+        llmToSelect = validLLMsForAdm[0];
+      }
       
       llmSelect.value = llmToSelect;
       appState.selectedLLM = llmToSelect;
