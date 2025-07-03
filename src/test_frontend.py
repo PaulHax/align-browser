@@ -2009,32 +2009,42 @@ def test_comparison_controls_appear(page, test_server):
 
 
 def test_pin_button_enables_after_data_load(page, test_server):
-    """Test that pin button becomes enabled after loading valid data."""
+    """Test that pin button state correctly reflects data availability."""
     page.goto(test_server)
     page.wait_for_function("document.querySelector('#adm-type-select').options.length > 0")
     
     pin_button = page.locator("#pin-current-run")
     
-    # Initially disabled
-    expect(pin_button).to_be_disabled()
+    # Wait for auto-load to complete
+    page.wait_for_timeout(1000)
     
-    # Make selections to load data
-    adm_select = page.locator("#adm-type-select")
-    adm_select.select_option("pipeline_baseline")
-    page.wait_for_timeout(1500)
-    
-    # Check if pin button becomes enabled (depends on test data availability)
+    # Check if data was auto-loaded
     run_display = page.locator("#run-display")
     run_text = run_display.text_content()
     
-    # If we have valid data loaded, pin button should be enabled
+    # Pin button state should reflect data availability
     if "test_scenario" in run_text and "No data found" not in run_text:
+        # Valid data loaded - pin button should be enabled
         expect(pin_button).not_to_be_disabled()
-        print("✓ Pin button enabled after loading valid data")
+        print("✓ Pin button enabled with auto-loaded valid data")
     else:
-        # If no valid data, pin button should remain disabled
+        # No valid data - pin button should be disabled
         expect(pin_button).to_be_disabled()
-        print("✓ Pin button remains disabled when no valid data")
+        print("✓ Pin button disabled when no valid data available")
+        
+        # Try manual data load
+        adm_select = page.locator("#adm-type-select")
+        adm_select.select_option("pipeline_baseline")
+        page.wait_for_timeout(1500)
+        
+        # Recheck after manual load
+        run_text = run_display.text_content()
+        if "test_scenario" in run_text and "No data found" not in run_text:
+            expect(pin_button).not_to_be_disabled()
+            print("✓ Pin button enabled after manual data load")
+        else:
+            expect(pin_button).to_be_disabled()
+            print("✓ Pin button remains disabled - no valid data available")
 
 
 def test_pin_functionality_basic(page, test_server):
@@ -2063,14 +2073,23 @@ def test_pin_functionality_basic(page, test_server):
         # Clear button should be enabled
         expect(clear_button).not_to_be_disabled()
         
+        # Check that pinned run appears in side-by-side layout
+        pinned_runs = page.locator(".run-wrapper:not(#current-run-wrapper)")
+        expect(pinned_runs).to_have_count(1)
+        
+        # Check that pinned run has remove button
+        remove_button = page.locator(".remove-run-btn")
+        expect(remove_button).to_be_visible()
+        
         # Pin same configuration again - should show notification (no increase in count)
         pin_button.click()
         page.wait_for_timeout(500)
         
         # Count should still be 1 (duplicate detection)
         expect(pinned_count).to_contain_text("1")
+        expect(pinned_runs).to_have_count(1)  # Should still be 1 run
         
-        print("✓ Pin functionality working correctly")
+        print("✓ Pin functionality and side-by-side display working correctly")
     else:
         print("✓ No valid data to test pin functionality (expected in some test scenarios)")
 
@@ -2161,8 +2180,8 @@ def test_pin_button_state_changes_with_data(page, test_server):
     base_scenario_select = page.locator("#base-scenario-select")
     adm_select = page.locator("#adm-type-select")
     
-    # Initially disabled
-    expect(pin_button).to_be_disabled()
+    # Wait for auto-load to complete
+    page.wait_for_timeout(1000)
     
     # Try to find a scenario that loads data
     base_scenario_options = base_scenario_select.locator("option").all()

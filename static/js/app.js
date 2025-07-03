@@ -1235,6 +1235,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     appState.pinnedRuns.set(runConfig.id, pinnedData);
     updatePinnedCount();
+    updateComparisonDisplay();
     showNotification(`Configuration pinned: ${runConfig.displayName}`, 'success');
   }
 
@@ -1271,7 +1272,186 @@ document.addEventListener("DOMContentLoaded", () => {
   function clearAllPins() {
     appState.pinnedRuns.clear();
     updatePinnedCount();
+    updateComparisonDisplay();
     showNotification('All pinned configurations cleared', 'info');
+  }
+
+  // Update the comparison display with current + pinned runs
+  function updateComparisonDisplay() {
+    const container = document.getElementById('runs-container');
+    if (!container) return;
+    
+    // Clear existing pinned runs (keep current run)
+    const currentRunWrapper = document.getElementById('current-run-wrapper');
+    container.innerHTML = '';
+    container.appendChild(currentRunWrapper);
+    
+    // Add pinned runs
+    appState.pinnedRuns.forEach((runData, runId) => {
+      const pinnedRunElement = createPinnedRunElement(runId, runData);
+      container.appendChild(pinnedRunElement);
+    });
+  }
+
+  // Create a pinned run element
+  function createPinnedRunElement(runId, runData) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'run-wrapper';
+    wrapper.id = `pinned-run-${runId}`;
+    
+    // Create header
+    const header = document.createElement('div');
+    header.className = 'run-content-header';
+    
+    const titleArea = document.createElement('div');
+    titleArea.style.display = 'flex';
+    titleArea.style.alignItems = 'center';
+    
+    const title = document.createElement('span');
+    title.className = 'run-title';
+    title.textContent = runData.displayName;
+    
+    const badge = document.createElement('span');
+    badge.className = 'pinned-badge';
+    badge.textContent = 'Pinned';
+    badge.style.marginLeft = '8px';
+    
+    titleArea.appendChild(title);
+    titleArea.appendChild(badge);
+    
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-run-btn';
+    removeBtn.innerHTML = '×';
+    removeBtn.title = 'Remove this pinned run';
+    removeBtn.addEventListener('click', () => removePinnedRun(runId));
+    
+    header.appendChild(titleArea);
+    header.appendChild(removeBtn);
+    
+    // Create content area
+    const content = document.createElement('div');
+    content.className = 'run-content';
+    
+    // Render the pinned run data
+    renderPinnedRunData(content, runData);
+    
+    wrapper.appendChild(header);
+    wrapper.appendChild(content);
+    
+    return wrapper;
+  }
+
+  // Render pinned run data using existing display logic
+  function renderPinnedRunData(container, runData) {
+    if (!runData.inputOutput) {
+      container.innerHTML = '<p>No data available for this pinned run.</p>';
+      return;
+    }
+    
+    // Reuse the existing formatting logic from loadResultsInternal
+    const inputOutputItem = runData.inputOutput;
+    const scoreItem = runData.scores;
+    
+    // Format results using the same logic as the current run
+    const formatResults = () => {
+      let html = '';
+      
+      if (inputOutputItem && inputOutputItem.input) {
+        const input = inputOutputItem.input;
+        
+        // Simple scenario header
+        html += `<h3>${runData.scenario}</h3>`;
+        
+        // Scenario description
+        if (input.state) {
+          html += `<p style="margin-bottom: 20px; font-size: 16px; line-height: 1.6;">${input.state}</p>`;
+        }
+        
+        // Simplified choices with horizontal layout
+        if (input.choices && Array.isArray(input.choices)) {
+          html += '<h4>Choices</h4>';
+          html += '<div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px;">';
+          input.choices.forEach((choice, idx) => {
+            html += `<div style="flex: 1; min-width: 200px; padding: 12px; background-color: #f8f9fa; border-radius: 6px;">`;
+            html += `<div style="font-weight: 500; margin-bottom: 8px;">${choice.unstructured || choice.description || 'No description'}</div>`;
+            
+            // Short KDMA bars
+            if (choice.kdma_association) {
+              Object.entries(choice.kdma_association).forEach(([kdma, value]) => {
+                const percentage = Math.round(value * 100);
+                const color = value >= 0.7 ? '#28a745' : value >= 0.4 ? '#ffc107' : '#dc3545';
+                
+                html += '<div style="display: flex; align-items: center; gap: 8px; margin: 3px 0;">';
+                html += `<span style="min-width: 60px; font-size: 0.9em; color: #666;">${kdma}</span>`;
+                html += `<div style="width: 60px; height: 4px; background-color: #e9ecef; border-radius: 2px;">`;
+                html += `<div style="width: ${percentage}%; height: 100%; background-color: ${color}; border-radius: 2px;"></div>`;
+                html += '</div>';
+                html += `<span style="font-size: 0.85em; color: ${color}; font-weight: 500;">${value}</span>`;
+                html += '</div>';
+              });
+            }
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+      }
+      
+      // Simplified ADM Decision
+      if (inputOutputItem && inputOutputItem.output) {
+        const output = inputOutputItem.output;
+        
+        html += '<h4>ADM Decision</h4>';
+        
+        // Show the action text
+        if (output.action && output.action.unstructured) {
+          html += `<p style="font-weight: 600; color: #2e7d32; margin-bottom: 10px;">${output.action.unstructured}</p>`;
+        } else if (output.action && output.action.action_id) {
+          html += `<p style="font-weight: 600; color: #2e7d32; margin-bottom: 10px;">${output.action.action_id}</p>`;
+        }
+        
+        // Show the justification
+        if (output.action && output.action.justification) {
+          html += `<p style="line-height: 1.6; color: #555;"><strong>Justification:</strong> ${output.action.justification}</p>`;
+        } else if (output.justification) {
+          html += `<p style="line-height: 1.6; color: #555;"><strong>Justification:</strong> ${output.justification}</p>`;
+        }
+      } else {
+        html += '<h4>ADM Decision</h4>';
+        html += '<p style="color: #666;">No decision data available</p>';
+      }
+      
+      return html;
+    };
+    
+    container.innerHTML = formatResults();
+    
+    // Add scores section if available
+    if (scoreItem) {
+      const scoresDiv = document.createElement('div');
+      scoresDiv.style.marginTop = '20px';
+      scoresDiv.style.paddingTop = '15px';
+      scoresDiv.style.borderTop = '1px solid #e9ecef';
+      
+      let scoresHtml = '<h4>Results Summary</h4>';
+      if (scoreItem.score !== undefined) {
+        scoresHtml += `<div style="margin: 8px 0;"><strong>Score:</strong> ${scoreItem.score.toFixed(3)}</div>`;
+      }
+      
+      if (runData.timing && runData.timing.avg_time_s !== undefined) {
+        scoresHtml += `<div style="margin: 8px 0;"><strong>Average Decision Time:</strong> ${runData.timing.avg_time_s.toFixed(4)}s</div>`;
+      }
+      
+      scoresDiv.innerHTML = scoresHtml;
+      container.appendChild(scoresDiv);
+    }
+  }
+
+  // Remove a pinned run
+  function removePinnedRun(runId) {
+    appState.pinnedRuns.delete(runId);
+    updatePinnedCount();
+    updateComparisonDisplay();
+    showNotification('Pinned run removed', 'info');
   }
 
   function generateRunId() {
