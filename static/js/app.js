@@ -898,19 +898,154 @@ document.addEventListener("DOMContentLoaded", () => {
     ) {
       const dataPaths = experiments[selectedKey].scenarios[selectedScenario];
       try {
-        const inputOutput = await (await fetch(dataPaths.input_output)).json();
-        const scores = await (await fetch(dataPaths.scores)).json();
-        const timing = await (await fetch(dataPaths.timing)).json();
+        const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
+        const scoresArray = await (await fetch(dataPaths.scores)).json();
+        const timingData = await (await fetch(dataPaths.timing)).json();
 
-        resultsDisplay.innerHTML = `
-                    <h3>Results for ${selectedKey} - Scenario: ${selectedScenario}</h3>
-                    <h4>Input/Output:</h4>
-                    <pre>${JSON.stringify(inputOutput, null, 2)}</pre>
-                    <h4>Scores:</h4>
-                    <pre>${JSON.stringify(scores, null, 2)}</pre>
-                    <h4>Timing:</h4>
-                    <pre>${JSON.stringify(timing, null, 2)}</pre>
-                `;
+        // Extract the index from the scenario ID (e.g., "test_scenario_1-0" → 0)
+        const scenarioIndex = parseInt(selectedScenario.split('-').pop());
+        
+        // Get the specific element from each array using the index
+        const inputOutputItem = inputOutputArray[scenarioIndex];
+        const scoreItem = Array.isArray(scoresArray) ? scoresArray[scenarioIndex] : scoresArray;
+
+        // Helper function to format complex data structures cleanly
+        const formatValue = (value, depth = 0) => {
+          const indent = '  '.repeat(depth);
+          
+          if (value === null || value === undefined) {
+            return '<span style="color: #999; font-style: italic;">null</span>';
+          }
+          
+          if (typeof value === 'boolean') {
+            return `<span style="color: #0066cc; font-weight: bold;">${value}</span>`;
+          }
+          
+          if (typeof value === 'number') {
+            return `<span style="color: #cc6600; font-weight: bold;">${value}</span>`;
+          }
+          
+          if (typeof value === 'string') {
+            if (value.length > 100) {
+              return `<div style="background-color: #f8f9fa; padding: 8px; border-radius: 4px; border-left: 3px solid #dee2e6; margin: 4px 0; white-space: pre-wrap;">${value}</div>`;
+            }
+            return `<span style="color: #333;">${value}</span>`;
+          }
+          
+          if (Array.isArray(value)) {
+            if (value.length === 0) {
+              return '<span style="color: #999; font-style: italic;">empty list</span>';
+            }
+            
+            let html = '<div style="margin: 4px 0;">';
+            value.forEach((item, index) => {
+              html += `<div style="margin: 2px 0; padding-left: ${depth * 20 + 10}px;">`;
+              html += `<span style="color: #666; font-size: 0.9em;">${index + 1}.</span> `;
+              html += formatValue(item, depth + 1);
+              html += '</div>';
+            });
+            html += '</div>';
+            return html;
+          }
+          
+          if (typeof value === 'object') {
+            const keys = Object.keys(value);
+            if (keys.length === 0) {
+              return '<span style="color: #999; font-style: italic;">empty object</span>';
+            }
+            
+            let html = '<div style="margin: 4px 0;">';
+            keys.forEach(key => {
+              html += `<div style="margin: 4px 0; padding-left: ${depth * 20 + 10}px;">`;
+              html += `<span style="color: #0066cc; font-weight: 600;">${key}:</span> `;
+              html += formatValue(value[key], depth + 1);
+              html += '</div>';
+            });
+            html += '</div>';
+            return html;
+          }
+          
+          return String(value);
+        };
+
+        // Format and display the specific element
+        const formatResults = () => {
+          let html = '';
+          
+          if (inputOutputItem && inputOutputItem.input) {
+            const input = inputOutputItem.input;
+            
+            // Simple scenario header
+            html += `<h3>${selectedScenario}</h3>`;
+            
+            // Scenario description
+            if (input.state) {
+              html += `<p style="margin-bottom: 20px; font-size: 16px; line-height: 1.6;">${input.state}</p>`;
+            }
+            
+            
+            // Simplified choices with horizontal layout
+            if (input.choices && Array.isArray(input.choices)) {
+              html += '<h4>Choices</h4>';
+              html += '<div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px;">';
+              input.choices.forEach((choice, idx) => {
+                html += `<div style="flex: 1; min-width: 200px; padding: 12px; background-color: #f8f9fa; border-radius: 6px;">`;
+                html += `<div style="font-weight: 500; margin-bottom: 8px;">${choice.unstructured || choice.description || 'No description'}</div>`;
+                
+                // Short KDMA bars
+                if (choice.kdma_association) {
+                  Object.entries(choice.kdma_association).forEach(([kdma, value]) => {
+                    const percentage = Math.round(value * 100);
+                    const color = value >= 0.7 ? '#28a745' : value >= 0.4 ? '#ffc107' : '#dc3545';
+                    
+                    html += '<div style="display: flex; align-items: center; gap: 8px; margin: 3px 0;">';
+                    html += `<span style="min-width: 60px; font-size: 0.9em; color: #666;">${kdma}</span>`;
+                    html += `<div style="width: 60px; height: 4px; background-color: #e9ecef; border-radius: 2px;">`;
+                    html += `<div style="width: ${percentage}%; height: 100%; background-color: ${color}; border-radius: 2px;"></div>`;
+                    html += '</div>';
+                    html += `<span style="font-size: 0.85em; color: ${color}; font-weight: 500;">${value}</span>`;
+                    html += '</div>';
+                  });
+                }
+                html += '</div>';
+              });
+              html += '</div>';
+            }
+          }
+          
+          // Simplified ADM Decision
+          if (inputOutputItem && inputOutputItem.output) {
+            const output = inputOutputItem.output;
+            
+            html += '<h4>ADM Decision</h4>';
+            
+            // Show the action text
+            if (output.action && output.action.unstructured) {
+              html += `<p style="font-weight: 600; color: #2e7d32; margin-bottom: 10px;">${output.action.unstructured}</p>`;
+            } else if (output.action && output.action.action_id) {
+              html += `<p style="font-weight: 600; color: #2e7d32; margin-bottom: 10px;">${output.action.action_id}</p>`;
+            }
+            
+            // Show the justification
+            if (output.action && output.action.justification) {
+              html += `<p style="line-height: 1.6; color: #555;"><strong>Justification:</strong> ${output.action.justification}</p>`;
+            } else if (output.justification) {
+              html += `<p style="line-height: 1.6; color: #555;"><strong>Justification:</strong> ${output.justification}</p>`;
+            }
+          } else {
+            html += '<h4>ADM Decision</h4>';
+            html += '<p style="color: #666;">No decision data available</p>';
+          }
+          
+          
+          
+          return html;
+        };
+        
+        resultsDisplay.innerHTML = formatResults();
+        
+        // Update scores and timing in parameters section
+        updateScoresTimingSection(scoreItem, timingData);
       } catch (error) {
         console.error("Error fetching experiment data:", error);
         resultsDisplay.innerHTML =
@@ -931,6 +1066,34 @@ document.addEventListener("DOMContentLoaded", () => {
         <p>Please ensure KDMA values match the available experiment data.</p>
       `;
     }
+  }
+
+  // Function to update scores and timing in parameters section
+  function updateScoresTimingSection(scoreItem, timingData) {
+    const scoresTimingSection = document.getElementById('scores-timing-section');
+    if (!scoresTimingSection) return;
+    
+    let html = '';
+    
+    // Only show if we have data
+    if (scoreItem || timingData) {
+      html += '<div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #e9ecef;">';
+      html += '<h3 style="margin-bottom: 15px; color: #495057;">Results Summary</h3>';
+      
+      // Add Average Decision Time
+      if (timingData && timingData.avg_time_s !== undefined) {
+        html += `<div style="margin: 8px 0;">Average Decision Time: ${timingData.avg_time_s.toFixed(4)}s</div>`;
+      }
+      
+      // Add Overall Score
+      if (scoreItem && scoreItem.score !== undefined) {
+        html += `<div style="margin: 8px 0;">Score: ${scoreItem.score.toFixed(3)}</div>`;
+      }
+      
+      html += '</div>';
+    }
+    
+    scoresTimingSection.innerHTML = html;
   }
 
   // Function to load and display results

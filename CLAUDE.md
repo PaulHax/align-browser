@@ -2,6 +2,8 @@
 
 - Add and run auto-fix command before commits to ensure code quality and consistency
 - Use the uv created .venv when trying to run python code or python tests
+- Run the uv run python src/build.py ../experiments call after you stop so you can test things manually
+- Run the build script after pausing
 
 ## Testing
 
@@ -16,3 +18,7 @@
 ## Build Script Usage
 
 - You can test the build.py script on a real experiment folder one level up in the folder tree. Example: `uv run python src/build.py ../experiments`
+
+## Data Modeling
+
+- We have Pydantic models that represent the input and output JSON

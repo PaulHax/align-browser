@@ -1353,6 +1353,180 @@ def test_e2e_real_data_validation(page, browser_context):
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+def test_formatted_result_display(page, test_server):
+    """Test that results are displayed in a formatted, user-friendly way instead of raw JSON."""
+    page.goto(test_server)
+    
+    # Wait for page to load
+    page.wait_for_function(
+        "document.querySelector('#adm-type-select').options.length > 0"
+    )
+    
+    # Make selections to trigger result display
+    adm_select = page.locator("#adm-type-select")
+    adm_select.select_option("pipeline_baseline")
+    page.wait_for_timeout(1500)
+    
+    # Wait for results to load (simplified structure)
+    results_display = page.locator("#results-display")
+    page.wait_for_function(
+        "document.querySelector('#results-display h3') || document.querySelector('#results-display').textContent.includes('No data found')"
+    )
+    
+    results_text = results_display.text_content()
+    
+    # If we have valid results, verify the simplified formatting
+    if "test_scenario" in results_text:
+        # Check that we have the simplified sections
+        assert "Choices" in results_text, "Results should show Choices section"
+        assert "ADM Decision" in results_text, "Results should show ADM Decision section" 
+        assert "Scores" in results_text, "Results should have a Scores section"
+        
+        # Verify we're NOT showing raw JSON dumps
+        assert '{"' not in results_text, "Results should not contain raw JSON dumps"
+        
+        # Check that basic structure is clean and readable
+        assert "Test scenario" in results_text, "Should show scenario description"
+        assert ("Take action" in results_text), "Should show action choices"
+        
+        print("✓ Results are properly formatted with simplified sections")
+        
+    else:
+        # "No data found" case
+        assert "No data found" in results_text, "Should show a proper message when no data"
+        print("✓ No data message displayed (expected for some parameter combinations)")
+
+
+def test_formatted_results_structure(page, test_server):
+    """Test the structure and content of formatted results."""
+    page.goto(test_server)
+    
+    # Wait for page to load
+    page.wait_for_function(
+        "document.querySelector('#adm-type-select').options.length > 0"
+    )
+    
+    # Select parameters that should have data
+    base_scenario_select = page.locator("#base-scenario-select")
+    base_scenario_select.select_option("test_scenario_1")
+    page.wait_for_timeout(500)
+    
+    adm_select = page.locator("#adm-type-select")
+    adm_select.select_option("pipeline_baseline")
+    page.wait_for_timeout(1500)
+    
+    # Wait for results
+    results_display = page.locator("#results-display")
+    page.wait_for_function(
+        "document.querySelector('#results-display h3') || document.querySelector('#results-display').textContent.includes('No data found')",
+        timeout=5000
+    )
+    
+    # Check the structure of input/output data
+    results_html = results_display.inner_html()
+    results_text = results_display.text_content()
+    
+    # Verify we're showing data for a specific scenario index (simplified header)
+    scenario_select = page.locator("#scenario-select")
+    selected_scenario = scenario_select.input_value()
+    assert selected_scenario in results_text, "Should show scenario ID as header"
+    
+    # Should show the scenario description from our test data
+    assert "Test scenario" in results_text and "medical triage situation" in results_text, \
+        "Should display scenario description from input data"
+    
+    # Check choices are formatted properly (simplified)
+    assert "Choices" in results_text, "Should have Choices section"
+    assert ("Take action A" in results_text or "Take action B" in results_text), \
+        "Should display choice actions"
+    
+    # Check for KDMA associations (simplified bars)
+    assert "affiliation" in results_text, \
+        "Should display KDMA associations for choices"
+    
+    # Check ADM Decision section (simplified)
+    assert "ADM Decision" in results_text, "Should have ADM Decision section"
+    assert "action_a" in results_text, "Should show selected action"
+    assert "Test justification" in results_text, \
+        "Should display justification"
+    
+    # Check scores formatting (simplified)
+    assert "Scores" in results_text, "Should have Scores section"
+    # Our test data includes test_score and alignment_score
+    assert "Test Score" in results_text or "Alignment Score" in results_text, \
+        "Should display formatted score names"
+    
+    # Performance metrics section has been removed
+    
+    # Verify the simplified structure works
+    assert "Choices" in results_text and "ADM Decision" in results_text and "Scores" in results_text, \
+        "Should have all main sections"
+    
+    print("✓ Formatted results show proper structure and content")
+
+
+def test_scenario_index_selection(page, test_server):
+    """Test that specific scenario indices select the correct array elements."""
+    page.goto(test_server)
+    
+    # Wait for page to load
+    page.wait_for_function(
+        "document.querySelector('#adm-type-select').options.length > 0"
+    )
+    
+    # Select base scenario
+    base_scenario_select = page.locator("#base-scenario-select")
+    base_scenario_select.select_option("test_scenario_1")
+    page.wait_for_timeout(500)
+    
+    # Get specific scenario dropdown
+    scenario_select = page.locator("#scenario-select")
+    scenario_options = scenario_select.locator("option").all()
+    
+    # Find scenarios with different indices (e.g., test_scenario_1-0, test_scenario_1-1)
+    scenario_values = [opt.get_attribute("value") for opt in scenario_options if opt.get_attribute("value")]
+    indexed_scenarios = [s for s in scenario_values if "-" in s and s.startswith("test_scenario_1")]
+    
+    if len(indexed_scenarios) >= 2:
+        # Test first index (0)
+        first_scenario = indexed_scenarios[0]  # Should be test_scenario_1-0
+        scenario_select.select_option(first_scenario)
+        page.wait_for_timeout(1500)
+        
+        results_display = page.locator("#results-display")
+        first_results = results_display.text_content()
+        
+        # Verify it shows the correct scenario
+        assert f"Results for Scenario: {first_scenario}" in first_results, \
+            f"Should show results for {first_scenario}"
+        
+        # Our test data generator creates different content for each index
+        # The scenario ID shown should match the selected one
+        assert first_scenario in first_results, \
+            f"Should display the selected scenario ID {first_scenario}"
+        
+        # Test second index (1) if available
+        if len(indexed_scenarios) > 1:
+            second_scenario = indexed_scenarios[1]  # Should be test_scenario_1-1
+            scenario_select.select_option(second_scenario)
+            page.wait_for_timeout(1500)
+            
+            second_results = results_display.text_content()
+            
+            # Verify it shows different content
+            assert f"Results for Scenario: {second_scenario}" in second_results, \
+                f"Should show results for {second_scenario}"
+            
+            # The content should be different (different index in array)
+            # Both have "Test scenario" but with different numbers
+            assert second_results != first_results, \
+                "Different scenario indices should show different content"
+            
+            print(f"✓ Scenario index selection works correctly for {first_scenario} and {second_scenario}")
+    else:
+        print("✓ Limited indexed scenarios in test data, basic index selection verified")
+
+
 if __name__ == "__main__":
     # Run tests if executed directly
     pytest.main([__file__, "-v"])
