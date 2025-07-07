@@ -62,6 +62,77 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  // URL State Management System
+  const urlState = {
+    // Encode current state to URL
+    updateURL() {
+      const state = {
+        baseScenario: appState.selectedBaseScenario,
+        scenario: appState.selectedScenario,
+        admType: appState.selectedAdmType,
+        llm: appState.selectedLLM,
+        kdmas: appState.activeKDMAs,
+        pinnedRuns: Array.from(appState.pinnedRuns.values()).map(run => ({
+          scenario: run.scenario,
+          baseScenario: run.baseScenario,
+          admType: run.admType,
+          llmBackbone: run.llmBackbone,
+          kdmaValues: run.kdmaValues,
+          id: run.id
+        }))
+      };
+      
+      try {
+        const encodedState = btoa(JSON.stringify(state));
+        const newURL = `${window.location.pathname}?state=${encodedState}`;
+        window.history.replaceState(null, '', newURL);
+      } catch (e) {
+        console.warn('Failed to encode URL state:', e);
+      }
+    },
+
+    // Restore state from URL on page load
+    async restoreFromURL() {
+      const params = new URLSearchParams(window.location.search);
+      const stateParam = params.get('state');
+      
+      if (stateParam) {
+        try {
+          const state = JSON.parse(atob(stateParam));
+          
+          // Restore selections
+          if (state.baseScenario) appState.selectedBaseScenario = state.baseScenario;
+          if (state.scenario) appState.selectedScenario = state.scenario;
+          if (state.admType) appState.selectedAdmType = state.admType;
+          if (state.llm) appState.selectedLLM = state.llm;
+          if (state.kdmas) appState.activeKDMAs = { ...state.kdmas };
+          
+          // Update UI controls to reflect restored state
+          updateUIFromState();
+          
+          // Restore pinned runs
+          if (state.pinnedRuns && state.pinnedRuns.length > 0) {
+            for (const runConfig of state.pinnedRuns) {
+              await pinRunFromConfig(runConfig);
+            }
+          }
+          
+          // Load current run if configured
+          if (appState.selectedScenario) {
+            await loadResults();
+          }
+          
+          return true; // Successfully restored
+          
+        } catch (e) {
+          console.warn('Invalid URL state, using defaults:', e);
+          return false;
+        }
+      }
+      return false; // No state to restore
+    }
+  };
+
   // Function to fetch and parse manifest.json
   async function fetchManifest() {
     try {
@@ -70,7 +141,12 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("Manifest loaded:", manifest);
       extractParametersFromManifest();
       populateUIControls();
-      loadResults(); // Load results initially
+      
+      // Try to restore state from URL, otherwise load results normally
+      const restoredFromURL = await urlState.restoreFromURL();
+      if (!restoredFromURL) {
+        loadResults(); // Load results initially only if not restored from URL
+      }
     } catch (error) {
       console.error("Error fetching manifest:", error);
       // Error will be displayed in the table
@@ -178,6 +254,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!appState.isTransitioning) {
         loadResults();
       }
+      urlState.updateURL(); // Update URL with new state
     });
 
     // LLM Backbone Selection
@@ -196,6 +273,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!appState.isTransitioning) {
         loadResults();
       }
+      urlState.updateURL(); // Update URL with new state
     });
 
     // KDMA Dynamic Selection container
@@ -220,6 +298,7 @@ document.addEventListener("DOMContentLoaded", () => {
       appState.isUpdatingProgrammatically = false;
       
       updateFromScenarioChange(); // This will clear isTransitioning when done
+      urlState.updateURL(); // Update URL with new state
     });
 
     // Specific Scenario Selection - Add event listener to existing element
@@ -230,6 +309,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!appState.isTransitioning) {
         updateFromScenarioChange();
       }
+      urlState.updateURL(); // Update URL with new state
     });
 
     // Add event handler for Add KDMA button
@@ -537,6 +617,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!appState.isTransitioning) {
         loadResults();
       }
+      urlState.updateURL(); // Update URL with new state
     });
     
     // Handle slider value change
@@ -564,6 +645,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!appState.isTransitioning) {
         loadResults();
       }
+      urlState.updateURL(); // Update URL with new state
     });
     
     appState.activeKDMAs[kdmaType] = value;
@@ -622,6 +704,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!appState.isTransitioning) {
         loadResults();
       }
+      urlState.updateURL(); // Update URL with new state
     }
   };
 
@@ -1238,6 +1321,9 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.pinnedRuns.set(runConfig.id, pinnedData);
     updatePinnedCount();
     updateComparisonDisplay();
+    
+    // Update URL after pinning
+    urlState.updateURL();
   }
 
   // Helper functions for comparison feature
@@ -1275,6 +1361,127 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.pinnedRuns.clear();
     updatePinnedCount();
     updateComparisonDisplay();
+    
+    // Update URL after clearing pins
+    urlState.updateURL();
+  }
+
+  // Pin run from configuration (for URL restoration)
+  async function pinRunFromConfig(runConfig) {
+    // Set app state to match the configuration
+    appState.selectedBaseScenario = runConfig.baseScenario;
+    appState.selectedScenario = runConfig.scenario;
+    appState.selectedAdmType = runConfig.admType;
+    appState.selectedLLM = runConfig.llmBackbone;
+    appState.activeKDMAs = { ...runConfig.kdmaValues };
+    
+    // Check for duplicates using the restored config
+    const existingRunId = findExistingRun(runConfig);
+    if (existingRunId) {
+      console.log('Configuration already pinned:', runConfig.id);
+      return;
+    }
+    
+    // Load the results for this configuration
+    try {
+      await loadResultsForConfig(runConfig);
+      
+      // Store complete run data
+      const pinnedData = {
+        ...runConfig,
+        inputOutput: appState.currentInputOutput,
+        inputOutputArray: appState.currentInputOutputArray,
+        scores: appState.currentScores,
+        timing: appState.currentTiming,
+        loadStatus: 'loaded'
+      };
+      
+      appState.pinnedRuns.set(runConfig.id, pinnedData);
+      updatePinnedCount();
+      
+    } catch (error) {
+      console.warn('Failed to load data for pinned configuration:', error);
+      // Still add to pinned runs but mark as failed
+      const pinnedData = {
+        ...runConfig,
+        inputOutput: null,
+        scores: null,
+        timing: null,
+        loadStatus: 'error'
+      };
+      appState.pinnedRuns.set(runConfig.id, pinnedData);
+    }
+  }
+
+  // Update UI controls to reflect current app state
+  function updateUIFromState() {
+    // Update base scenario dropdown
+    const baseScenarioSelect = document.getElementById("base-scenario-select");
+    if (baseScenarioSelect && appState.selectedBaseScenario) {
+      baseScenarioSelect.value = appState.selectedBaseScenario;
+    }
+    
+    // Update scenario dropdown
+    const scenarioSelect = document.getElementById("scenario-select");
+    if (scenarioSelect && appState.selectedScenario) {
+      scenarioSelect.value = appState.selectedScenario;
+    }
+    
+    // Update ADM type
+    const admTypeInputs = document.querySelectorAll('input[name="adm-type"]');
+    admTypeInputs.forEach(input => {
+      input.checked = input.value === appState.selectedAdmType;
+    });
+    
+    // Update LLM selection
+    const llmInputs = document.querySelectorAll('input[name="llm"]');
+    llmInputs.forEach(input => {
+      input.checked = input.value === appState.selectedLLM;
+    });
+    
+    // Update KDMA sliders
+    for (const [kdma, value] of Object.entries(appState.activeKDMAs)) {
+      const slider = document.getElementById(`kdma-${kdma}`);
+      if (slider) {
+        slider.value = value;
+        // Update display value
+        const display = document.getElementById(`kdma-${kdma}-value`);
+        if (display) {
+          display.textContent = value;
+        }
+      }
+    }
+  }
+
+  // Load results for a specific configuration
+  async function loadResultsForConfig(config) {
+    // Temporarily set state to this config
+    const originalState = {
+      selectedBaseScenario: appState.selectedBaseScenario,
+      selectedScenario: appState.selectedScenario,
+      selectedAdmType: appState.selectedAdmType,
+      selectedLLM: appState.selectedLLM,
+      activeKDMAs: { ...appState.activeKDMAs }
+    };
+    
+    // Set state to the config
+    appState.selectedBaseScenario = config.baseScenario;
+    appState.selectedScenario = config.scenario;
+    appState.selectedAdmType = config.admType;
+    appState.selectedLLM = config.llmBackbone;
+    appState.activeKDMAs = { ...config.kdmaValues };
+    
+    try {
+      // Load results using existing logic
+      await loadResults();
+    } finally {
+      // Restore original state
+      appState.selectedBaseScenario = originalState.selectedBaseScenario;
+      appState.selectedScenario = originalState.selectedScenario;
+      appState.selectedAdmType = originalState.selectedAdmType;
+      appState.selectedLLM = originalState.selectedLLM;
+      appState.activeKDMAs = originalState.activeKDMAs;
+    }
   }
 
   // Update the comparison display with current + pinned runs

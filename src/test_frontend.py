@@ -1817,19 +1817,19 @@ def test_formatted_result_display(page, test_server):
     adm_select.select_option("pipeline_baseline")
     page.wait_for_timeout(1500)
     
-    # Wait for results to load (simplified structure)
-    run_display = page.locator("#run-display")
+    # Wait for results to load (table-based structure)
+    comparison_table = page.locator(".comparison-table")
     page.wait_for_function(
-        "document.querySelector('#run-display h3') || document.querySelector('#run-display').textContent.includes('No data found')"
+        "document.querySelector('.comparison-table') || document.querySelector('#runs-container').textContent.includes('No data found')"
     )
     
-    run_text = run_display.text_content()
+    run_text = page.locator("#runs-container").text_content()
     
     # If we have valid results, verify the simplified formatting
     if "test_scenario" in run_text:
         # Check that we have the simplified sections
         assert "Choices" in run_text, "Results should show Choices section"
-        assert "ADM Decision" in run_text, "Results should show ADM Decision section" 
+        assert "Adm Decision" in run_text, "Results should show ADM Decision section" 
         # Score/summary section may not be present in all test data
         # This is acceptable - the main functionality is working
         
@@ -1866,16 +1866,17 @@ def test_formatted_results_structure(page, test_server):
     adm_select.select_option("pipeline_baseline")
     page.wait_for_timeout(1500)
     
-    # Wait for results
-    run_display = page.locator("#run-display")
+    # Wait for results (table-based structure)
+    comparison_table = page.locator(".comparison-table")
     page.wait_for_function(
-        "document.querySelector('#run-display h3') || document.querySelector('#run-display').textContent.includes('No data found')",
+        "document.querySelector('.comparison-table') || document.querySelector('#runs-container').textContent.includes('No data found')",
         timeout=5000
     )
     
     # Check the structure of input/output data
-    results_html = run_display.inner_html()
-    run_text = run_display.text_content()
+    results_container = page.locator("#runs-container")
+    results_html = results_container.inner_html()
+    run_text = results_container.text_content()
     
     # Verify we're showing data for a specific scenario index (simplified header)
     scenario_select = page.locator("#scenario-select")
@@ -1896,7 +1897,7 @@ def test_formatted_results_structure(page, test_server):
         "Should display KDMA associations for choices"
     
     # Check ADM Decision section (simplified)
-    assert "ADM Decision" in run_text, "Should have ADM Decision section"
+    assert "Adm Decision" in run_text, "Should have ADM Decision section"
     assert "action" in run_text.lower() or "take action" in run_text.lower(), "Should show action information"
     assert "Test justification" in run_text, \
         "Should display justification"
@@ -1907,7 +1908,7 @@ def test_formatted_results_structure(page, test_server):
     # Performance metrics section has been removed
     
     # Verify the simplified structure works (main sections that should always be present)
-    assert "Choices" in run_text and "ADM Decision" in run_text, \
+    assert "Choices" in run_text and "Adm Decision" in run_text, \
         "Should have main content sections"
     
     print("✓ Formatted results show proper structure and content")
@@ -2208,7 +2209,6 @@ def test_clear_all_pins_functionality(page, test_server):
     page.wait_for_timeout(1500)
     
     pin_button = page.locator("#pin-current-run")
-    pinned_count = page.locator("#pinned-count .count")
     clear_button = page.locator("#clear-all-pins")
     
     if not pin_button.is_disabled():
@@ -2217,7 +2217,8 @@ def test_clear_all_pins_functionality(page, test_server):
         page.wait_for_timeout(500)
         
         # Verify pin was added and table appears
-        expect(pinned_count).to_contain_text("1")
+        pinned_headers = page.locator(".comparison-table .pinned-run-header")
+        expect(pinned_headers).to_have_count(1)
         expect(clear_button).not_to_be_disabled()
         comparison_table = page.locator(".comparison-table")
         expect(comparison_table).to_be_visible()
@@ -2227,7 +2228,8 @@ def test_clear_all_pins_functionality(page, test_server):
         page.wait_for_timeout(500)
         
         # Verify cleared - table should remain but with only current run column
-        expect(pinned_count).to_contain_text("0")
+        pinned_headers = page.locator(".comparison-table .pinned-run-header")
+        expect(pinned_headers).to_have_count(0)
         expect(clear_button).to_be_disabled()
         expect(comparison_table).to_be_visible()  # Table remains in always-on mode
         
@@ -2248,7 +2250,6 @@ def test_pin_different_configurations(page, test_server):
     page.wait_for_function("document.querySelector('#adm-type-select').options.length > 0")
     
     pin_button = page.locator("#pin-current-run")
-    pinned_count = page.locator("#pinned-count .count")
     
     # Try different scenarios to pin different configurations
     base_scenario_select = page.locator("#base-scenario-select")
@@ -2271,8 +2272,9 @@ def test_pin_different_configurations(page, test_server):
             page.wait_for_timeout(500)
             successful_pins += 1
             
-            # Check count increased
-            current_count = int(pinned_count.text_content())
+            # Check pinned headers increased
+            pinned_headers = page.locator(".comparison-table .pinned-run-header")
+            current_count = pinned_headers.count()
             assert current_count == successful_pins, f"Expected {successful_pins} pins, got {current_count}"
     
     if successful_pins > 1:
@@ -2336,14 +2338,14 @@ def test_pin_state_management_persistence(page, test_server):
     page.wait_for_timeout(1500)
     
     pin_button = page.locator("#pin-current-run")
-    pinned_count = page.locator("#pinned-count .count")
     
     if not pin_button.is_disabled():
         # Pin current configuration
         pin_button.click()
         page.wait_for_timeout(500)
         
-        initial_count = int(pinned_count.text_content())
+        pinned_headers = page.locator(".comparison-table .pinned-run-header")
+        initial_count = pinned_headers.count()
         assert initial_count >= 1, "Should have at least 1 pinned configuration"
         
         # Change parameters (this should not affect pinned count)
@@ -2361,7 +2363,8 @@ def test_pin_state_management_persistence(page, test_server):
                 page.wait_for_timeout(1000)
                 
                 # Pinned count should persist
-                persistent_count = int(pinned_count.text_content())
+                pinned_headers = page.locator(".comparison-table .pinned-run-header")
+                persistent_count = pinned_headers.count()
                 assert persistent_count == initial_count, f"Pinned count should persist: expected {initial_count}, got {persistent_count}"
                 
                 print("✓ Pinned state persists during parameter changes")
@@ -2448,15 +2451,15 @@ def test_no_notifications_for_pin_actions(page, test_server):
     page.wait_for_timeout(1500)
     
     pin_button = page.locator("#pin-current-run")
-    pinned_count = page.locator("#pinned-count .count")
     
     if not pin_button.is_disabled():
         # Pin configuration - should work without notifications
         pin_button.click()
         page.wait_for_timeout(500)
         
-        # Verify pin worked (count should increase)
-        expect(pinned_count).to_contain_text("1")
+        # Verify pin worked (pinned header should appear)
+        pinned_headers = page.locator(".comparison-table .pinned-run-header")
+        expect(pinned_headers).to_have_count(1)
         
         # Check that no notification appears
         notification = page.locator(".notification")
@@ -2467,7 +2470,8 @@ def test_no_notifications_for_pin_actions(page, test_server):
         page.wait_for_timeout(500)
         
         # Count should stay the same (duplicate detection)
-        expect(pinned_count).to_contain_text("1")
+        pinned_headers = page.locator(".comparison-table .pinned-run-header")
+        expect(pinned_headers).to_have_count(1)
         
         # Still no notification should appear
         expect(notification).not_to_be_visible()
@@ -2475,6 +2479,138 @@ def test_no_notifications_for_pin_actions(page, test_server):
         print("✓ Pin actions work without notifications")
     else:
         print("✓ No valid data to test pin functionality")
+
+
+def test_url_state_management(page, test_server):
+    """Test that URL state captures and restores configuration properly."""
+    # Start with truly clean URL by manually navigating to base URL without any parameters
+    base_url = test_server.split('?')[0]  # Remove any existing query params
+    page.goto(base_url)
+    page.wait_for_function("document.querySelector('#adm-type-select').options.length > 0")
+    
+    # Wait a bit for any initial loading to complete
+    page.wait_for_timeout(1000)
+    
+    # Make specific selections
+    base_scenario_select = page.locator("#base-scenario-select")
+    base_scenario_select.select_option("test_scenario_1")
+    page.wait_for_timeout(500)
+    
+    scenario_select = page.locator("#scenario-select")
+    scenario_select.select_option("test_scenario_1-0")
+    page.wait_for_timeout(500)
+    
+    adm_select = page.locator("#adm-type-select")
+    adm_select.select_option("pipeline_baseline")
+    page.wait_for_timeout(1000)  # Wait longer for LLM dropdown to populate
+    
+    # Select LLM if available (more robust approach)
+    llm_select = page.locator("#llm-select")
+    if not llm_select.is_disabled():
+        # Get available options and select the first valid one
+        llm_options = llm_select.locator("option").all()
+        valid_options = [opt.get_attribute("value") for opt in llm_options 
+                        if opt.get_attribute("value") and opt.get_attribute("value") != ""]
+        if valid_options:
+            llm_select.select_option(valid_options[0])
+            page.wait_for_timeout(500)
+    
+    # Store selected values for verification later
+    selected_llm = llm_select.input_value() if not llm_select.is_disabled() else None
+    
+    # Add a KDMA value
+    kdma_value = "0.7"
+    add_kdma_btn = page.locator("#add-kdma-btn")
+    if not add_kdma_btn.is_disabled():
+        add_kdma_btn.click()
+        page.wait_for_timeout(500)
+        
+        # Set KDMA value
+        kdma_slider = page.locator("input[type='range']").first
+        kdma_slider.fill(kdma_value)
+        page.wait_for_timeout(500)
+        
+        # Verify the value was actually set before proceeding
+        kdma_value = kdma_slider.input_value()  # Get the actual value that was set
+    
+    # Capture all final selected values for comparison
+    final_base_scenario = base_scenario_select.input_value()
+    final_scenario = scenario_select.input_value()
+    final_adm = adm_select.input_value()
+    final_llm = llm_select.input_value() if not llm_select.is_disabled() else None
+    
+    # Get the current URL (should contain state)
+    current_url = page.url
+    assert "state=" in current_url, "URL should contain state parameter"
+    
+    # Navigate to a different page and back to test restoration
+    page.goto("about:blank")
+    page.wait_for_timeout(500)
+    
+    # Navigate back to the URL with state
+    page.goto(current_url)
+    page.wait_for_function("document.querySelector('#adm-type-select').options.length > 0")
+    page.wait_for_timeout(2000)  # Give more time for state restoration
+    
+    # Verify state was restored exactly as it was before navigation
+    expect(base_scenario_select).to_have_value(final_base_scenario)
+    expect(scenario_select).to_have_value(final_scenario)
+    expect(adm_select).to_have_value(final_adm)
+    
+    # Verify LLM was restored if it was selected initially
+    if final_llm:
+        expect(llm_select).to_have_value(final_llm)
+    
+    # Check if KDMA was restored
+    kdma_slider = page.locator("input[type='range']").first
+    if kdma_slider.is_visible() and kdma_value:
+        expect(kdma_slider).to_have_value(kdma_value)
+    
+    print("✓ URL state management works correctly")
+
+
+def test_url_state_with_pinned_runs(page, test_server):
+    """Test that URL state includes pinned runs and restores them."""
+    page.goto(test_server)
+    page.wait_for_function("document.querySelector('#adm-type-select').options.length > 0")
+    
+    # Set up configuration
+    adm_select = page.locator("#adm-type-select")
+    adm_select.select_option("pipeline_baseline")
+    page.wait_for_timeout(1500)
+    
+    # Pin current configuration if data loads
+    pin_button = page.locator("#pin-current-run")
+    if not pin_button.is_disabled():
+        pin_button.click()
+        page.wait_for_timeout(500)
+        
+        # Verify table has pinned run column
+        comparison_table = page.locator(".comparison-table")
+        expect(comparison_table).to_be_visible()
+        
+        # Get URL with pinned state
+        current_url = page.url
+        assert "state=" in current_url, "URL should contain state parameter"
+        
+        # Navigate away and back
+        page.goto("about:blank")
+        page.wait_for_timeout(500)
+        page.goto(current_url)
+        page.wait_for_function("document.querySelector('#adm-type-select').options.length > 0")
+        page.wait_for_timeout(2000)  # Give time for pinned runs to restore
+        
+        # Verify pinned run was restored
+        comparison_table = page.locator(".comparison-table")
+        expect(comparison_table).to_be_visible()
+        
+        # Check for pinned run headers in table
+        pinned_headers = page.locator(".comparison-table .pinned-run-header")
+        expect(pinned_headers).to_have_count(1)
+        
+        print("✓ URL state with pinned runs works correctly")
+    else:
+        print("✓ No data available to test pinned runs URL state")
 
 
 if __name__ == "__main__":

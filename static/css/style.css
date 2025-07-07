@@ -265,8 +265,7 @@ footer {
 
 /* Comparison table styles */
 .comparison-table-container {
-    overflow: auto;
-    max-height: 80vh;
+    overflow: visible;
     border: 1px solid #dee2e6;
     border-radius: 8px;
     background: #fff;
