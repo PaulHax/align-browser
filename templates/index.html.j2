@@ -25,27 +25,18 @@
             <div id="scores-timing-section"></div>
             <div id="comparison-controls" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd;">
                 <h3>Compare Runs</h3>
-                <span id="pinned-count" style="color: #666;">
-                    Pinned: <span class="count">0</span>
-                </span>
-                <button id="clear-all-pins" class="btn btn-danger" disabled style="margin-left: 10px;">Clear All</button>
+                <button id="pin-current-run" class="btn btn-primary" disabled style="margin-bottom: 10px; display: block;">
+                    📌 Pin Current Configuration
+                </button>
+                <button id="clear-all-pins" class="btn btn-danger" disabled>Clear All</button>
             </div>
         </aside>
         <section class="run">
-            <div class="run-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div class="run-header" style="margin-bottom: 15px;">
                 <h2 style="margin: 0;">Results</h2>
-                <button id="pin-current-run" class="btn btn-primary" disabled>
-                    📌 Pin Current Configuration
-                </button>
             </div>
             <div id="runs-container" class="runs-container">
-                <div id="current-run-wrapper" class="run-wrapper current-run-wrapper">
-                    <div class="run-content-header">
-                        <span class="run-title">Current Run</span>
-                        <span class="live-badge">Live</span>
-                    </div>
-                    <div id="run-display" class="run-content"></div>
-                </div>
+                <!-- Table will be dynamically generated here -->
             </div>
             <div id="comparison-display" style="display: none;"></div>
         </section>

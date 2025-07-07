@@ -5,9 +5,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const kdmaSliders = document.getElementById("kdma-sliders");
   const llmSelection = document.getElementById("llm-selection");
   const scenarioSelection = document.getElementById("scenario-selection"); // New element
-  const runDisplay = document.getElementById("run-display");
+  // runDisplay no longer needed - using table mode
 
   let manifest = {};
+  
+  // UI state persistence for expandable content
+  const expandableStates = {
+    text: new Map(), // parameterName -> isExpanded
+    objects: new Map() // parameterName -> isExpanded
+  };
   
   // Central application state
   const appState = {
@@ -67,8 +73,8 @@ document.addEventListener("DOMContentLoaded", () => {
       loadResults(); // Load results initially
     } catch (error) {
       console.error("Error fetching manifest:", error);
-      runDisplay.innerHTML =
-        "<p>Error loading experiment data. Please ensure the data is built correctly.</p>";
+      // Error will be displayed in the table
+      updateComparisonDisplay();
     }
   }
 
@@ -362,13 +368,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Show loading spinner during transitions
   function showTransitionSpinner() {
-    const runDisplay = document.getElementById("run-display");
-    runDisplay.innerHTML = `
-      <div class="loading-spinner">
-        <div class="spinner"></div>
-        <div class="loading-text">Loading scenario...</div>
-      </div>
-    `;
+    // Loading state will be shown in the table
+    updateComparisonDisplay();
   }
 
   // Update function for scenario changes
@@ -955,14 +956,15 @@ document.addEventListener("DOMContentLoaded", () => {
   // Internal function to load results without loading guard
   async function loadResultsInternal() {
     if (!appState.selectedScenario) {
-      runDisplay.innerHTML =
-        "<p>Please select a specific scenario first.</p>";
+      // Message will be displayed in the table
       
       // Clear current data when no scenario
       appState.currentInputOutput = null;
+      appState.currentInputOutputArray = null;
       appState.currentScores = null;
       appState.currentTiming = null;
       updatePinnedCount(); // Disable pin button when no data
+      updateComparisonDisplay(); // Update table with no scenario state
       return;
     }
 
@@ -1126,26 +1128,31 @@ document.addEventListener("DOMContentLoaded", () => {
           return html;
         };
         
-        runDisplay.innerHTML = formatResults();
+        // Content will be displayed via the comparison table
         
         // Store current data for pinning
         appState.currentInputOutput = inputOutputItem;
+        appState.currentInputOutputArray = inputOutputArray; // Store full array for raw data access
         appState.currentScores = scoreItem;
         appState.currentTiming = timingData;
         updatePinnedCount(); // Enable pin button when data loads
         
         // Update scores and timing in parameters section
         updateScoresTimingSection(scoreItem, timingData);
+        
+        // Update comparison display (always-on table mode)
+        updateComparisonDisplay();
       } catch (error) {
         console.error("Error fetching experiment data:", error);
-        runDisplay.innerHTML =
-          "<p>Error loading data for selected parameters and scenario.</p>";
+        // Error will be displayed in the table
         
         // Clear current data on error
         appState.currentInputOutput = null;
+        appState.currentInputOutputArray = null;
         appState.currentScores = null;
         appState.currentTiming = null;
         updatePinnedCount(); // Disable pin button when no data
+        updateComparisonDisplay(); // Update table with error state
       }
     } else {
       // Generate debug information to help identify the issue
@@ -1153,20 +1160,14 @@ document.addEventListener("DOMContentLoaded", () => {
         key.startsWith(`${selectedKey.split('_')[0]}_${selectedKey.split('_')[1]}_`)
       );
       
-      runDisplay.innerHTML = `
-        <p>No data found for the selected parameters and scenario.</p>
-        <p><strong>Looking for:</strong> ${selectedKey}</p>
-        <p><strong>Scenario:</strong> ${appState.selectedScenario}</p>
-        <p><strong>Available keys for this ADM/LLM:</strong></p>
-        <ul>${availableKeys.length > 0 ? availableKeys.map(key => `<li>${key}</li>`).join('') : '<li>None found</li>'}</ul>
-        <p>Please ensure KDMA values match the available experiment data.</p>
-      `;
+      // No data message will be displayed in the table
       
       // Clear current data when no data found
       appState.currentInputOutput = null;
       appState.currentScores = null;
       appState.currentTiming = null;
       updatePinnedCount(); // Disable pin button when no data
+      updateComparisonDisplay(); // Update table with no data state
     }
   }
 
@@ -1228,6 +1229,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const pinnedData = {
       ...runConfig,
       inputOutput: appState.currentInputOutput,
+      inputOutputArray: appState.currentInputOutputArray,
       scores: appState.currentScores,
       timing: appState.currentTiming,
       loadStatus: 'loaded'
@@ -1236,7 +1238,6 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.pinnedRuns.set(runConfig.id, pinnedData);
     updatePinnedCount();
     updateComparisonDisplay();
-    showNotification(`Configuration pinned: ${runConfig.displayName}`, 'success');
   }
 
   // Helper functions for comparison feature
@@ -1252,10 +1253,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updatePinnedCount() {
     const count = appState.pinnedRuns.size;
-    const countElement = document.querySelector('#pinned-count .count');
-    if (countElement) {
-      countElement.textContent = count;
-    }
     
     const clearButton = document.getElementById('clear-all-pins');
     if (clearButton) {
@@ -1270,28 +1267,442 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function clearAllPins() {
+    // Clean up expansion states for all pinned runs
+    appState.pinnedRuns.forEach((runData, runId) => {
+      cleanupRunStates(runId);
+    });
+    
     appState.pinnedRuns.clear();
     updatePinnedCount();
     updateComparisonDisplay();
-    showNotification('All pinned configurations cleared', 'info');
   }
 
   // Update the comparison display with current + pinned runs
   function updateComparisonDisplay() {
+    // Always use table mode - this is the "Always-On Comparison Mode"
+    renderComparisonTable();
+  }
+
+  // Render the comparison table with current run + pinned runs
+  function renderComparisonTable() {
     const container = document.getElementById('runs-container');
     if (!container) return;
+
+    // Get current run data
+    const currentRunData = getCurrentRunData();
     
-    // Clear existing pinned runs (keep current run)
-    const currentRunWrapper = document.getElementById('current-run-wrapper');
-    container.innerHTML = '';
-    container.appendChild(currentRunWrapper);
+    // Get all runs for comparison (current + pinned)
+    const allRuns = [currentRunData, ...Array.from(appState.pinnedRuns.values())];
     
-    // Add pinned runs
+    // Extract all parameters from runs
+    const parameters = extractParametersFromRuns(allRuns);
+    
+    // Build the table
+    let tableHTML = '<div class="comparison-table-container">';
+    tableHTML += '<table class="comparison-table">';
+    
+    // Header row
+    tableHTML += '<thead><tr>';
+    tableHTML += '<th class="parameter-header">Parameter</th>';
+    
+    // Current run header
+    tableHTML += '<th class="current-run-header">';
+    tableHTML += '<div class="run-header-content">';
+    tableHTML += '<span class="run-title">Current Run</span>';
+    tableHTML += '<span class="live-badge">Live</span>';
+    tableHTML += '</div>';
+    tableHTML += '</th>';
+    
+    // Pinned run headers
     appState.pinnedRuns.forEach((runData, runId) => {
-      const pinnedRunElement = createPinnedRunElement(runId, runData);
-      container.appendChild(pinnedRunElement);
+      tableHTML += '<th class="pinned-run-header">';
+      tableHTML += '<div class="run-header-content">';
+      tableHTML += `<span class="run-title">${runData.displayName}</span>`;
+      tableHTML += '<span class="pinned-badge">Pinned</span>';
+      tableHTML += `<button class="remove-run-btn" onclick="removePinnedRun('${runId}')">×</button>`;
+      tableHTML += '</div>';
+      tableHTML += '</th>';
     });
+    
+    tableHTML += '</tr></thead>';
+    
+    // Body rows
+    tableHTML += '<tbody>';
+    
+    parameters.forEach((paramInfo, paramName) => {
+      tableHTML += `<tr class="parameter-row" data-category="${paramInfo.category}">`;
+      tableHTML += `<td class="parameter-name">${formatParameterName(paramName)}</td>`;
+      
+      // Get all values for this parameter to check for differences
+      const allValues = [];
+      const currentValue = getParameterValue(currentRunData, paramName);
+      allValues.push(currentValue);
+      
+      appState.pinnedRuns.forEach((runData) => {
+        const pinnedValue = getParameterValue(runData, paramName);
+        allValues.push(pinnedValue);
+      });
+      
+      // Current run value (no left border needed for first column)
+      tableHTML += `<td class="current-run-value">${formatValue(currentValue, paramInfo.type, paramName, 'current')}</td>`;
+      
+      // Pinned run values with border if different from previous column
+      let previousValue = currentValue;
+      appState.pinnedRuns.forEach((runData) => {
+        const pinnedValue = getParameterValue(runData, paramName);
+        const isDifferent = !compareValues(previousValue, pinnedValue);
+        const borderStyle = isDifferent ? 'border-left: 3px solid #ffc107;' : '';
+        tableHTML += `<td class="pinned-run-value" style="${borderStyle}">${formatValue(pinnedValue, paramInfo.type, paramName, runData.id)}</td>`;
+        previousValue = pinnedValue;
+      });
+      
+      tableHTML += '</tr>';
+    });
+    
+    tableHTML += '</tbody>';
+    tableHTML += '</table>';
+    tableHTML += '</div>';
+    
+    container.innerHTML = tableHTML;
   }
+
+  // Extract parameters from all runs to determine table structure
+  function extractParametersFromRuns(runs) {
+    const parameters = new Map();
+    
+    // Configuration parameters
+    parameters.set("scenario", { type: "string", required: true, category: "Configuration" });
+    parameters.set("adm_type", { type: "string", required: true, category: "Configuration" });
+    parameters.set("llm_backbone", { type: "string", required: true, category: "Configuration" });
+    
+    // KDMA Values - single row showing all KDMA values
+    parameters.set("kdma_values", { type: "kdma_values", required: false, category: "KDMA Values" });
+    
+    // Scenario details
+    parameters.set("scenario_state", { type: "longtext", required: false, category: "Scenario Details" });
+    parameters.set("available_choices", { type: "choices", required: false, category: "Choices" });
+    
+    // ADM Decision (using Pydantic model structure)
+    parameters.set("adm_decision", { type: "text", required: false, category: "ADM Decision" });
+    parameters.set("justification", { type: "longtext", required: false, category: "ADM Decision" });
+    
+    // Timing data
+    parameters.set("probe_time", { type: "number", required: false, category: "Timing" });
+    
+    // Raw Data
+    parameters.set("input_output_json", { type: "object", required: false, category: "Raw Data" });
+    
+    return parameters;
+  }
+
+  // Get current run data from the current state and loaded data
+  function getCurrentRunData() {
+    return {
+      id: 'current',
+      displayName: 'Current Run',
+      scenario: appState.selectedScenario,
+      baseScenario: appState.selectedBaseScenario,
+      admType: appState.selectedAdmType,
+      llmBackbone: appState.selectedLLM,
+      kdmaValues: { ...appState.activeKDMAs },
+      inputOutput: appState.currentInputOutput,
+      inputOutputArray: appState.currentInputOutputArray,
+      scores: appState.currentScores,
+      timing: appState.currentTiming,
+      experimentKey: getSelectedKey()
+    };
+  }
+
+  // Extract parameter value from run data using Pydantic model structure
+  function getParameterValue(run, paramName) {
+    if (!run) return 'N/A';
+    
+    // Configuration parameters
+    if (paramName === 'scenario') return run.scenario || 'N/A';
+    if (paramName === 'adm_type') return run.admType || 'N/A';
+    if (paramName === 'llm_backbone') return run.llmBackbone || 'N/A';
+    
+    // KDMA Values - single row showing all KDMA values
+    if (paramName === 'kdma_values') {
+      return run.kdmaValues || {};
+    }
+    
+    // Scenario details
+    if (paramName === 'scenario_state' && run.inputOutput?.input) {
+      return run.inputOutput.input.state || 'N/A';
+    }
+    
+    // Available choices
+    if (paramName === 'available_choices' && run.inputOutput?.input?.choices) {
+      return run.inputOutput.input.choices;
+    }
+    
+    // ADM Decision - proper extraction using Pydantic model structure
+    if (paramName === 'adm_decision' && run.inputOutput?.output && run.inputOutput?.input?.choices) {
+      const choiceIndex = run.inputOutput.output.choice;
+      const choices = run.inputOutput.input.choices;
+      if (typeof choiceIndex === 'number' && choices[choiceIndex]) {
+        return choices[choiceIndex].unstructured || choices[choiceIndex].action_id || 'N/A';
+      }
+      return 'N/A';
+    }
+    
+    // Justification - proper path using Pydantic model structure
+    if (paramName === 'justification' && run.inputOutput?.output?.action) {
+      return run.inputOutput.output.action.justification || 'N/A';
+    }
+    
+    // Timing data
+    if (paramName === 'probe_time' && run.timing && run.scenario) {
+      try {
+        // Extract the scenario index from the scenario ID (e.g., "test_scenario_1-0" → 0)
+        const scenarioIndex = parseInt(run.scenario.split('-').pop());
+        if (scenarioIndex >= 0 && run.timing.raw_times_s && run.timing.raw_times_s[scenarioIndex] !== undefined) {
+          return run.timing.raw_times_s[scenarioIndex].toFixed(2);
+        }
+      } catch (error) {
+        console.warn('Error getting individual probe time:', error);
+      }
+      return 'N/A';
+    }
+    
+    // Raw Data
+    if (paramName === 'input_output_json') {
+      if (run.inputOutputArray && run.scenario) {
+        try {
+          // Extract the scenario index from the scenario ID (e.g., "test_scenario_1-0" → 0)
+          const scenarioIndex = parseInt(run.scenario.split('-').pop());
+          
+          if (scenarioIndex >= 0 && Array.isArray(run.inputOutputArray) && run.inputOutputArray[scenarioIndex]) {
+            return run.inputOutputArray[scenarioIndex];
+          }
+        } catch (error) {
+          console.warn('Error getting input/output JSON:', error);
+        }
+      }
+      return 'N/A';
+    }
+    
+    return 'N/A';
+  }
+
+  // Format values for display in table cells
+  function formatValue(value, type, paramName = '', runId = '') {
+    if (value === null || value === undefined || value === 'N/A') {
+      return '<span class="na-value">N/A</span>';
+    }
+    
+    switch (type) {
+      case 'number':
+        return typeof value === 'number' ? value.toFixed(3) : value.toString();
+      
+      case 'longtext':
+        if (typeof value === 'string' && value.length > 400) {
+          const truncated = value.substring(0, 400);
+          // Include runId for per-column state persistence
+          const id = `text_${paramName}_${runId}_${type}`;
+          const isExpanded = expandableStates.text.get(id) || false;
+          
+          const shortDisplay = isExpanded ? 'none' : 'inline';
+          const fullDisplay = isExpanded ? 'inline' : 'none';
+          const buttonText = isExpanded ? 'Show Less' : 'Show More';
+          
+          return `<div class="expandable-text" data-full-text="${escapeHtml(value)}" data-param-id="${id}">
+            <span id="${id}_short" style="display: ${shortDisplay};">${escapeHtml(truncated)}...</span>
+            <span id="${id}_full" style="display: ${fullDisplay};">${escapeHtml(value)}</span>
+            <button class="show-more-btn" onclick="toggleText('${id}')">${buttonText}</button>
+          </div>`;
+        }
+        return escapeHtml(value.toString());
+      
+      case 'text':
+        return escapeHtml(value.toString());
+      
+      case 'choices':
+        if (Array.isArray(value)) {
+          let choicesHtml = '<div class="choices-display">';
+          value.forEach((choice, idx) => {
+            choicesHtml += `<div class="choice-card">
+              <div class="choice-text">${escapeHtml(choice.unstructured || choice.description || 'No description')}</div>`;
+            
+            // Add KDMA associations if available
+            if (choice.kdma_association) {
+              choicesHtml += '<div class="kdma-bars">';
+              Object.entries(choice.kdma_association).forEach(([kdma, val]) => {
+                const percentage = Math.round(val * 100);
+                const color = val >= 0.7 ? '#28a745' : val >= 0.4 ? '#ffc107' : '#dc3545';
+                choicesHtml += `<div class="kdma-bar">
+                  <span class="kdma-name">${kdma}</span>
+                  <div class="kdma-bar-container">
+                    <div class="kdma-bar-fill" style="width: ${percentage}%; background-color: ${color};"></div>
+                  </div>
+                  <span class="kdma-value">${val.toFixed(2)}</span>
+                </div>`;
+              });
+              choicesHtml += '</div>';
+            }
+            choicesHtml += '</div>';
+          });
+          choicesHtml += '</div>';
+          return choicesHtml;
+        }
+        return escapeHtml(value.toString());
+      
+      case 'kdma_values':
+        if (typeof value === 'object' && value !== null) {
+          const kdmaEntries = Object.entries(value);
+          if (kdmaEntries.length === 0) {
+            return '<span class="na-value">No KDMAs</span>';
+          }
+          
+          let kdmaHtml = '<div class="kdma-values-display">';
+          kdmaEntries.forEach(([kdmaName, kdmaValue]) => {
+            kdmaHtml += `<div class="kdma-value-item">
+              <span class="kdma-name">${escapeHtml(kdmaName)}:</span>
+              <span class="kdma-number">${typeof kdmaValue === 'number' ? kdmaValue.toFixed(1) : kdmaValue}</span>
+            </div>`;
+          });
+          kdmaHtml += '</div>';
+          return kdmaHtml;
+        }
+        return '<span class="na-value">N/A</span>';
+      
+      case 'object':
+        if (typeof value === 'object') {
+          // Include runId for per-column state persistence
+          const id = `object_${paramName}_${runId}_${type}`;
+          const isExpanded = expandableStates.objects.get(id) || false;
+          
+          const preview = getObjectPreview(value);
+          const fullJson = JSON.stringify(value, null, 2);
+          
+          const previewDisplay = isExpanded ? 'none' : 'inline';
+          const fullDisplay = isExpanded ? 'block' : 'none';
+          const buttonText = isExpanded ? 'Show Preview' : 'Show Details';
+          
+          return `<div class="object-display" data-param-id="${id}">
+            <span id="${id}_preview" style="display: ${previewDisplay};">${escapeHtml(preview)}</span>
+            <pre id="${id}_full" style="display: ${fullDisplay};">${escapeHtml(fullJson)}</pre>
+            <button class="show-more-btn" onclick="toggleObject('${id}')">${buttonText}</button>
+          </div>`;
+        }
+        return escapeHtml(value.toString());
+      
+      default:
+        return escapeHtml(value.toString());
+    }
+  }
+
+  // Helper functions
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function formatParameterName(paramName) {
+    return paramName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  }
+
+  function compareValues(val1, val2) {
+    if (val1 === val2) return true;
+    
+    // Handle null/undefined cases
+    if (val1 == null || val2 == null) {
+      return val1 == val2;
+    }
+    
+    // Handle numeric comparison with floating point tolerance
+    if (typeof val1 === 'number' && typeof val2 === 'number') {
+      return Math.abs(val1 - val2) < 0.001;
+    }
+    
+    // Handle string comparison
+    if (typeof val1 === 'string' && typeof val2 === 'string') {
+      return val1 === val2;
+    }
+    
+    // Handle array comparison
+    if (Array.isArray(val1) && Array.isArray(val2)) {
+      if (val1.length !== val2.length) return false;
+      for (let i = 0; i < val1.length; i++) {
+        if (!compareValues(val1[i], val2[i])) return false;
+      }
+      return true;
+    }
+    
+    // Handle object comparison
+    if (typeof val1 === 'object' && typeof val2 === 'object') {
+      const keys1 = Object.keys(val1);
+      const keys2 = Object.keys(val2);
+      
+      if (keys1.length !== keys2.length) return false;
+      
+      for (const key of keys1) {
+        if (!keys2.includes(key)) return false;
+        if (!compareValues(val1[key], val2[key])) return false;
+      }
+      return true;
+    }
+    
+    return false;
+  }
+
+  function getObjectPreview(obj) {
+    if (!obj || typeof obj !== 'object') return 'N/A';
+    const keys = Object.keys(obj);
+    if (keys.length === 0) return '{}';
+    if (keys.length === 1 && typeof obj[keys[0]] !== 'object') {
+      return `${keys[0]}: ${obj[keys[0]]}`;
+    }
+    return `{${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '...' : ''}}`;
+  }
+
+  // Toggle functions for expandable content
+  window.toggleText = function(id) {
+    const shortSpan = document.getElementById(`${id}_short`);
+    const fullSpan = document.getElementById(`${id}_full`);
+    const button = document.querySelector(`[onclick="toggleText('${id}')"]`);
+    
+    const isCurrentlyExpanded = fullSpan.style.display !== 'none';
+    const newExpanded = !isCurrentlyExpanded;
+    
+    if (newExpanded) {
+      shortSpan.style.display = 'none';
+      fullSpan.style.display = 'inline';
+      button.textContent = 'Show Less';
+    } else {
+      shortSpan.style.display = 'inline';
+      fullSpan.style.display = 'none';
+      button.textContent = 'Show More';
+    }
+    
+    // Save state for persistence
+    expandableStates.text.set(id, newExpanded);
+  };
+
+  window.toggleObject = function(id) {
+    const preview = document.getElementById(`${id}_preview`);
+    const full = document.getElementById(`${id}_full`);
+    const button = document.querySelector(`[onclick="toggleObject('${id}')"]`);
+    
+    const isCurrentlyExpanded = full.style.display !== 'none';
+    const newExpanded = !isCurrentlyExpanded;
+    
+    if (newExpanded) {
+      preview.style.display = 'none';
+      full.style.display = 'block';
+      button.textContent = 'Show Preview';
+    } else {
+      preview.style.display = 'inline';
+      full.style.display = 'none';
+      button.textContent = 'Show Details';
+    }
+    
+    // Save state for persistence
+    expandableStates.objects.set(id, newExpanded);
+  };
+
 
   // Create a pinned run element
   function createPinnedRunElement(runId, runData) {
@@ -1449,10 +1860,33 @@ document.addEventListener("DOMContentLoaded", () => {
   // Remove a pinned run
   function removePinnedRun(runId) {
     appState.pinnedRuns.delete(runId);
+    
+    // Clean up expansion states for this run
+    cleanupRunStates(runId);
+    
     updatePinnedCount();
     updateComparisonDisplay();
-    showNotification('Pinned run removed', 'info');
   }
+  
+  // Clean up expansion states when a run is removed
+  function cleanupRunStates(runId) {
+    // Remove text expansion states for this run
+    for (const [key, value] of expandableStates.text.entries()) {
+      if (key.includes(`_${runId}_`)) {
+        expandableStates.text.delete(key);
+      }
+    }
+    
+    // Remove object expansion states for this run
+    for (const [key, value] of expandableStates.objects.entries()) {
+      if (key.includes(`_${runId}_`)) {
+        expandableStates.objects.delete(key);
+      }
+    }
+  }
+
+  // Make removePinnedRun globally accessible for onclick handlers
+  window.removePinnedRun = removePinnedRun;
 
   function generateRunId() {
     const timestamp = new Date().getTime();
