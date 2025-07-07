@@ -314,7 +314,7 @@ def test_page_load(page, test_server):
     expect(page.locator("#kdma-sliders")).to_be_visible()
     expect(page.locator("#llm-selection")).to_be_visible()
     expect(page.locator("#scenario-selection")).to_be_visible()
-    expect(page.locator("#run-display")).to_be_visible()
+    expect(page.locator("#runs-container")).to_be_visible()
 
 
 def test_manifest_loading(page, test_server):
@@ -458,7 +458,7 @@ def test_run_display_updates(page, test_server):
         "document.querySelector('#adm-type-select').options.length > 0"
     )
 
-    run_display = page.locator("#run-display")
+    comparison_table = page.locator(".comparison-table")
 
     # Make complete selections
     adm_select = page.locator("#adm-type-select")
@@ -467,13 +467,14 @@ def test_run_display_updates(page, test_server):
     # Wait for updates
     page.wait_for_timeout(1500)
 
-    # Check that results display has some content
-    run_text = run_display.text_content()
+    # Check that comparison table is visible and has content
+    expect(comparison_table).to_be_visible()
+    table_text = comparison_table.text_content()
 
     # It should either show data, an error message, or "no data found"
     # During development, any of these is acceptable
-    assert run_text.strip() != "", (
-        "Results display should have some content after selections"
+    assert table_text.strip() != "", (
+        "Comparison table should have some content after selections"
     )
 
     # Results should show either actual data or expected messages
@@ -486,9 +487,9 @@ def test_run_display_updates(page, test_server):
         "Choice",         # Results display content
     ]
 
-    has_acceptable_message = any(msg in run_text for msg in acceptable_messages)
+    has_acceptable_message = any(msg in table_text for msg in acceptable_messages)
     assert has_acceptable_message, (
-        f"Results should show expected content, got: {run_text[:100]}"
+        f"Results should show expected content, got: {table_text[:100]}"
     )
 
 
@@ -557,7 +558,7 @@ def test_responsive_layout(page, test_server):
     page.set_viewport_size({"width": 375, "height": 667})
     # On mobile, elements should still be present even if layout changes
     expect(page.locator("#adm-type-selection")).to_be_visible()
-    expect(page.locator("#run-display")).to_be_visible()
+    expect(page.locator("#runs-container")).to_be_visible()
 
 
 def test_dynamic_kdma_management(page, test_server):
@@ -1054,13 +1055,17 @@ def test_initial_load_results_path(page, test_server):
     
     assert len(js_errors) == 0, f"Found JavaScript errors during initial load: {js_errors}"
     
-    # Verify results display was attempted
-    run_display = page.locator("#run-display")
-    expect(run_display).to_be_visible()
+    # Verify comparison table is displayed (always-on mode)
+    comparison_table = page.locator(".comparison-table")
+    expect(comparison_table).to_be_visible()
+    
+    # Should have table structure with current run column
+    current_run_header = page.locator(".current-run-header")
+    expect(current_run_header).to_be_visible()
     
     # Should have some content (even if it's "no data found")
-    run_text = run_display.text_content()
-    assert run_text.strip() != "", "Results display should have content after initial load"
+    table_content = comparison_table.text_content()
+    assert table_content.strip() != "", "Comparison table should have content after initial load"
 
 
 def test_scenario_filters_adm_options(page, test_server):
@@ -1982,26 +1987,23 @@ def test_comparison_controls_appear(page, test_server):
     
     # Check all controls are present
     pin_button = page.locator("#pin-current-run")
-    pinned_count = page.locator("#pinned-count")
     clear_button = page.locator("#clear-all-pins")
     
     expect(pin_button).to_be_visible()
-    expect(pinned_count).to_be_visible()
     expect(clear_button).to_be_visible()
     
-    # Check initial count and clear button state (these should always be correct)
+    # Check initial clear button state (should always be correct)
     expect(clear_button).to_be_disabled()
-    expect(pinned_count.locator(".count")).to_contain_text("0")
     
     # Pin button state depends on whether data auto-loads
     # The app automatically loads results on initialization if valid parameters exist
-    run_display = page.locator("#run-display")
-    run_text = run_display.text_content()
-    
-    if "test_scenario" in run_text and "No data found" not in run_text:
-        # Data auto-loaded, pin button should be enabled
-        expect(pin_button).not_to_be_disabled()
-        print("✓ Pin button enabled due to auto-loaded data")
+    comparison_table = page.locator(".comparison-table")
+    if comparison_table.is_visible():
+        table_text = comparison_table.text_content()
+        if "test_scenario" in table_text and "No data found" not in table_text:
+            # Data auto-loaded, pin button should be enabled
+            expect(pin_button).not_to_be_disabled()
+            print("✓ Pin button enabled due to auto-loaded data")
     else:
         # No data auto-loaded, pin button should be disabled
         expect(pin_button).to_be_disabled()
@@ -2018,12 +2020,12 @@ def test_pin_button_enables_after_data_load(page, test_server):
     # Wait for auto-load to complete
     page.wait_for_timeout(1000)
     
-    # Check if data was auto-loaded
-    run_display = page.locator("#run-display")
-    run_text = run_display.text_content()
+    # Check if data was auto-loaded in the comparison table
+    comparison_table = page.locator(".comparison-table")
+    table_text = comparison_table.text_content()
     
     # Pin button state should reflect data availability
-    if "test_scenario" in run_text and "No data found" not in run_text:
+    if "test_scenario" in table_text and "No data found" not in table_text:
         # Valid data loaded - pin button should be enabled
         expect(pin_button).not_to_be_disabled()
         print("✓ Pin button enabled with auto-loaded valid data")
@@ -2038,8 +2040,8 @@ def test_pin_button_enables_after_data_load(page, test_server):
         page.wait_for_timeout(1500)
         
         # Recheck after manual load
-        run_text = run_display.text_content()
-        if "test_scenario" in run_text and "No data found" not in run_text:
+        table_text = comparison_table.text_content()
+        if "test_scenario" in table_text and "No data found" not in table_text:
             expect(pin_button).not_to_be_disabled()
             print("✓ Pin button enabled after manual data load")
         else:
@@ -2058,7 +2060,6 @@ def test_pin_functionality_basic(page, test_server):
     page.wait_for_timeout(1500)
     
     pin_button = page.locator("#pin-current-run")
-    pinned_count = page.locator("#pinned-count .count")
     clear_button = page.locator("#clear-all-pins")
     
     # If pin button is enabled (data loaded successfully)
@@ -2067,31 +2068,133 @@ def test_pin_functionality_basic(page, test_server):
         pin_button.click()
         page.wait_for_timeout(500)
         
-        # Check count increased
-        expect(pinned_count).to_contain_text("1")
-        
         # Clear button should be enabled
         expect(clear_button).not_to_be_disabled()
         
-        # Check that pinned run appears in side-by-side layout
-        pinned_runs = page.locator(".run-wrapper:not(#current-run-wrapper)")
-        expect(pinned_runs).to_have_count(1)
+        # Check that pinned run appears in table layout
+        comparison_table = page.locator(".comparison-table")
+        expect(comparison_table).to_be_visible()
+        
+        # Check that table has current run + 1 pinned run columns
+        table_headers = page.locator(".comparison-table th")
+        expect(table_headers).to_have_count(3)  # Parameter + Current + 1 Pinned
+        
+        # Check that pinned run header exists
+        pinned_header = page.locator(".pinned-run-header")
+        expect(pinned_header).to_have_count(1)
         
         # Check that pinned run has remove button
         remove_button = page.locator(".remove-run-btn")
         expect(remove_button).to_be_visible()
         
-        # Pin same configuration again - should show notification (no increase in count)
+        # Pin same configuration again - should show notification (no duplicate)
         pin_button.click()
         page.wait_for_timeout(500)
         
-        # Count should still be 1 (duplicate detection)
-        expect(pinned_count).to_contain_text("1")
-        expect(pinned_runs).to_have_count(1)  # Should still be 1 run
+        # Should still be 1 pinned run (duplicate detection)
+        expect(pinned_header).to_have_count(1)  # Should still be 1 pinned run
         
-        print("✓ Pin functionality and side-by-side display working correctly")
+        print("✓ Pin functionality and table display working correctly")
     else:
         print("✓ No valid data to test pin functionality (expected in some test scenarios)")
+
+
+def test_pinned_run_raw_data(page, test_server):
+    """Test that pinned runs have access to raw input/output JSON data."""
+    page.goto(test_server)
+    page.wait_for_function("document.querySelector('#adm-type-select').options.length > 0")
+    
+    # Load data
+    adm_select = page.locator("#adm-type-select")
+    adm_select.select_option("pipeline_baseline")
+    page.wait_for_timeout(1500)
+    
+    pin_button = page.locator("#pin-current-run")
+    
+    # If pin button is enabled (data loaded successfully)
+    if not pin_button.is_disabled():
+        # Verify current run has raw data before pinning
+        current_raw_data = page.locator(".parameter-row[data-category='Raw Data'] .current-run-value")
+        current_text = current_raw_data.text_content()
+        
+        # Should not be N/A for current run
+        expect(current_raw_data).not_to_contain_text("N/A")
+        print("✓ Current run has raw data available")
+        
+        # Pin the current configuration
+        pin_button.click()
+        page.wait_for_timeout(500)
+        
+        # Check that pinned run also has raw data (not N/A)
+        pinned_raw_data = page.locator(".parameter-row[data-category='Raw Data'] .pinned-run-value")
+        if pinned_raw_data.count() > 0:
+            pinned_text = pinned_raw_data.text_content()
+            expect(pinned_raw_data).not_to_contain_text("N/A")
+            print("✓ Pinned run has raw data available (not N/A)")
+        else:
+            print("⚠ No pinned run column found")
+    else:
+        print("✓ Pin button disabled - skipping raw data test")
+
+
+def test_independent_column_expansion_states(page, test_server):
+    """Test that each column has independent expansion states for Show More/Less."""
+    page.goto(test_server)
+    page.wait_for_function("document.querySelector('#adm-type-select').options.length > 0")
+    
+    # Load data
+    adm_select = page.locator("#adm-type-select")
+    adm_select.select_option("pipeline_baseline")
+    page.wait_for_timeout(1500)
+    
+    pin_button = page.locator("#pin-current-run")
+    
+    # If pin button is enabled (data loaded successfully)
+    if not pin_button.is_disabled():
+        # Pin a run first to get multiple columns
+        pin_button.click()
+        page.wait_for_timeout(500)
+        
+        # Find expandable content in Raw Data rows
+        raw_data_buttons = page.locator(".parameter-row[data-category='Raw Data'] .show-more-btn")
+        
+        if raw_data_buttons.count() >= 2:  # Need at least 2 columns (current + 1 pinned)
+            current_button = raw_data_buttons.nth(0)  # Current run column
+            pinned_button = raw_data_buttons.nth(1)   # First pinned run column
+            
+            # Initially both should show "Show Details" 
+            expect(current_button).to_contain_text("Show Details")
+            expect(pinned_button).to_contain_text("Show Details")
+            
+            # Expand only the current run column
+            current_button.click()
+            page.wait_for_timeout(300)
+            
+            # Current column should now show "Show Preview", pinned should still show "Show Details"
+            expect(current_button).to_contain_text("Show Preview")
+            expect(pinned_button).to_contain_text("Show Details")
+            
+            # Expand the pinned run column
+            pinned_button.click()
+            page.wait_for_timeout(300)
+            
+            # Both should now show "Show Preview"
+            expect(current_button).to_contain_text("Show Preview")
+            expect(pinned_button).to_contain_text("Show Preview")
+            
+            # Collapse only the current run column
+            current_button.click()
+            page.wait_for_timeout(300)
+            
+            # Current should show "Show Details", pinned should still show "Show Preview"
+            expect(current_button).to_contain_text("Show Details")
+            expect(pinned_button).to_contain_text("Show Preview")
+            
+            print("✓ Each column maintains independent expansion state")
+        else:
+            print("⚠ Not enough expandable content found to test independent states")
+    else:
+        print("✓ Pin button disabled - skipping independent expansion test")
 
 
 def test_clear_all_pins_functionality(page, test_server):
@@ -2113,17 +2216,26 @@ def test_clear_all_pins_functionality(page, test_server):
         pin_button.click()
         page.wait_for_timeout(500)
         
-        # Verify pin was added
+        # Verify pin was added and table appears
         expect(pinned_count).to_contain_text("1")
         expect(clear_button).not_to_be_disabled()
+        comparison_table = page.locator(".comparison-table")
+        expect(comparison_table).to_be_visible()
         
         # Clear all pins
         clear_button.click()
         page.wait_for_timeout(500)
         
-        # Verify cleared
+        # Verify cleared - table should remain but with only current run column
         expect(pinned_count).to_contain_text("0")
         expect(clear_button).to_be_disabled()
+        expect(comparison_table).to_be_visible()  # Table remains in always-on mode
+        
+        # Should have only current run header (no pinned headers)
+        current_run_header = page.locator(".current-run-header")
+        expect(current_run_header).to_be_visible()
+        pinned_headers = page.locator(".pinned-run-header")
+        expect(pinned_headers).to_have_count(0)
         
         print("✓ Clear all pins functionality working correctly")
     else:
@@ -2196,10 +2308,10 @@ def test_pin_button_state_changes_with_data(page, test_server):
         adm_select.select_option("pipeline_baseline")
         page.wait_for_timeout(1000)
         
-        run_display = page.locator("#run-display")
-        run_text = run_display.text_content()
+        comparison_table = page.locator(".comparison-table")
+        table_text = comparison_table.text_content()
         
-        if "test_scenario" in run_text and "No data found" not in run_text:
+        if "test_scenario" in table_text and "No data found" not in table_text:
             # Found valid data - pin button should be enabled
             expect(pin_button).not_to_be_disabled()
             found_valid_data = True
@@ -2266,26 +2378,24 @@ def test_comparison_feature_integration(page, test_server):
     
     # Test complete workflow
     pin_button = page.locator("#pin-current-run")
-    pinned_count = page.locator("#pinned-count .count")
     clear_button = page.locator("#clear-all-pins")
     
-    # 1. Initial state (check count and clear button, pin button depends on auto-loading)
+    # 1. Initial state (clear button should be disabled)
     expect(clear_button).to_be_disabled()
-    expect(pinned_count).to_contain_text("0")
     
     # 2. Check if data is already loaded or load it
-    run_display = page.locator("#run-display")
-    run_text = run_display.text_content()
+    comparison_table = page.locator(".comparison-table")
+    table_text = comparison_table.text_content()
     
     # If no data loaded yet, try to load some
-    if "test_scenario" not in run_text or "No data found" in run_text:
+    if "test_scenario" not in table_text or "No data found" in table_text:
         adm_select = page.locator("#adm-type-select")
         adm_select.select_option("pipeline_baseline")
         page.wait_for_timeout(1500)
-        run_text = run_display.text_content()
+        table_text = comparison_table.text_content()
     
     # 3. Test based on data availability
-    if "test_scenario" in run_text and "No data found" not in run_text:
+    if "test_scenario" in table_text and "No data found" not in table_text:
         # Valid data loaded
         expect(pin_button).not_to_be_disabled()
         
@@ -2293,20 +2403,24 @@ def test_comparison_feature_integration(page, test_server):
         pin_button.click()
         page.wait_for_timeout(500)
         
-        expect(pinned_count).to_contain_text("1")
+        # Check that a pinned run column appears
+        pinned_headers = page.locator(".pinned-run-header")
+        expect(pinned_headers).to_have_count(1)
         expect(clear_button).not_to_be_disabled()
         
         # 5. Try to pin duplicate
         pin_button.click()
         page.wait_for_timeout(500)
         
-        expect(pinned_count).to_contain_text("1")  # Should not increase
+        # Should still be only 1 pinned run (duplicate detection)
+        expect(pinned_headers).to_have_count(1)
         
         # 6. Clear all
         clear_button.click()
         page.wait_for_timeout(500)
         
-        expect(pinned_count).to_contain_text("0")
+        # Should be no pinned runs and clear button disabled
+        expect(pinned_headers).to_have_count(0)
         expect(clear_button).to_be_disabled()
         
         print("✓ Complete comparison feature integration test passed")
@@ -2323,8 +2437,8 @@ def test_comparison_feature_integration(page, test_server):
         print("✓ Comparison feature correctly handles no-data scenarios")
 
 
-def test_notifications_for_pin_actions(page, test_server):
-    """Test that notifications appear for pin actions."""
+def test_no_notifications_for_pin_actions(page, test_server):
+    """Test that pin actions work without showing notifications."""
     page.goto(test_server)
     page.wait_for_function("document.querySelector('#adm-type-select').options.length > 0")
     
@@ -2334,37 +2448,33 @@ def test_notifications_for_pin_actions(page, test_server):
     page.wait_for_timeout(1500)
     
     pin_button = page.locator("#pin-current-run")
+    pinned_count = page.locator("#pinned-count .count")
     
     if not pin_button.is_disabled():
-        # Pin configuration - should show success notification
+        # Pin configuration - should work without notifications
         pin_button.click()
-        page.wait_for_timeout(100)  # Brief wait for notification to appear
+        page.wait_for_timeout(500)
         
-        # Check for notification element
+        # Verify pin worked (count should increase)
+        expect(pinned_count).to_contain_text("1")
+        
+        # Check that no notification appears
         notification = page.locator(".notification")
-        expect(notification).to_be_visible()
-        
-        # Wait for notification to disappear
-        page.wait_for_timeout(3500)
         expect(notification).not_to_be_visible()
         
-        # Try to pin same configuration - should show info notification
+        # Try to pin same configuration again
         pin_button.click()
-        page.wait_for_timeout(100)
+        page.wait_for_timeout(500)
         
-        # New notification should appear
-        expect(notification).to_be_visible()
+        # Count should stay the same (duplicate detection)
+        expect(pinned_count).to_contain_text("1")
         
-        print("✓ Notifications working for pin actions")
+        # Still no notification should appear
+        expect(notification).not_to_be_visible()
+        
+        print("✓ Pin actions work without notifications")
     else:
-        # Try to pin when no data - should show error notification
-        pin_button.click(force=True)
-        page.wait_for_timeout(100)
-        
-        notification = page.locator(".notification")
-        # May or may not show notification depending on implementation
-        # This tests error handling without crashing
-        print("✓ Pin error handling working correctly")
+        print("✓ No valid data to test pin functionality")
 
 
 if __name__ == "__main__":
