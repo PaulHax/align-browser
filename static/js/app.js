@@ -1101,6 +1101,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  // Handle LLM change for pinned runs - global for onclick access
+  window.handleRunLLMChange = async function(runId, newLLM) {
+    console.log(`Changing LLM for run ${runId} to ${newLLM}`);
+    
+    // Update parameters for the run with validation
+    updateParameterForRun(runId, 'llmBackbone', newLLM);
+    
+    // Reload data for this specific run
+    await reloadPinnedRun(runId);
+    
+    // Update URL state
+    urlState.updateURL();
+  };
+
   function getMaxKDMAsForCurrentSelection() {
     const selectedAdm = document.getElementById("adm-type-select").value;
     const selectedLLM = document.getElementById("llm-select").value;
@@ -1610,7 +1624,87 @@ document.addEventListener("DOMContentLoaded", () => {
     scoresTimingSection.innerHTML = html;
   }
 
-  // Function to load and display results
+  // Pure function to load experiment data for any parameter combination
+  async function loadExperimentData(scenario, admType, llmBackbone, kdmas) {
+    if (!scenario) {
+      return {
+        inputOutput: null,
+        inputOutputArray: null,
+        scores: null,
+        timing: null,
+        error: 'No scenario provided'
+      };
+    }
+
+    // Generate experiment key from parameters
+    const kdmaParts = [];
+    Object.entries(kdmas || {}).forEach(([kdma, value]) => {
+      kdmaParts.push(`${kdma}-${value.toFixed(1)}`);
+    });
+    const kdmaString = kdmaParts.sort().join("_");
+    const experimentKey = `${admType}_${llmBackbone}_${kdmaString}`;
+
+    console.log("Loading experiment data:", experimentKey, "Scenario:", scenario);
+
+    // Handle new manifest structure with experiment_keys
+    const experiments = manifest.experiment_keys || manifest;
+    if (
+      experiments[experimentKey] &&
+      experiments[experimentKey].scenarios[scenario]
+    ) {
+      const dataPaths = experiments[experimentKey].scenarios[scenario];
+      try {
+        const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
+        const scoresArray = await (await fetch(dataPaths.scores)).json();
+        const timingData = await (await fetch(dataPaths.timing)).json();
+
+        // Extract the index from the scenario ID (e.g., "test_scenario_1-0" → 0)
+        const scenarioIndex = parseInt(scenario.split('-').pop());
+        
+        // Get the specific element from each array using the index
+        const inputOutputItem = inputOutputArray[scenarioIndex];
+        const scoreItem = Array.isArray(scoresArray) ? scoresArray[0] : scoresArray;
+
+        return {
+          inputOutput: inputOutputItem,
+          inputOutputArray: inputOutputArray,
+          scores: scoreItem,
+          timing: timingData,
+          experimentKey: experimentKey,
+          error: null
+        };
+      } catch (error) {
+        console.error("Error fetching experiment data:", error);
+        return {
+          inputOutput: null,
+          inputOutputArray: null,
+          scores: null,
+          timing: null,
+          experimentKey: experimentKey,
+          error: error.message
+        };
+      }
+    } else {
+      // Generate debug information to help identify the issue
+      const availableKeys = Object.keys(experiments).filter(key => 
+        key.startsWith(`${experimentKey.split('_')[0]}_${experimentKey.split('_')[1]}_`)
+      );
+      
+      console.warn(`No data found for key: ${experimentKey}, scenario: ${scenario}`);
+      console.warn(`Available similar keys:`, availableKeys);
+      
+      return {
+        inputOutput: null,
+        inputOutputArray: null,
+        scores: null,
+        timing: null,
+        experimentKey: experimentKey,
+        error: `No experiment data found for ${experimentKey} with scenario ${scenario}`
+      };
+    }
+  }
+
+  // Function to load and display results for current run
   async function loadResults() {
     if (appState.isUpdatingProgrammatically) {
       // Don't update results while we're in the middle of updating dropdowns
@@ -1739,6 +1833,61 @@ document.addEventListener("DOMContentLoaded", () => {
       };
       appState.pinnedRuns.set(runConfig.id, pinnedData);
     }
+  }
+
+  // Reload data for a specific pinned run after parameter changes (pure approach)
+  async function reloadPinnedRun(runId) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) {
+      console.warn(`Run ${runId} not found in pinned runs`);
+      return;
+    }
+    
+    console.log(`Reloading data for run ${runId}`);
+    
+    // Show loading state
+    run.loadStatus = 'loading';
+    updateComparisonDisplay();
+    
+    // Get updated parameters from columnParameters
+    const params = getParametersForRun(runId);
+    
+    try {
+      // Load new data using pure function - no global state modification
+      const experimentData = await loadExperimentData(
+        params.scenario,
+        params.admType,
+        params.llmBackbone,
+        params.kdmas
+      );
+      
+      if (experimentData.error) {
+        console.error(`Failed to load data for run ${runId}:`, experimentData.error);
+        run.loadStatus = 'error';
+      } else {
+        // Update pinned run data with new results
+        run.scenario = params.scenario;
+        run.baseScenario = params.baseScenario;
+        run.admType = params.admType;
+        run.llmBackbone = params.llmBackbone;
+        run.kdmaValues = { ...params.kdmas };
+        run.experimentKey = experimentData.experimentKey;
+        run.inputOutput = experimentData.inputOutput;
+        run.inputOutputArray = experimentData.inputOutputArray;
+        run.scores = experimentData.scores;
+        run.timing = experimentData.timing;
+        run.loadStatus = 'loaded';
+        
+        console.log(`Successfully reloaded run ${runId} with new data`);
+      }
+      
+    } catch (error) {
+      console.error(`Failed to reload data for run ${runId}:`, error);
+      run.loadStatus = 'error';
+    }
+    
+    // Re-render the comparison table (current run data is unaffected)
+    updateComparisonDisplay();
   }
 
   // Update UI controls to reflect current app state
@@ -2021,10 +2170,36 @@ document.addEventListener("DOMContentLoaded", () => {
     return 'N/A';
   }
 
+  // Create dropdown HTML for LLM selection in table cells
+  function createLLMDropdownForRun(runId, currentValue) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return escapeHtml(currentValue);
+    
+    const validOptions = getValidOptionsForConstraints({ 
+      scenario: run.scenario,
+      admType: run.admType 
+    });
+    const validLLMs = Array.from(validOptions.llmBackbones).sort();
+    
+    let html = `<select class="table-llm-select" onchange="handleRunLLMChange('${runId}', this.value)">`;
+    validLLMs.forEach(llm => {
+      const selected = llm === currentValue ? 'selected' : '';
+      html += `<option value="${escapeHtml(llm)}" ${selected}>${escapeHtml(llm)}</option>`;
+    });
+    html += '</select>';
+    
+    return html;
+  }
+
   // Format values for display in table cells
   function formatValue(value, type, paramName = '', runId = '') {
     if (value === null || value === undefined || value === 'N/A') {
       return '<span class="na-value">N/A</span>';
+    }
+    
+    // Special handling for LLM backbone in pinned runs - make it editable
+    if (paramName === 'llm_backbone' && runId !== 'current' && runId !== '') {
+      return createLLMDropdownForRun(runId, value);
     }
     
     switch (type) {
