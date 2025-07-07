@@ -328,6 +328,189 @@ document.addEventListener("DOMContentLoaded", () => {
     return validOptions;
   }
   
+  // Convenience function to check if a specific parameter combination is valid
+  function isValidParameterCombination(scenario, admType, llmBackbone, kdmas) {
+    const constraints = { scenario, admType, llmBackbone, kdmas };
+    const validOptions = getValidOptionsForConstraints(constraints);
+    return validOptions.scenarios.has(scenario);
+  }
+  
+  // ===== PARAMETER AUTO-CORRECTION LOGIC (Phase 2) =====
+  
+  // Find a valid parameter combination given partial constraints and preferences
+  function findValidParameterCombination(constraints = {}, preferences = {}) {
+    // Start with current selections as baseline
+    const currentParams = {
+      scenario: constraints.scenario || appState.selectedScenario,
+      admType: constraints.admType || appState.selectedAdmType,
+      llmBackbone: constraints.llmBackbone || appState.selectedLLM,
+      kdmas: constraints.kdmas || { ...appState.activeKDMAs }
+    };
+    
+    // If current combination is already valid, return it
+    if (isValidParameterCombination(currentParams.scenario, currentParams.admType, currentParams.llmBackbone, currentParams.kdmas)) {
+      return currentParams;
+    }
+    
+    // Priority 1: Try to find valid scenario for current ADM+LLM
+    if (currentParams.admType && currentParams.llmBackbone) {
+      const validOptions = getValidOptionsForConstraints({ 
+        admType: currentParams.admType, 
+        llmBackbone: currentParams.llmBackbone 
+      });
+      
+      if (validOptions.scenarios.size > 0) {
+        const validScenario = Array.from(validOptions.scenarios)[0];
+        const correctedParams = { ...currentParams, scenario: validScenario };
+        
+        // Get valid KDMAs for this combination
+        const kdmaOptions = getValidOptionsForConstraints(correctedParams);
+        if (Object.keys(kdmaOptions.kdmas).length > 0) {
+          const firstKDMA = Object.keys(kdmaOptions.kdmas)[0];
+          const firstValue = Array.from(kdmaOptions.kdmas[firstKDMA])[0];
+          correctedParams.kdmas = { [firstKDMA]: firstValue };
+          return correctedParams;
+        }
+      }
+    }
+    
+    // Priority 2: Try to find valid LLM for current ADM
+    if (currentParams.admType) {
+      const validOptions = getValidOptionsForConstraints({ admType: currentParams.admType });
+      
+      if (validOptions.llmBackbones.size > 0) {
+        // Prefer user's LLM preference if valid, otherwise use first available
+        const preferredLLM = preferences.llmPreferences && preferences.llmPreferences[currentParams.admType];
+        let selectedLLM;
+        
+        if (preferredLLM && validOptions.llmBackbones.has(preferredLLM)) {
+          selectedLLM = preferredLLM;
+        } else {
+          selectedLLM = Array.from(validOptions.llmBackbones)[0];
+        }
+        
+        const correctedParams = { ...currentParams, llmBackbone: selectedLLM };
+        
+        // Find valid scenario for this ADM+LLM combination
+        const scenarioOptions = getValidOptionsForConstraints({ 
+          admType: currentParams.admType, 
+          llmBackbone: selectedLLM 
+        });
+        
+        if (scenarioOptions.scenarios.size > 0) {
+          correctedParams.scenario = Array.from(scenarioOptions.scenarios)[0];
+          
+          // Get valid KDMAs
+          const kdmaOptions = getValidOptionsForConstraints(correctedParams);
+          if (Object.keys(kdmaOptions.kdmas).length > 0) {
+            const firstKDMA = Object.keys(kdmaOptions.kdmas)[0];
+            const firstValue = Array.from(kdmaOptions.kdmas[firstKDMA])[0];
+            correctedParams.kdmas = { [firstKDMA]: firstValue };
+            return correctedParams;
+          }
+        }
+      }
+    }
+    
+    // Priority 3: Find any valid ADM combination
+    const allValidOptions = getValidOptionsForConstraints({});
+    
+    if (allValidOptions.admTypes.size > 0) {
+      const firstValidADM = Array.from(allValidOptions.admTypes)[0];
+      const admOptions = getValidOptionsForConstraints({ admType: firstValidADM });
+      
+      if (admOptions.llmBackbones.size > 0 && admOptions.scenarios.size > 0) {
+        const firstValidLLM = Array.from(admOptions.llmBackbones)[0];
+        const firstValidScenario = Array.from(admOptions.scenarios)[0];
+        
+        const correctedParams = {
+          scenario: firstValidScenario,
+          admType: firstValidADM,
+          llmBackbone: firstValidLLM,
+          kdmas: {}
+        };
+        
+        // Get valid KDMAs for this combination
+        const kdmaOptions = getValidOptionsForConstraints(correctedParams);
+        if (Object.keys(kdmaOptions.kdmas).length > 0) {
+          const firstKDMA = Object.keys(kdmaOptions.kdmas)[0];
+          const firstValue = Array.from(kdmaOptions.kdmas[firstKDMA])[0];
+          correctedParams.kdmas = { [firstKDMA]: firstValue };
+        }
+        
+        return correctedParams;
+      }
+    }
+    
+    // Fallback: return current params (should not happen with valid manifest)
+    return currentParams;
+  }
+  
+  // Correct parameters to be valid while preserving user preferences
+  function correctParametersToValid(currentParams, preservePreferences = true) {
+    const preferences = preservePreferences ? {
+      llmPreferences: appState.llmPreferences
+    } : {};
+    
+    return findValidParameterCombination(currentParams, preferences);
+  }
+  
+  // Update a single parameter and auto-correct others to maintain validity
+  function updateParameterWithValidation(paramType, newValue, updateUI = true) {
+    const constraints = {};
+    constraints[paramType] = newValue;
+    
+    const correctedParams = correctParametersToValid(constraints);
+    
+    if (updateUI) {
+      // Update appState
+      appState.selectedScenario = correctedParams.scenario;
+      appState.selectedAdmType = correctedParams.admType;
+      appState.selectedLLM = correctedParams.llmBackbone;
+      appState.activeKDMAs = correctedParams.kdmas;
+      
+      // Update UI controls
+      updateUIFromCorrectedParams(correctedParams);
+    }
+    
+    return correctedParams;
+  }
+  
+  // Helper function to update UI controls from corrected parameters
+  function updateUIFromCorrectedParams(params) {
+    appState.isUpdatingProgrammatically = true;
+    
+    // Update scenario selects
+    if (params.scenario !== appState.selectedScenario) {
+      const baseScenarioId = params.scenario.replace(/-\d+$/, "");
+      const baseScenarioSelect = document.getElementById("base-scenario-select");
+      const scenarioSelect = document.getElementById("scenario-select");
+      
+      if (baseScenarioSelect && baseScenarioSelect.value !== baseScenarioId) {
+        appState.selectedBaseScenario = baseScenarioId;
+        baseScenarioSelect.value = baseScenarioId;
+        updateSpecificScenarioDropdown();
+      }
+      
+      if (scenarioSelect && scenarioSelect.value !== params.scenario) {
+        scenarioSelect.value = params.scenario;
+      }
+    }
+    
+    // Update ADM select
+    const admSelect = document.getElementById("adm-type-select");
+    if (admSelect && admSelect.value !== params.admType) {
+      admSelect.value = params.admType;
+    }
+    
+    // Update LLM select
+    const llmSelect = document.getElementById("llm-select");
+    if (llmSelect && llmSelect.value !== params.llmBackbone) {
+      llmSelect.value = params.llmBackbone;
+    }
+    
+    appState.isUpdatingProgrammatically = false;
+  }
 
   function populateUIControls() {
     // ADM Type Selection
@@ -864,101 +1047,36 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
     
-    // Find a valid experiment combination if we have no active KDMAs
-    if (Object.keys(appState.activeKDMAs).length === 0) {
-      // If no valid KDMAs for current selection, need to find a different combination
-      if (Object.keys(validKDMAs).length === 0) {
-        // Current ADM/LLM/Scenario combination has no valid experiments
-        // First try to find a valid scenario for this ADM/LLM
-        const experiments = manifest.experiment_keys || manifest;
-        let foundValidScenario = null;
+    // Auto-correct parameters if we have invalid combination
+    if (Object.keys(validKDMAs).length === 0) {
+      // Use auto-correction to find valid parameter combination
+      const correctedParams = correctParametersToValid({});
+      
+      // Apply corrections to UI if parameters changed
+      if (correctedParams.scenario !== appState.selectedScenario ||
+          correctedParams.admType !== appState.selectedAdmType ||
+          correctedParams.llmBackbone !== appState.selectedLLM) {
         
-        for (const expKey in experiments) {
-          const experiment = experiments[expKey];
-          
-          for (const scenarioId in experiment.scenarios) {
-            const config = experiment.scenarios[scenarioId].config;
-            if (!config) continue;
-            
-            const expAdm = config.adm ? config.adm.name : "unknown_adm";
-            const expLLM = config.adm && 
-              config.adm.structured_inference_engine && 
-              config.adm.structured_inference_engine.model_name
-              ? config.adm.structured_inference_engine.model_name 
-              : "no_llm";
-            
-            if (expAdm === selectedAdm && expLLM === selectedLLM) {
-              foundValidScenario = scenarioId;
-              break;
-            }
-          }
-          
-          if (foundValidScenario) break;
-        }
+        updateUIFromCorrectedParams(correctedParams);
         
-        if (foundValidScenario && foundValidScenario !== appState.selectedScenario) {
-          // Switch to valid scenario
-          appState.selectedScenario = foundValidScenario;
-          
-          // Update scenario selects
-          const baseScenarioId = foundValidScenario.replace(/-\d+$/, "");
-          const baseScenarioSelect = document.getElementById("base-scenario-select");
-          const scenarioSelect = document.getElementById("scenario-select");
-          
-          if (baseScenarioSelect && baseScenarioSelect.value !== baseScenarioId) {
-            appState.selectedBaseScenario = baseScenarioId;
-            baseScenarioSelect.value = baseScenarioId;
-            updateSpecificScenarioDropdown();
-          }
-          
-          if (scenarioSelect && scenarioSelect.value !== foundValidScenario) {
-            scenarioSelect.value = foundValidScenario;
-          }
-          
-          // Retry with new scenario
-          updateKDMASliders();
-          return;
-        }
+        // Update appState 
+        appState.selectedScenario = correctedParams.scenario;
+        appState.selectedAdmType = correctedParams.admType;
+        appState.selectedLLM = correctedParams.llmBackbone;
         
-        // If no valid scenario found, try to find a valid LLM for this ADM
-        const validLLMsForAdm = appState.validCombinations[selectedAdm] 
-          ? Object.keys(appState.validCombinations[selectedAdm]).sort() 
-          : [];
-        
-        if (validLLMsForAdm.length > 0) {
-          // Switch to first valid LLM for this ADM
-          const firstValidLLM = validLLMsForAdm[0];
-          const llmSelect = document.getElementById("llm-select");
-          if (llmSelect && llmSelect.value !== firstValidLLM) {
-            llmSelect.value = firstValidLLM;
-            // This will trigger updateKDMASliders again with valid combination
-            updateKDMASliders();
-            return;
-          }
-        } else {
-          // No valid LLMs for this ADM, switch to first valid ADM
-          const validADMs = Object.keys(appState.validCombinations).sort();
-          if (validADMs.length > 0) {
-            const firstValidADM = validADMs[0];
-            const admSelect = document.getElementById("adm-type-select");
-            if (admSelect && admSelect.value !== firstValidADM) {
-              admSelect.value = firstValidADM;
-              // This will trigger updateLLMDropdown and then updateKDMASliders
-              updateLLMDropdown();
-              return;
-            }
-          }
-        }
-      } else {
-        // We have valid KDMAs, add the first available KDMA type with its first valid value
-        const availableKDMAs = Object.keys(validKDMAs).sort();
-        if (availableKDMAs.length > 0) {
-          const firstKDMAType = availableKDMAs[0];
-          const validValuesForKDMA = validKDMAs[firstKDMAType] || [];
-          const firstValidValue = validValuesForKDMA.length > 0 ? validValuesForKDMA[0] : 0.5;
-          addKDMASelector(firstKDMAType, firstValidValue);
-        }
+        // Recursive call with corrected parameters
+        updateKDMASliders();
+        return;
       }
+    }
+    
+    // Add a KDMA if we have none and valid options are available
+    if (Object.keys(appState.activeKDMAs).length === 0 && Object.keys(validKDMAs).length > 0) {
+      const availableKDMAs = Object.keys(validKDMAs).sort();
+      const firstKDMAType = availableKDMAs[0];
+      const validValuesForKDMA = validKDMAs[firstKDMAType] || [];
+      const firstValidValue = validValuesForKDMA.length > 0 ? validValuesForKDMA[0] : 0.5;
+      addKDMASelector(firstKDMAType, firstValidValue);
     }
     
     // Update all KDMA type selectors with proper filtering
