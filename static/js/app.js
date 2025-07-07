@@ -62,6 +62,141 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  // ===== RUN ID CONTEXT SYSTEM (Phase 4) =====
+  
+  // Constants for run identification
+  const CURRENT_RUN_ID = 'current';
+  
+  // Parameter storage by run ID - enables multi-run parameter management
+  const columnParameters = new Map();
+  
+  // Parameter structure for each run
+  function createParameterStructure(params = {}) {
+    return {
+      scenario: params.scenario || null,
+      baseScenario: params.baseScenario || null,
+      admType: params.admType || null,
+      llmBackbone: params.llmBackbone || null,
+      kdmas: params.kdmas || {}
+    };
+  }
+  
+  // Get parameters for any run ID
+  function getParametersForRun(runId) {
+    if (!columnParameters.has(runId)) {
+      // Initialize with default parameters using auto-correction
+      let defaultParams;
+      
+      if (runId === CURRENT_RUN_ID) {
+        // For current run, use existing appState as starting point
+        defaultParams = createParameterStructure({
+          scenario: appState.selectedScenario,
+          baseScenario: appState.selectedBaseScenario,
+          admType: appState.selectedAdmType,
+          llmBackbone: appState.selectedLLM,
+          kdmas: appState.activeKDMAs
+        });
+      } else {
+        // For new runs, start with auto-corrected valid combination
+        defaultParams = correctParametersToValid({});
+      }
+      
+      columnParameters.set(runId, defaultParams);
+    }
+    
+    return columnParameters.get(runId);
+  }
+  
+  // Set parameters for any run ID with validation
+  function setParametersForRun(runId, params) {
+    // Always validate parameters before storing
+    const validParams = correctParametersToValid(params, true);
+    columnParameters.set(runId, createParameterStructure(validParams));
+    
+    return validParams;
+  }
+  
+  // Remove parameters for a run ID (cleanup)
+  function removeParametersForRun(runId) {
+    if (runId !== CURRENT_RUN_ID) {
+      columnParameters.delete(runId);
+    }
+  }
+  
+  // Sync appState FROM current run parameters
+  function syncAppStateFromRun(runId = CURRENT_RUN_ID) {
+    if (runId === CURRENT_RUN_ID) {
+      const params = getParametersForRun(CURRENT_RUN_ID);
+      appState.selectedScenario = params.scenario;
+      appState.selectedBaseScenario = params.baseScenario;
+      appState.selectedAdmType = params.admType;
+      appState.selectedLLM = params.llmBackbone;
+      appState.activeKDMAs = { ...params.kdmas };
+    }
+  }
+  
+  // Sync current run parameters FROM appState
+  function syncRunFromAppState() {
+    const params = {
+      scenario: appState.selectedScenario,
+      baseScenario: appState.selectedBaseScenario,
+      admType: appState.selectedAdmType,
+      llmBackbone: appState.selectedLLM,
+      kdmas: { ...appState.activeKDMAs }
+    };
+    
+    const validParams = setParametersForRun(CURRENT_RUN_ID, params);
+    
+    // If auto-correction changed parameters, sync back to appState
+    if (validParams.scenario !== params.scenario ||
+        validParams.admType !== params.admType ||
+        validParams.llmBackbone !== params.llmBackbone ||
+        JSON.stringify(validParams.kdmas) !== JSON.stringify(params.kdmas)) {
+      syncAppStateFromRun(CURRENT_RUN_ID);
+      return true; // Parameters were corrected
+    }
+    
+    return false; // No correction needed
+  }
+  
+  // Update a parameter for any run with validation and UI sync
+  function updateParameterForRun(runId, paramType, newValue, updateUI = true) {
+    const params = getParametersForRun(runId);
+    
+    // Map parameter types to parameter structure fields
+    const paramMap = {
+      'scenario': 'scenario',
+      'baseScenario': 'baseScenario', 
+      'admType': 'admType',
+      'llmBackbone': 'llmBackbone',
+      'llm': 'llmBackbone', // alias
+      'kdmas': 'kdmas'
+    };
+    
+    const paramField = paramMap[paramType] || paramType;
+    params[paramField] = newValue;
+    
+    // Apply auto-correction
+    const correctedParams = setParametersForRun(runId, params);
+    
+    // Update UI if it's the current run
+    if (runId === CURRENT_RUN_ID && updateUI) {
+      syncAppStateFromRun(CURRENT_RUN_ID);
+      updateUIFromCorrectedParams(correctedParams);
+    }
+    
+    return correctedParams;
+  }
+  
+  // Initialize the run context system after manifest is loaded
+  function initializeRunContextSystem() {
+    // Initialize current run parameters from appState
+    // This establishes the baseline for the current sidebar state
+    syncRunFromAppState();
+    
+    console.log('Run context system initialized with current run:', getParametersForRun(CURRENT_RUN_ID));
+  }
+
   // URL State Management System
   const urlState = {
     // Encode current state to URL
@@ -110,6 +245,9 @@ document.addEventListener("DOMContentLoaded", () => {
           // Update UI controls to reflect restored state
           updateUIFromState();
           
+          // Sync restored state to current run parameters
+          syncRunFromAppState();
+          
           // Restore pinned runs
           if (state.pinnedRuns && state.pinnedRuns.length > 0) {
             for (const runConfig of state.pinnedRuns) {
@@ -141,6 +279,9 @@ document.addEventListener("DOMContentLoaded", () => {
       console.log("Manifest loaded:", manifest);
       extractParametersFromManifest();
       populateUIControls();
+      
+      // Initialize run context system
+      initializeRunContextSystem();
       
       // Try to restore state from URL, otherwise load results normally
       const restoredFromURL = await urlState.restoreFromURL();
@@ -526,6 +667,9 @@ document.addEventListener("DOMContentLoaded", () => {
         loadResults();
       }
       urlState.updateURL(); // Update URL with new state
+      
+      // Sync to current run parameters
+      syncRunFromAppState();
     });
 
     // LLM Backbone Selection
@@ -545,6 +689,9 @@ document.addEventListener("DOMContentLoaded", () => {
         loadResults();
       }
       urlState.updateURL(); // Update URL with new state
+      
+      // Sync to current run parameters
+      syncRunFromAppState();
     });
 
     // KDMA Dynamic Selection container
@@ -570,6 +717,9 @@ document.addEventListener("DOMContentLoaded", () => {
       
       updateFromScenarioChange(); // This will clear isTransitioning when done
       urlState.updateURL(); // Update URL with new state
+      
+      // Sync to current run parameters
+      syncRunFromAppState();
     });
 
     // Specific Scenario Selection - Add event listener to existing element
@@ -581,6 +731,9 @@ document.addEventListener("DOMContentLoaded", () => {
         updateFromScenarioChange();
       }
       urlState.updateURL(); // Update URL with new state
+      
+      // Sync to current run parameters
+      syncRunFromAppState();
     });
 
     // Add event handler for Add KDMA button
@@ -596,6 +749,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!appState.isTransitioning) {
           loadResults();
         }
+        
+        // Sync to current run parameters
+        syncRunFromAppState();
       }
     });
 
@@ -604,6 +760,9 @@ document.addEventListener("DOMContentLoaded", () => {
     updateBaseScenarioDropdown();
     updateADMDropdown();
     updateLLMDropdown(); // This will also call updateKDMASliders
+    
+    // Initialize current run parameters with initial state
+    syncRunFromAppState();
   }
 
   function getValidADMsForCurrentScenario() {
@@ -874,6 +1033,9 @@ document.addEventListener("DOMContentLoaded", () => {
         loadResults();
       }
       urlState.updateURL(); // Update URL with new state
+      
+      // Sync to current run parameters
+      syncRunFromAppState();
     });
     
     appState.activeKDMAs[kdmaType] = value;
@@ -933,6 +1095,9 @@ document.addEventListener("DOMContentLoaded", () => {
         loadResults();
       }
       urlState.updateURL(); // Update URL with new state
+      
+      // Sync to current run parameters
+      syncRunFromAppState();
     }
   };
 
