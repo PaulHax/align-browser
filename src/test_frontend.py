@@ -1644,8 +1644,8 @@ def test_e2e_real_data_validation(page, browser_context):
             print(f"KDMA selectors count: {kdma_selectors.count()}")
 
             # Check that results are loaded initially (no "No data found")
-            run_display = page.locator("#run-display")
-            initial_results = run_display.text_content()
+            runs_container = page.locator("#runs-container")
+            initial_results = runs_container.text_content()
             print(f"Initial results (first 300 chars): {initial_results[:300]}")
 
             # If we see "No data found" on initial load, the auto-validation should work
@@ -1665,7 +1665,7 @@ def test_e2e_real_data_validation(page, browser_context):
                     adm_select.select_option(adm_type)
                     page.wait_for_timeout(2000)  # Wait for validation to complete
 
-                    updated_results = run_display.text_content()
+                    updated_results = runs_container.text_content()
                     if "No data found" not in updated_results:
                         found_valid_adm = True
                         print(f"Found valid ADM: {adm_type}")
@@ -1708,19 +1708,20 @@ def test_e2e_real_data_validation(page, browser_context):
                 page.wait_for_timeout(3000)
 
                 # Check results
-                updated_results = run_display.text_content()
+                updated_results = runs_container.text_content()
 
                 if "No data found" not in updated_results:
                     # This is a valid combination
                     valid_combinations_found += 1
                     print(f"✓ Valid combination found for ADM '{adm_type}'")
 
-                    # Verify results contain expected content for valid data
+                    # Verify results contain expected content for valid data in table format
                     expected_content = [
-                        "Results for",
-                        "Input/Output",
-                        "Scores",
-                        "Timing",
+                        "Scenario",
+                        "Adm Type", 
+                        "Llm Backbone",
+                        "Kdma Values",
+                        "Current Run"
                     ]
                     has_valid_content = any(
                         content in updated_results for content in expected_content
@@ -1773,7 +1774,7 @@ def test_e2e_real_data_validation(page, browser_context):
                 print(f"KDMA value after change: {final_value}")
 
                 # Results should either be valid or show helpful debug info
-                final_results = run_display.text_content()
+                final_results = runs_container.text_content()
                 if "No data found" in final_results:
                     print(
                         "✓ KDMA validation correctly shows debug info for invalid value"
@@ -1784,10 +1785,11 @@ def test_e2e_real_data_validation(page, browser_context):
                 else:
                     print("✓ KDMA validation found valid combination")
                     expected_content = [
-                        "Results for",
-                        "Input/Output",
-                        "Scores",
-                        "Timing",
+                        "Scenario",
+                        "Adm Type", 
+                        "Llm Backbone",
+                        "Kdma Values",
+                        "Current Run"
                     ]
                     has_valid_content = any(
                         content in final_results for content in expected_content

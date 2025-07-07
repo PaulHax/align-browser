@@ -241,6 +241,94 @@ document.addEventListener("DOMContentLoaded", () => {
     console.log("Valid Combinations (structured):", appState.validCombinations);
   }
 
+  // ===== EXTRACTED VALIDITY LOGIC (Phase 1) =====
+  
+  // Core function that extracts parameters from experiment config
+  function extractParametersFromConfig(config) {
+    if (!config) return null;
+    
+    const admType = config.adm ? config.adm.name : "unknown_adm";
+    const llmBackbone = config.adm && 
+      config.adm.structured_inference_engine && 
+      config.adm.structured_inference_engine.model_name
+      ? config.adm.structured_inference_engine.model_name 
+      : "no_llm";
+    
+    const kdmas = {};
+    if (config.alignment_target && config.alignment_target.kdma_values) {
+      config.alignment_target.kdma_values.forEach((kdma_entry) => {
+        const kdma = kdma_entry.kdma;
+        const value = kdma_entry.value;
+        
+        if (!kdmas[kdma]) {
+          kdmas[kdma] = new Set();
+        }
+        kdmas[kdma].add(value);
+      });
+    }
+    
+    return { admType, llmBackbone, kdmas };
+  }
+  
+  // Check if extracted parameters match given constraints
+  function matchesConstraints(constraints, scenarioId, params) {
+    if (constraints.scenario && constraints.scenario !== scenarioId) {
+      return false;
+    }
+    if (constraints.admType && constraints.admType !== params.admType) {
+      return false;
+    }
+    if (constraints.llmBackbone && constraints.llmBackbone !== params.llmBackbone) {
+      return false;
+    }
+    if (constraints.kdmas) {
+      // Check if all constraint KDMAs have matching values
+      for (const [kdmaName, requiredValue] of Object.entries(constraints.kdmas)) {
+        if (!params.kdmas[kdmaName] || !params.kdmas[kdmaName].has(requiredValue)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+  
+  // Core function that finds all valid options given constraints
+  function getValidOptionsForConstraints(constraints = {}) {
+    const experiments = manifest.experiment_keys || manifest;
+    const validOptions = {
+      scenarios: new Set(),
+      admTypes: new Set(),
+      llmBackbones: new Set(),
+      kdmas: {} // kdmaName -> Set of valid values
+    };
+    
+    for (const expKey in experiments) {
+      const experiment = experiments[expKey];
+      
+      for (const scenarioId in experiment.scenarios) {
+        const scenario = experiment.scenarios[scenarioId];
+        const params = extractParametersFromConfig(scenario.config);
+        
+        if (params && matchesConstraints(constraints, scenarioId, params)) {
+          validOptions.scenarios.add(scenarioId);
+          validOptions.admTypes.add(params.admType);
+          validOptions.llmBackbones.add(params.llmBackbone);
+          
+          // Merge KDMAs
+          for (const [kdmaName, kdmaValues] of Object.entries(params.kdmas)) {
+            if (!validOptions.kdmas[kdmaName]) {
+              validOptions.kdmas[kdmaName] = new Set();
+            }
+            kdmaValues.forEach(value => validOptions.kdmas[kdmaName].add(value));
+          }
+        }
+      }
+    }
+    
+    return validOptions;
+  }
+  
+
   function populateUIControls() {
     // ADM Type Selection
     admTypeSelection.innerHTML = "<h3>ADM Type</h3>";
@@ -337,23 +425,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function getValidADMsForCurrentScenario() {
     const currentScenario = appState.selectedScenario || getFirstAvailableScenario();
-    const experiments = manifest.experiment_keys || manifest;
-    const validADMs = new Set();
-    
-    for (const expKey in experiments) {
-      const experiment = experiments[expKey];
-      
-      // Check if this experiment has the current scenario
-      if (experiment.scenarios && experiment.scenarios[currentScenario]) {
-        const config = experiment.scenarios[currentScenario].config;
-        if (!config) continue;
-        
-        const expAdm = config.adm ? config.adm.name : "unknown_adm";
-        validADMs.add(expAdm);
-      }
-    }
-    
-    return Array.from(validADMs).sort();
+    const validOptions = getValidOptionsForConstraints({ scenario: currentScenario });
+    return Array.from(validOptions.admTypes).sort();
   }
 
   function updateADMDropdown() {
@@ -398,9 +471,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const llmSelect = document.getElementById("llm-select");
     llmSelect.innerHTML = ""; // Clear existing options
 
-    const validLLMsForAdm = appState.validCombinations[selectedAdm]
-      ? Object.keys(appState.validCombinations[selectedAdm]).sort()
-      : [];
+    const validOptions = getValidOptionsForConstraints({ admType: selectedAdm });
+    const validLLMsForAdm = Array.from(validOptions.llmBackbones).sort();
 
     validLLMsForAdm.forEach((llm) => {
       const option = document.createElement("option");
@@ -475,46 +547,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedLLM = document.getElementById("llm-select").value;
     const currentScenario = appState.selectedScenario || getFirstAvailableScenario();
     
-    // Find experiments that match the current scenario and ADM/LLM selection
-    const experiments = manifest.experiment_keys || manifest;
+    const constraints = {
+      scenario: currentScenario,
+      admType: selectedAdm,
+      llmBackbone: selectedLLM
+    };
+    
+    const validOptions = getValidOptionsForConstraints(constraints);
+    
+    // Convert Sets to sorted arrays to match original format
     const validKDMAs = {};
-    
-    for (const expKey in experiments) {
-      const experiment = experiments[expKey];
-      
-      // Check if this experiment has the selected scenario
-      if (experiment.scenarios && experiment.scenarios[currentScenario]) {
-        const config = experiment.scenarios[currentScenario].config;
-        if (!config) continue;
-        
-        const expAdm = config.adm ? config.adm.name : "unknown_adm";
-        const expLLM = config.adm && 
-          config.adm.structured_inference_engine && 
-          config.adm.structured_inference_engine.model_name
-          ? config.adm.structured_inference_engine.model_name 
-          : "no_llm";
-        
-        // Only include KDMAs from experiments that match our ADM/LLM selection
-        if (expAdm === selectedAdm && expLLM === selectedLLM) {
-          if (config.alignment_target && config.alignment_target.kdma_values) {
-            config.alignment_target.kdma_values.forEach((kdma_entry) => {
-              const kdma = kdma_entry.kdma;
-              const value = kdma_entry.value;
-              
-              if (!validKDMAs[kdma]) {
-                validKDMAs[kdma] = new Set();
-              }
-              validKDMAs[kdma].add(value);
-            });
-          }
-        }
-      }
-    }
-    
-    // Convert Sets to sorted Arrays
-    for (const kdma in validKDMAs) {
-      validKDMAs[kdma] = Array.from(validKDMAs[kdma]).sort((a, b) => a - b);
-    }
+    Object.keys(validOptions.kdmas).forEach(kdma => {
+      validKDMAs[kdma] = Array.from(validOptions.kdmas[kdma]).sort((a, b) => a - b);
+    });
     
     return validKDMAs;
   }
