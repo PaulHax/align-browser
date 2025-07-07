@@ -691,3 +691,31 @@ footer {
     padding: 1px 4px;
   }
 }
+
+/* Table cell controls for editable parameters */
+.table-llm-select {
+  width: 100%;
+  max-width: 280px;
+  padding: 4px 6px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  background-color: white;
+  cursor: pointer;
+}
+
+.table-llm-select:hover {
+  border-color: #007bff;
+}
+
+.table-llm-select:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+/* Ensure proper sizing in table cells */
+.pinned-run-value .table-llm-select {
+  margin: 0;
+}
