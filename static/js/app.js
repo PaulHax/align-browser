@@ -97,8 +97,20 @@ document.addEventListener("DOMContentLoaded", () => {
           kdmas: appState.activeKDMAs
         });
       } else {
-        // For new runs, start with auto-corrected valid combination
-        defaultParams = correctParametersToValid({});
+        // For pinned runs, initialize with the run's actual parameters
+        const run = appState.pinnedRuns.get(runId);
+        if (run) {
+          defaultParams = createParameterStructure({
+            scenario: run.scenario,
+            baseScenario: run.baseScenario,
+            admType: run.admType,
+            llmBackbone: run.llmBackbone,
+            kdmas: run.kdmaValues
+          });
+        } else {
+          // For truly new runs, start with auto-corrected valid combination
+          defaultParams = correctParametersToValid({});
+        }
       }
       
       columnParameters.set(runId, defaultParams);
@@ -470,7 +482,15 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   
   // Convenience function to check if a specific parameter combination is valid
-  function isValidParameterCombination(scenario, admType, llmBackbone, kdmas) {
+  function isValidParameterCombination(scenario, admType, llmBackbone, kdmas, baseScenario = null) {
+    // Check baseScenario/scenario consistency if both are provided
+    if (baseScenario && scenario) {
+      const scenarioBase = scenario.replace(/-\d+$/, "");
+      if (scenarioBase !== baseScenario) {
+        return false;
+      }
+    }
+    
     const constraints = { scenario, admType, llmBackbone, kdmas };
     const validOptions = getValidOptionsForConstraints(constraints);
     return validOptions.scenarios.has(scenario);
@@ -479,81 +499,232 @@ document.addEventListener("DOMContentLoaded", () => {
   // ===== PARAMETER AUTO-CORRECTION LOGIC (Phase 2) =====
   
   // Find a valid parameter combination given partial constraints and preferences
-  function findValidParameterCombination(constraints = {}, preferences = {}) {
+  // Priority order: 1) Scenario (highest), 2) KDMA values, 3) ADM type, 4) LLM backbone (lowest)
+  function findValidParameterCombination(constraints = {}, preferences = {}, depth = 0) {
+    // Prevent infinite recursion
+    if (depth > 2) {
+      console.warn('Auto-correction recursion limit reached, using fallback');
+      const allValidOptions = getValidOptionsForConstraints({});
+      if (allValidOptions.scenarios.size > 0) {
+        const firstScenario = Array.from(allValidOptions.scenarios)[0];
+        return {
+          scenario: firstScenario,
+          baseScenario: firstScenario.replace(/-\d+$/, ""),
+          admType: Array.from(allValidOptions.admTypes)[0],
+          llmBackbone: Array.from(allValidOptions.llmBackbones)[0],
+          kdmas: {}
+        };
+      }
+    }
     // Start with current selections as baseline
     const currentParams = {
       scenario: constraints.scenario || appState.selectedScenario,
+      baseScenario: constraints.baseScenario || appState.selectedBaseScenario,
       admType: constraints.admType || appState.selectedAdmType,
       llmBackbone: constraints.llmBackbone || appState.selectedLLM,
       kdmas: constraints.kdmas || { ...appState.activeKDMAs }
     };
     
     // If current combination is already valid, return it
-    if (isValidParameterCombination(currentParams.scenario, currentParams.admType, currentParams.llmBackbone, currentParams.kdmas)) {
+    if (isValidParameterCombination(currentParams.scenario, currentParams.admType, currentParams.llmBackbone, currentParams.kdmas, currentParams.baseScenario)) {
       return currentParams;
     }
     
-    // Priority 1: Try to find valid scenario for current ADM+LLM
-    if (currentParams.admType && currentParams.llmBackbone) {
-      const validOptions = getValidOptionsForConstraints({ 
-        admType: currentParams.admType, 
-        llmBackbone: currentParams.llmBackbone 
-      });
-      
-      if (validOptions.scenarios.size > 0) {
-        const validScenario = Array.from(validOptions.scenarios)[0];
-        const correctedParams = { ...currentParams, scenario: validScenario };
-        
-        // Get valid KDMAs for this combination
-        const kdmaOptions = getValidOptionsForConstraints(correctedParams);
-        if (Object.keys(kdmaOptions.kdmas).length > 0) {
-          const firstKDMA = Object.keys(kdmaOptions.kdmas)[0];
-          const firstValue = Array.from(kdmaOptions.kdmas[firstKDMA])[0];
-          correctedParams.kdmas = { [firstKDMA]: firstValue };
-          return correctedParams;
-        }
-      }
-    }
+    // Priority 1: Preserve scenario, adjust other parameters to make it work
+    // But only if scenario matches baseScenario (if baseScenario is specified)
+    const scenarioMatchesBase = !currentParams.baseScenario || 
+                               currentParams.scenario.replace(/-\d+$/, "") === currentParams.baseScenario;
     
-    // Priority 2: Try to find valid LLM for current ADM
-    if (currentParams.admType) {
-      const validOptions = getValidOptionsForConstraints({ admType: currentParams.admType });
+    if (currentParams.scenario && scenarioMatchesBase) {
+      const validOptions = getValidOptionsForConstraints({ scenario: currentParams.scenario });
       
-      if (validOptions.llmBackbones.size > 0) {
-        // Prefer user's LLM preference if valid, otherwise use first available
-        const preferredLLM = preferences.llmPreferences && preferences.llmPreferences[currentParams.admType];
-        let selectedLLM;
-        
-        if (preferredLLM && validOptions.llmBackbones.has(preferredLLM)) {
-          selectedLLM = preferredLLM;
-        } else {
-          selectedLLM = Array.from(validOptions.llmBackbones)[0];
+      if (validOptions.admTypes.size > 0) {
+        // Try to preserve current ADM type if valid for this scenario
+        let selectedADM = currentParams.admType;
+        if (!validOptions.admTypes.has(selectedADM)) {
+          selectedADM = Array.from(validOptions.admTypes)[0];
         }
         
-        const correctedParams = { ...currentParams, llmBackbone: selectedLLM };
-        
-        // Find valid scenario for this ADM+LLM combination
-        const scenarioOptions = getValidOptionsForConstraints({ 
-          admType: currentParams.admType, 
-          llmBackbone: selectedLLM 
+        const admOptions = getValidOptionsForConstraints({ 
+          scenario: currentParams.scenario, 
+          admType: selectedADM 
         });
         
-        if (scenarioOptions.scenarios.size > 0) {
-          correctedParams.scenario = Array.from(scenarioOptions.scenarios)[0];
+        if (admOptions.llmBackbones.size > 0) {
+          // Try to preserve LLM preference for this ADM, or current LLM
+          let selectedLLM = currentParams.llmBackbone;
+          const preferredLLM = preferences.llmPreferences && preferences.llmPreferences[selectedADM];
           
-          // Get valid KDMAs
-          const kdmaOptions = getValidOptionsForConstraints(correctedParams);
+          if (preferredLLM && admOptions.llmBackbones.has(preferredLLM)) {
+            selectedLLM = preferredLLM;
+          } else if (!admOptions.llmBackbones.has(selectedLLM)) {
+            selectedLLM = Array.from(admOptions.llmBackbones)[0];
+          }
+          
+          const kdmaOptions = getValidOptionsForConstraints({
+            scenario: currentParams.scenario,
+            admType: selectedADM,
+            llmBackbone: selectedLLM
+          });
+          
           if (Object.keys(kdmaOptions.kdmas).length > 0) {
-            const firstKDMA = Object.keys(kdmaOptions.kdmas)[0];
-            const firstValue = Array.from(kdmaOptions.kdmas[firstKDMA])[0];
-            correctedParams.kdmas = { [firstKDMA]: firstValue };
-            return correctedParams;
+            // Try to preserve current KDMA values, adjust if needed
+            const correctedKDMAs = {};
+            
+            // For each current KDMA, check if it's still valid
+            for (const [kdma, value] of Object.entries(currentParams.kdmas)) {
+              if (kdmaOptions.kdmas[kdma] && kdmaOptions.kdmas[kdma].has(value)) {
+                correctedKDMAs[kdma] = value; // Keep current value
+              } else if (kdmaOptions.kdmas[kdma] && kdmaOptions.kdmas[kdma].size > 0) {
+                const newValue = Array.from(kdmaOptions.kdmas[kdma])[0];
+                correctedKDMAs[kdma] = newValue; // Use first valid value
+              }
+            }
+            
+            // If no KDMAs preserved, use first available
+            if (Object.keys(correctedKDMAs).length === 0) {
+              const firstKDMA = Object.keys(kdmaOptions.kdmas)[0];
+              const firstValue = Array.from(kdmaOptions.kdmas[firstKDMA])[0];
+              correctedKDMAs[firstKDMA] = firstValue;
+            }
+            
+            return {
+              scenario: currentParams.scenario,
+              baseScenario: currentParams.scenario.replace(/-\d+$/, ""),
+              admType: selectedADM,
+              llmBackbone: selectedLLM,
+              kdmas: correctedKDMAs
+            };
           }
         }
       }
     }
     
-    // Priority 3: Find any valid ADM combination
+    // Priority 0: Fix baseScenario/scenario inconsistency first, then restart auto-correction
+    if (currentParams.baseScenario && !scenarioMatchesBase) {
+      const matchingScenarios = Array.from(appState.availableScenarios).filter((scenarioId) => {
+        const extractedBase = scenarioId.replace(/-\d+$/, "");
+        return extractedBase === currentParams.baseScenario;
+      });
+      
+      if (matchingScenarios.length > 0) {
+        // Recursively call with corrected scenario - this reuses all existing logic
+        return findValidParameterCombination({
+          ...constraints,
+          scenario: matchingScenarios[0]
+        }, preferences, depth + 1);
+      }
+    }
+    
+    // Priority 2: Preserve KDMA values, find scenario+ADM+LLM that supports them
+    if (Object.keys(currentParams.kdmas).length > 0) {
+      const allValidOptions = getValidOptionsForConstraints({});
+      
+      // Try scenarios that match the current base scenario first
+      let scenariosToTry = Array.from(allValidOptions.scenarios);
+      if (currentParams.scenario) {
+        const currentBaseScenario = currentParams.scenario.replace(/-\d+$/, "");
+        scenariosToTry.sort((a, b) => {
+          const aBase = a.replace(/-\d+$/, "");
+          const bBase = b.replace(/-\d+$/, "");
+          if (aBase === currentBaseScenario && bBase !== currentBaseScenario) return -1;
+          if (bBase === currentBaseScenario && aBase !== currentBaseScenario) return 1;
+          return 0;
+        });
+      }
+      
+      for (const scenario of scenariosToTry) {
+        const scenarioOptions = getValidOptionsForConstraints({ scenario });
+        
+        for (const admType of scenarioOptions.admTypes) {
+          const admOptions = getValidOptionsForConstraints({ scenario, admType });
+          
+          for (const llmBackbone of admOptions.llmBackbones) {
+            const kdmaOptions = getValidOptionsForConstraints({ scenario, admType, llmBackbone });
+            
+            // Check if all current KDMAs are valid for this combination
+            let allKDMAsValid = true;
+            for (const [kdma, value] of Object.entries(currentParams.kdmas)) {
+              if (!kdmaOptions.kdmas[kdma] || !kdmaOptions.kdmas[kdma].has(value)) {
+                allKDMAsValid = false;
+                break;
+              }
+            }
+            
+            if (allKDMAsValid) {
+              return {
+                scenario,
+                baseScenario: scenario.replace(/-\d+$/, ""),
+                admType,
+                llmBackbone,
+                kdmas: currentParams.kdmas
+              };
+            }
+          }
+        }
+      }
+    }
+    
+    // Priority 3: Preserve ADM type, adjust LLM and scenario
+    if (currentParams.admType) {
+      const validOptions = getValidOptionsForConstraints({ admType: currentParams.admType });
+      
+      if (validOptions.llmBackbones.size > 0 && validOptions.scenarios.size > 0) {
+        // Try to preserve LLM preference
+        const preferredLLM = preferences.llmPreferences && preferences.llmPreferences[currentParams.admType];
+        let selectedLLM = currentParams.llmBackbone;
+        
+        if (preferredLLM && validOptions.llmBackbones.has(preferredLLM)) {
+          selectedLLM = preferredLLM;
+        } else if (!validOptions.llmBackbones.has(selectedLLM)) {
+          selectedLLM = Array.from(validOptions.llmBackbones)[0];
+        }
+        
+        // Find scenario that works with this ADM+LLM
+        const scenarioOptions = getValidOptionsForConstraints({ 
+          admType: currentParams.admType, 
+          llmBackbone: selectedLLM 
+        });
+        
+        let selectedScenario;
+        // Try to preserve base scenario
+        if (currentParams.scenario) {
+          const currentBaseScenario = currentParams.scenario.replace(/-\d+$/, "");
+          const matchingScenarios = Array.from(scenarioOptions.scenarios).filter(s => 
+            s.replace(/-\d+$/, "") === currentBaseScenario
+          );
+          
+          if (matchingScenarios.length > 0) {
+            selectedScenario = matchingScenarios[0];
+          }
+        }
+        
+        if (!selectedScenario) {
+          selectedScenario = Array.from(scenarioOptions.scenarios)[0];
+        }
+        
+        const kdmaOptions = getValidOptionsForConstraints({
+          scenario: selectedScenario,
+          admType: currentParams.admType,
+          llmBackbone: selectedLLM
+        });
+        
+        if (Object.keys(kdmaOptions.kdmas).length > 0) {
+          const firstKDMA = Object.keys(kdmaOptions.kdmas)[0];
+          const firstValue = Array.from(kdmaOptions.kdmas[firstKDMA])[0];
+          
+          return {
+            scenario: selectedScenario,
+            baseScenario: selectedScenario.replace(/-\d+$/, ""),
+            admType: currentParams.admType,
+            llmBackbone: selectedLLM,
+            kdmas: { [firstKDMA]: firstValue }
+          };
+        }
+      }
+    }
+    
+    // Priority 4 (Fallback): Find any valid combination
     const allValidOptions = getValidOptionsForConstraints({});
     
     if (allValidOptions.admTypes.size > 0) {
@@ -564,15 +735,20 @@ document.addEventListener("DOMContentLoaded", () => {
         const firstValidLLM = Array.from(admOptions.llmBackbones)[0];
         const firstValidScenario = Array.from(admOptions.scenarios)[0];
         
+        const kdmaOptions = getValidOptionsForConstraints({
+          scenario: firstValidScenario,
+          admType: firstValidADM,
+          llmBackbone: firstValidLLM
+        });
+        
         const correctedParams = {
           scenario: firstValidScenario,
+          baseScenario: firstValidScenario.replace(/-\d+$/, ""),
           admType: firstValidADM,
           llmBackbone: firstValidLLM,
           kdmas: {}
         };
         
-        // Get valid KDMAs for this combination
-        const kdmaOptions = getValidOptionsForConstraints(correctedParams);
         if (Object.keys(kdmaOptions.kdmas).length > 0) {
           const firstKDMA = Object.keys(kdmaOptions.kdmas)[0];
           const firstValue = Array.from(kdmaOptions.kdmas[firstKDMA])[0];
@@ -583,7 +759,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
     
-    // Fallback: return current params (should not happen with valid manifest)
+    // Fallback: return original parameters (should not happen with valid manifest)
+    console.warn('No valid parameter combination found, returning original parameters');
     return currentParams;
   }
   
@@ -1151,6 +1328,40 @@ document.addEventListener("DOMContentLoaded", () => {
         updateParameterForRun(runId, 'llmBackbone', run.llmPreferences[newADM]);
       }
     }
+    
+    // Reload data for this specific run
+    await reloadPinnedRun(runId);
+    
+    // Update URL state
+    urlState.updateURL();
+  };
+
+  // Handle base scenario change for pinned runs - global for onclick access
+  window.handleRunBaseScenarioChange = async function(runId, newBaseScenario) {
+    console.log(`Changing base scenario for run ${runId} to ${newBaseScenario}`);
+    
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) {
+      console.warn(`Run ${runId} not found`);
+      return;
+    }
+    
+    // Update base scenario with validation through central system
+    updateParameterForRun(runId, 'baseScenario', newBaseScenario);
+    
+    // Reload data for this specific run
+    await reloadPinnedRun(runId);
+    
+    // Update URL state
+    urlState.updateURL();
+  };
+
+  // Handle specific scenario change for pinned runs - global for onclick access
+  window.handleRunSpecificScenarioChange = async function(runId, newScenario) {
+    console.log(`Changing specific scenario for run ${runId} to ${newScenario}`);
+    
+    // Update scenario with validation through central system
+    updateParameterForRun(runId, 'scenario', newScenario);
     
     // Reload data for this specific run
     await reloadPinnedRun(runId);
@@ -2099,6 +2310,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const parameters = new Map();
     
     // Configuration parameters
+    parameters.set("base_scenario", { type: "string", required: true, category: "Configuration" });
     parameters.set("scenario", { type: "string", required: true, category: "Configuration" });
     parameters.set("adm_type", { type: "string", required: true, category: "Configuration" });
     parameters.set("llm_backbone", { type: "string", required: true, category: "Configuration" });
@@ -2146,6 +2358,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!run) return 'N/A';
     
     // Configuration parameters
+    if (paramName === 'base_scenario') return run.baseScenario || 'N/A';
     if (paramName === 'scenario') return run.scenario || 'N/A';
     if (paramName === 'adm_type') return run.admType || 'N/A';
     if (paramName === 'llm_backbone') return run.llmBackbone || 'N/A';
@@ -2255,6 +2468,56 @@ document.addEventListener("DOMContentLoaded", () => {
     return html;
   }
 
+  // Create dropdown HTML for base scenario selection in table cells
+  function createBaseScenarioDropdownForRun(runId, currentValue) {
+    // Check if run exists
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return escapeHtml(currentValue);
+    
+    // For base scenario, we show all available base scenarios
+    const availableBaseScenarios = Array.from(appState.availableBaseScenarios).sort();
+    
+    let html = `<select class="table-scenario-select" onchange="handleRunBaseScenarioChange('${runId}', this.value)">`;
+    availableBaseScenarios.forEach(baseScenario => {
+      const selected = baseScenario === currentValue ? 'selected' : '';
+      html += `<option value="${escapeHtml(baseScenario)}" ${selected}>${escapeHtml(baseScenario)}</option>`;
+    });
+    html += '</select>';
+    
+    return html;
+  }
+
+  // Create dropdown HTML for specific scenario selection in table cells
+  function createSpecificScenarioDropdownForRun(runId, currentValue) {
+    // Check if run exists
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return escapeHtml(currentValue);
+    
+    const baseScenarioId = run.baseScenario;
+    
+    if (!baseScenarioId) {
+      return '<span class="na-value">No base scenario</span>';
+    }
+    
+    const matchingScenarios = Array.from(appState.availableScenarios).filter((scenarioId) => {
+      const extractedBase = scenarioId.replace(/-\d+$/, "");
+      return extractedBase === baseScenarioId;
+    }).sort();
+    
+    if (matchingScenarios.length === 0) {
+      return '<span class="na-value">No scenarios available</span>';
+    }
+    
+    let html = `<select class="table-scenario-select" onchange="handleRunSpecificScenarioChange('${runId}', this.value)">`;
+    matchingScenarios.forEach(scenario => {
+      const selected = scenario === currentValue ? 'selected' : '';
+      html += `<option value="${escapeHtml(scenario)}" ${selected}>${escapeHtml(scenario)}</option>`;
+    });
+    html += '</select>';
+    
+    return html;
+  }
+
   // Format values for display in table cells
   function formatValue(value, type, paramName = '', runId = '') {
     if (value === null || value === undefined || value === 'N/A') {
@@ -2268,6 +2531,12 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       if (paramName === 'adm_type') {
         return createADMDropdownForRun(runId, value);
+      }
+      if (paramName === 'base_scenario') {
+        return createBaseScenarioDropdownForRun(runId, value);
+      }
+      if (paramName === 'scenario') {
+        return createSpecificScenarioDropdownForRun(runId, value);
       }
     }
     

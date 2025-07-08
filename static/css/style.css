@@ -694,7 +694,8 @@ footer {
 
 /* Table cell controls for editable parameters */
 .table-llm-select,
-.table-adm-select {
+.table-adm-select,
+.table-scenario-select {
   width: 100%;
   max-width: 280px;
   padding: 4px 6px;
@@ -707,12 +708,14 @@ footer {
 }
 
 .table-llm-select:hover,
-.table-adm-select:hover {
+.table-adm-select:hover,
+.table-scenario-select:hover {
   border-color: #007bff;
 }
 
 .table-llm-select:focus,
-.table-adm-select:focus {
+.table-adm-select:focus,
+.table-scenario-select:focus {
   outline: none;
   border-color: #007bff;
   box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
@@ -720,6 +723,7 @@ footer {
 
 /* Ensure proper sizing in table cells */
 .pinned-run-value .table-llm-select,
-.pinned-run-value .table-adm-select {
+.pinned-run-value .table-adm-select,
+.pinned-run-value .table-scenario-select {
   margin: 0;
 }
