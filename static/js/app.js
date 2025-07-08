@@ -297,7 +297,10 @@ document.addEventListener("DOMContentLoaded", () => {
         await loadResults(); // Load results initially only if not restored from URL
         // Auto-pin the initial configuration if no pinned runs exist
         if (appState.pinnedRuns.size === 0 && appState.currentInputOutput) {
-          pinCurrentRun();
+          // Ensure we have a valid display name before pinning
+          setTimeout(() => {
+            pinCurrentRun();
+          }, 100); // Small delay to ensure appState is fully updated
         }
       }
     } catch (error) {
@@ -1801,13 +1804,6 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const runConfig = appState.createRunConfig();
     
-    // Check for duplicates
-    const existingRunId = findExistingRun(runConfig);
-    if (existingRunId) {
-      showNotification('This configuration is already pinned', 'info');
-      return;
-    }
-    
     // Store complete run data
     const pinnedData = {
       ...runConfig,
@@ -1827,16 +1823,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Helper functions for comparison feature
-  function findExistingRun(runConfig) {
-    for (const [runId, pinnedRun] of appState.pinnedRuns) {
-      if (pinnedRun.experimentKey === runConfig.experimentKey &&
-          JSON.stringify(pinnedRun.kdmaValues) === JSON.stringify(runConfig.kdmaValues)) {
-        return runId;
-      }
-    }
-    return null;
-  }
-
   function updatePinnedCount() {
     const count = appState.pinnedRuns.size;
     
@@ -1874,13 +1860,6 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.selectedAdmType = runConfig.admType;
     appState.selectedLLM = runConfig.llmBackbone;
     appState.activeKDMAs = { ...runConfig.kdmaValues };
-    
-    // Check for duplicates using the restored config
-    const existingRunId = findExistingRun(runConfig);
-    if (existingRunId) {
-      console.log('Configuration already pinned:', runConfig.id);
-      return;
-    }
     
     // Load the results for this configuration
     try {
@@ -2074,12 +2053,15 @@ document.addEventListener("DOMContentLoaded", () => {
     tableHTML += '<th class="parameter-header">Parameter</th>';
     
     // Pinned run headers
-    appState.pinnedRuns.forEach((runData, runId) => {
+    Array.from(appState.pinnedRuns.entries()).forEach(([runId, runData], index) => {
       tableHTML += '<th class="pinned-run-header">';
       tableHTML += '<div class="run-header-content">';
       tableHTML += `<span class="run-title">${runData.displayName}</span>`;
       tableHTML += '<span class="pinned-badge">Pinned</span>';
-      tableHTML += `<button class="remove-run-btn" onclick="removePinnedRun('${runId}')">×</button>`;
+      // Only show delete button if it's not the first column or if there are multiple columns
+      if (index > 0 || appState.pinnedRuns.size > 1) {
+        tableHTML += `<button class="remove-run-btn" onclick="removePinnedRun('${runId}')">×</button>`;
+      }
       tableHTML += '</div>';
       tableHTML += '</th>';
     });
@@ -2707,25 +2689,64 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Add a new column by duplicating the rightmost column's parameters
-  function addNewColumn() {
+  async function addNewColumn() {
     if (appState.pinnedRuns.size === 0) return;
     
     // Get the rightmost (last) pinned run
     const pinnedRunsArray = Array.from(appState.pinnedRuns.values());
     const lastRun = pinnedRunsArray[pinnedRunsArray.length - 1];
     
-    // Create a new run configuration with the same parameters
-    const newConfig = {
-      scenario: lastRun.scenario,
-      baseScenario: lastRun.baseScenario,
-      admType: lastRun.admType,
-      llmBackbone: lastRun.llmBackbone,
-      kdmaValues: { ...lastRun.kdmaValues },
-      experimentKey: lastRun.experimentKey
+    // Temporarily update app state to match the last run's configuration
+    const originalState = {
+      selectedBaseScenario: appState.selectedBaseScenario,
+      selectedScenario: appState.selectedScenario,
+      selectedAdmType: appState.selectedAdmType,
+      selectedLLM: appState.selectedLLM,
+      activeKDMAs: { ...appState.activeKDMAs }
     };
     
-    // Pin the new configuration
-    pinRunFromConfig(newConfig);
+    appState.selectedBaseScenario = lastRun.baseScenario;
+    appState.selectedScenario = lastRun.scenario;
+    appState.selectedAdmType = lastRun.admType;
+    appState.selectedLLM = lastRun.llmBackbone;
+    appState.activeKDMAs = { ...lastRun.kdmaValues };
+    
+    // Pin directly without duplicate checking since we want to allow duplicates for comparison
+    const runConfig = appState.createRunConfig();
+    
+    try {
+      await loadResultsForConfig(runConfig);
+      
+      // Store complete run data
+      const pinnedData = {
+        ...runConfig,
+        inputOutput: appState.currentInputOutput,
+        inputOutputArray: appState.currentInputOutputArray,
+        scores: appState.currentScores,
+        timing: appState.currentTiming,
+        loadStatus: 'loaded'
+      };
+      
+      appState.pinnedRuns.set(runConfig.id, pinnedData);
+      updatePinnedCount();
+      updateComparisonDisplay();
+      urlState.updateURL();
+      
+    } catch (error) {
+      console.warn('Failed to load data for new column:', error);
+      // Still add to pinned runs but mark as failed
+      const pinnedData = {
+        ...runConfig,
+        loadStatus: 'failed',
+        error: error.message
+      };
+      appState.pinnedRuns.set(runConfig.id, pinnedData);
+      updatePinnedCount();
+      updateComparisonDisplay();
+    }
+    
+    // Restore original app state
+    Object.assign(appState, originalState);
   }
 
   // Toggle functions for expandable content
@@ -2972,12 +2993,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (appState.selectedLLM) {
       parts.push(appState.selectedLLM.replace(/_/g, ' '));
     }
-    const kdmaKeys = Object.keys(appState.activeKDMAs);
+    const kdmaKeys = Object.keys(appState.activeKDMAs || {});
     if (kdmaKeys.length > 0) {
       const kdmaStr = kdmaKeys.map(k => `${k}=${appState.activeKDMAs[k]}`).join(', ');
       parts.push(`(${kdmaStr})`);
     }
-    return parts.join(' - ') || 'Unnamed Run';
+    const result = parts.join(' - ') || 'Unnamed Run';
+    return result === '' ? 'Unnamed Run' : result;
   }
 
   function showNotification(message, type = 'info') {
