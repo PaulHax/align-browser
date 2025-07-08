@@ -1765,33 +1765,27 @@ document.addEventListener("DOMContentLoaded", () => {
     // Extract all parameters from runs
     const parameters = extractParametersFromRuns(allRuns);
     
+    // Show/hide the Add Column button based on pinned runs
+    const addColumnBtn = document.getElementById('add-column-btn');
+    if (addColumnBtn) {
+      addColumnBtn.style.display = appState.pinnedRuns.size > 0 ? 'inline-block' : 'none';
+    }
+    
     // Build the table
     let tableHTML = '<div class="comparison-table-container">';
-    
-    // Add header with "Add Column" button
-    tableHTML += '<div class="table-header">';
-    tableHTML += '<h2 style="margin: 0; display: inline-block;">Results</h2>';
-    if (appState.pinnedRuns.size > 0) {
-      tableHTML += '<button id="add-column-btn" class="btn btn-primary" style="float: right;">+ Add Column</button>';
-    }
-    tableHTML += '</div>';
-    
     tableHTML += '<table class="comparison-table">';
     
     // Header row
     tableHTML += '<thead><tr>';
-    tableHTML += '<th class="parameter-header">Parameter</th>';
+    tableHTML += '<th class="parameter-header"></th>';
     
     // Pinned run headers
     Array.from(appState.pinnedRuns.entries()).forEach(([runId, runData], index) => {
       tableHTML += '<th class="pinned-run-header">';
-      tableHTML += '<div class="run-header-content">';
-      tableHTML += `<span class="run-title">${runData.displayName}</span>`;
-      // Only show delete button if it's not the first column or if there are multiple columns
-      if (index > 0 || appState.pinnedRuns.size > 1) {
-        tableHTML += `<button class="remove-run-btn" onclick="removePinnedRun('${runId}')">×</button>`;
-      }
-      tableHTML += '</div>';
+      // Always render button but control visibility to prevent layout shifts
+      const shouldShowButton = index > 0 || appState.pinnedRuns.size > 1;
+      const visibility = shouldShowButton ? 'visible' : 'hidden';
+      tableHTML += `<button class="remove-run-btn" onclick="removePinnedRun('${runId}')" style="visibility: ${visibility};">×</button>`;
       tableHTML += '</th>';
     });
     
@@ -1824,12 +1818,6 @@ document.addEventListener("DOMContentLoaded", () => {
     tableHTML += '</div>';
     
     container.innerHTML = tableHTML;
-    
-    // Add event listener for the Add Column button
-    const addColumnBtn = document.getElementById('add-column-btn');
-    if (addColumnBtn) {
-      addColumnBtn.addEventListener('click', addNewColumn);
-    }
   }
 
   // Extract parameters from all runs to determine table structure
@@ -2538,12 +2526,6 @@ document.addEventListener("DOMContentLoaded", () => {
     titleArea.style.display = 'flex';
     titleArea.style.alignItems = 'center';
     
-    const title = document.createElement('span');
-    title.className = 'run-title';
-    title.textContent = runData.displayName;
-    
-    titleArea.appendChild(title);
-    
     const removeBtn = document.createElement('button');
     removeBtn.className = 'remove-run-btn';
     removeBtn.innerHTML = '×';
@@ -2751,6 +2733,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     
     updatePinnedCount(); // Initial state
+  }
+
+  // Initialize static button event listeners
+  const addColumnBtn = document.getElementById('add-column-btn');
+  if (addColumnBtn) {
+    addColumnBtn.addEventListener('click', addNewColumn);
   }
 
   // Initial manifest fetch on page load
