@@ -598,3 +598,131 @@ def test_initial_load_results_path(page, test_server):
     assert table_content.strip() != "", "Comparison table should have content after initial load"
 
 
+def test_pinned_run_removal_persistence(page, test_server):
+    """Test that removing pinned runs persists across page reloads."""
+    page.goto(test_server)
+    
+    # Wait for table to load
+    page.wait_for_selector(".comparison-table", timeout=10000)
+    page.wait_for_function("document.querySelectorAll('.table-adm-select').length > 0", timeout=10000)
+    
+    # Pin the current run first to ensure we have at least one pinned run
+    pin_button = page.locator(".pin-button")
+    if pin_button.count() > 0 and pin_button.is_enabled():
+        pin_button.click()
+        page.wait_for_timeout(1000)  # Wait for pin to complete
+    
+    # Pin a second run with different parameters to ensure we have multiple runs
+    # This will make remove buttons visible (they're hidden when only 1 run exists)
+    pin_button = page.locator(".pin-button")
+    if pin_button.count() > 0 and pin_button.is_enabled():
+        # Change a parameter to create a different run configuration
+        adm_select = page.locator(".table-adm-select").first
+        if adm_select.count() > 0:
+            options = adm_select.locator("option").all()
+            if len(options) > 1:
+                # Select a different ADM option
+                adm_select.select_option(index=1)
+                page.wait_for_timeout(500)
+        
+        # Pin the modified configuration
+        pin_button.click()
+        page.wait_for_timeout(1000)
+        
+        # Wait for remove buttons to become visible (should have 2+ pinned runs now)
+        page.wait_for_function("document.querySelectorAll('.remove-run-btn[style*=\"visible\"]').length > 0", timeout=5000)
+    
+    # Check that we have at least one visible remove button
+    visible_remove_buttons = page.locator(".remove-run-btn[style*='visible']")
+    initial_count = visible_remove_buttons.count()
+    if initial_count == 0:
+        pytest.skip("No visible remove buttons available to test removal")
+    
+    # Get the current URL to check state persistence
+    initial_url = page.url
+    
+    # Remove the first visible pinned run
+    visible_remove_buttons.first.click()
+    
+    # Wait for the removal to be processed
+    page.wait_for_timeout(500)
+    
+    # Check that the number of visible remove buttons decreased
+    new_count = page.locator(".remove-run-btn[style*='visible']").count()
+    assert new_count == initial_count - 1, f"Expected {initial_count - 1} visible remove buttons, got {new_count}"
+    
+    # Check that URL state changed (indicating persistence)
+    new_url = page.url
+    assert new_url != initial_url, "URL should change after removing pinned run"
+    
+    # Reload the page
+    page.reload()
+    page.wait_for_selector(".comparison-table", timeout=10000)
+    
+    # Verify the removal persisted across reload
+    reloaded_count = page.locator(".remove-run-btn[style*='visible']").count()
+    assert reloaded_count == new_count, f"Visible remove button count should persist after reload. Expected {new_count}, got {reloaded_count}"
+
+
+def test_update_pinned_run_state_function(page, test_server):
+    """Test the updatePinnedRunState function through JavaScript execution."""
+    page.goto(test_server)
+    
+    # Wait for table to load and app to initialize
+    page.wait_for_selector(".comparison-table", timeout=10000)
+    page.wait_for_function("window.appState", timeout=10000)
+    
+    # Debug: Check what functions are available on window
+    available_functions = page.evaluate("""
+        Object.keys(window).filter(key => typeof window[key] === 'function' && key.includes('Pinned'))
+    """)
+    print(f"Available window functions with 'Pinned': {available_functions}")
+    
+    # Test that the updatePinnedRunState function exists
+    function_exists = page.evaluate("typeof window.updatePinnedRunState === 'function'")
+    if not function_exists:
+        pytest.skip("updatePinnedRunState function not available - may be scoped differently")
+    
+    # Test basic function signature and error handling
+    try:
+        # This should not throw an error even with empty options
+        result = page.evaluate("window.updatePinnedRunState({})")
+        # Function should return a promise (undefined when awaited without async)
+        assert result is None
+    except Exception as e:
+        pytest.fail(f"updatePinnedRunState should handle empty options gracefully: {e}")
+    
+    # Check that the function has the expected parameters structure
+    function_string = page.evaluate("window.updatePinnedRunState.toString()")
+    assert "action" in function_string, "Function should handle action parameter"
+    assert "runId" in function_string, "Function should handle runId parameter"
+    assert "needsReload" in function_string, "Function should handle needsReload parameter"
+
+
+def test_pinned_run_state_patterns(page, test_server):
+    """Test that refactored functions still follow the correct update patterns."""
+    page.goto(test_server)
+    
+    # Wait for app to load
+    page.wait_for_selector(".comparison-table", timeout=10000)
+    page.wait_for_function("window.appState && window.removePinnedRun", timeout=10000)
+    
+    # Check that removePinnedRun function exists and is properly refactored
+    remove_function = page.evaluate("window.removePinnedRun.toString()")
+    assert "updatePinnedRunState" in remove_function, "removePinnedRun should use updatePinnedRunState"
+    assert "action: 'remove'" in remove_function, "removePinnedRun should use remove action"
+    assert "needsCleanup: true" in remove_function, "removePinnedRun should enable cleanup"
+    
+    # Check that clearAllPins function is properly refactored
+    clear_function = page.evaluate("window.clearAllPins ? window.clearAllPins.toString() : 'not found'")
+    if clear_function != 'not found':
+        assert "updatePinnedRunState" in clear_function, "clearAllPins should use updatePinnedRunState"
+        assert "action: 'clear'" in clear_function, "clearAllPins should use clear action"
+    
+    # Check that handleRunLLMChange is properly refactored
+    llm_change_function = page.evaluate("window.handleRunLLMChange ? window.handleRunLLMChange.toString() : 'not found'")
+    if llm_change_function != 'not found':
+        assert "updatePinnedRunState" in llm_change_function, "handleRunLLMChange should use updatePinnedRunState"
+        assert "needsReload: true" in llm_change_function, "handleRunLLMChange should enable reload"
+
+
