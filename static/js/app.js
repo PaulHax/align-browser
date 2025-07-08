@@ -1,11 +1,7 @@
 // Client-side application logic for ADM Results
 
 document.addEventListener("DOMContentLoaded", () => {
-  const admTypeSelection = document.getElementById("adm-type-selection");
-  const kdmaSliders = document.getElementById("kdma-sliders");
-  const llmSelection = document.getElementById("llm-selection");
-  const scenarioSelection = document.getElementById("scenario-selection"); // New element
-  // runDisplay no longer needed - using table mode
+  // Sidebar elements removed - using table-only mode
 
   let manifest = {};
   
@@ -298,7 +294,11 @@ document.addEventListener("DOMContentLoaded", () => {
       // Try to restore state from URL, otherwise load results normally
       const restoredFromURL = await urlState.restoreFromURL();
       if (!restoredFromURL) {
-        loadResults(); // Load results initially only if not restored from URL
+        await loadResults(); // Load results initially only if not restored from URL
+        // Auto-pin the initial configuration if no pinned runs exist
+        if (appState.pinnedRuns.size === 0 && appState.currentInputOutput) {
+          pinCurrentRun();
+        }
       }
     } catch (error) {
       console.error("Error fetching manifest:", error);
@@ -807,7 +807,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (baseScenarioSelect && baseScenarioSelect.value !== baseScenarioId) {
         appState.selectedBaseScenario = baseScenarioId;
         baseScenarioSelect.value = baseScenarioId;
-        updateSpecificScenarioDropdown();
+        // No longer needed: updateSpecificScenarioDropdown();
       }
       
       if (scenarioSelect && scenarioSelect.value !== params.scenario) {
@@ -831,112 +831,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function populateUIControls() {
-    // ADM Type Selection
-    admTypeSelection.innerHTML = "<h3>ADM Type</h3>";
-    const admSelect = document.createElement("select");
-    admSelect.id = "adm-type-select";
-    admTypeSelection.appendChild(admSelect);
-    admSelect.addEventListener("change", () => {
-      if (appState.isUpdatingProgrammatically) return;
-      appState.selectedAdmType = admSelect.value;
-      updateLLMDropdown();
-      if (!appState.isTransitioning) {
-        loadResults();
-      }
-      urlState.updateURL(); // Update URL with new state
-      
-      // Sync to current run parameters
-      syncRunFromAppState();
-    });
-
-    // LLM Backbone Selection
-    llmSelection.innerHTML = "<h3>LLM Backbone</h3>";
-    const llmSelect = document.createElement("select");
-    llmSelect.id = "llm-select";
-    llmSelection.appendChild(llmSelect);
-    llmSelect.addEventListener("change", () => {
-      if (appState.isUpdatingProgrammatically) return;
-      appState.selectedLLM = llmSelect.value;
-      // Store user's LLM preference for current ADM type
-      if (appState.selectedAdmType) {
-        appState.llmPreferences[appState.selectedAdmType] = llmSelect.value;
-      }
-      updateKDMASliders();
-      if (!appState.isTransitioning) {
-        loadResults();
-      }
-      urlState.updateURL(); // Update URL with new state
-      
-      // Sync to current run parameters
-      syncRunFromAppState();
-    });
-
-    // KDMA Dynamic Selection container
-    kdmaSliders.innerHTML = `
-      <h3>KDMA Values</h3>
-      <div id="active-kdmas"></div>
-      <button id="add-kdma-btn" style="margin-top: 10px;">Add KDMA</button>
-    `;
-
-    // Base Scenario Selection - Add event listener to existing element
-    const baseScenarioSelect = document.getElementById("base-scenario-select");
-    baseScenarioSelect.addEventListener("change", () => {
-      if (appState.isUpdatingProgrammatically) return;
-      
-      // Mark as transitioning to prevent "No data found" flash
-      appState.isTransitioning = true;
-      appState.isUpdatingProgrammatically = true;
-      
-      appState.selectedBaseScenario = baseScenarioSelect.value;
-      updateSpecificScenarioDropdown(); // This updates appState.selectedScenario and DOM
-      
-      appState.isUpdatingProgrammatically = false;
-      
-      updateFromScenarioChange(); // This will clear isTransitioning when done
-      urlState.updateURL(); // Update URL with new state
-      
-      // Sync to current run parameters
-      syncRunFromAppState();
-    });
-
-    // Specific Scenario Selection - Add event listener to existing element
-    const scenarioSelect = document.getElementById("scenario-select");
-    scenarioSelect.addEventListener("change", () => {
-      if (appState.isUpdatingProgrammatically) return;
-      appState.selectedScenario = scenarioSelect.value;
-      if (!appState.isTransitioning) {
-        updateFromScenarioChange();
-      }
-      urlState.updateURL(); // Update URL with new state
-      
-      // Sync to current run parameters
-      syncRunFromAppState();
-    });
-
-    // Add event handler for Add KDMA button
-    document.getElementById("add-kdma-btn").addEventListener("click", () => {
-      const validKDMAs = getValidKDMAsForCurrentSelection();
-      const availableToAdd = Object.keys(validKDMAs).filter(k => appState.activeKDMAs[k] === undefined);
-      
-      if (availableToAdd.length > 0) {
-        const kdmaToAdd = availableToAdd[0]; // Pick first available
-        const validValues = validKDMAs[kdmaToAdd] || [];
-        addKDMASelector(kdmaToAdd, validValues[0] || 0.5);
-        updateAddKDMAButton();
-        if (!appState.isTransitioning) {
-          loadResults();
-        }
-        
-        // Sync to current run parameters
-        syncRunFromAppState();
-      }
-    });
-
-    // Initial population of dropdowns and sliders
-    // Order matters: Scenario first, then ADM filtered by scenario, then LLM and KDMAs
-    updateBaseScenarioDropdown();
-    updateADMDropdown();
-    updateLLMDropdown(); // This will also call updateKDMASliders
+    // Sidebar UI controls removed - using table-only mode
+    // All parameter controls are now within the table cells
+    
+    // Note: Scenario selection, ADM type, LLM, and KDMA controls are now
+    // handled directly in the table cells through dropdown/slider interactions
     
     // Initialize current run parameters with initial state
     syncRunFromAppState();
@@ -949,88 +848,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateADMDropdown() {
-    const admSelect = document.getElementById("adm-type-select");
-    admSelect.innerHTML = ""; // Clear existing options
-
-    // Get ADM types that are valid for the current scenario
-    const validADMs = getValidADMsForCurrentScenario();
-    
-    if (validADMs.length === 0) {
-      // No valid ADMs for current scenario - add placeholder
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = "No ADMs available for selected scenario";
-      option.disabled = true;
-      admSelect.appendChild(option);
-      admSelect.disabled = true;
-      return;
-    }
-    
-    admSelect.disabled = false;
-    validADMs.forEach((type) => {
-      const option = document.createElement("option");
-      option.value = type;
-      option.textContent = type;
-      admSelect.appendChild(option);
-    });
-    
-    // Preserve current ADM selection if still valid, otherwise use first valid
-    appState.isUpdatingProgrammatically = true;
-    
-    const currentAdm = appState.selectedAdmType;
-    const admToSelect = (currentAdm && validADMs.includes(currentAdm)) ? currentAdm : validADMs[0];
-    
-    admSelect.value = admToSelect;
-    appState.selectedAdmType = admToSelect;
-    appState.isUpdatingProgrammatically = false;
+    // No-op: sidebar elements no longer exist
   }
 
   function updateLLMDropdown() {
-    const selectedAdm = appState.selectedAdmType || document.getElementById("adm-type-select").value;
-    const llmSelect = document.getElementById("llm-select");
-    llmSelect.innerHTML = ""; // Clear existing options
-
-    const validOptions = getValidOptionsForConstraints({ admType: selectedAdm });
-    const validLLMsForAdm = Array.from(validOptions.llmBackbones).sort();
-
-    validLLMsForAdm.forEach((llm) => {
-      const option = document.createElement("option");
-      option.value = llm;
-      option.textContent = llm;
-      llmSelect.appendChild(option);
-    });
-
-    // Preserve LLM selection using stored preferences per ADM type
-    if (validLLMsForAdm.length > 0) {
-      appState.isUpdatingProgrammatically = true;
-      
-      // Check if we have a stored preference for this ADM type
-      const preferredLLM = appState.llmPreferences[appState.selectedAdmType];
-      const currentLLM = appState.selectedLLM;
-      
-      // Priority: 1) Stored preference if valid, 2) Current LLM if valid, 3) First available
-      let llmToSelect;
-      if (preferredLLM && validLLMsForAdm.includes(preferredLLM)) {
-        llmToSelect = preferredLLM;
-      } else if (currentLLM && validLLMsForAdm.includes(currentLLM)) {
-        llmToSelect = currentLLM;
-      } else {
-        llmToSelect = validLLMsForAdm[0];
-      }
-      
-      llmSelect.value = llmToSelect;
-      appState.selectedLLM = llmToSelect;
-      appState.isUpdatingProgrammatically = false;
-    }
-
-    // Disable LLM select if only one option is available
-    if (validLLMsForAdm.length <= 1) {
-      llmSelect.disabled = true;
-    } else {
-      llmSelect.disabled = false;
-    }
-
-    updateKDMASliders();
+    // No-op: sidebar elements no longer exist
   }
 
 
@@ -1050,9 +872,6 @@ document.addEventListener("DOMContentLoaded", () => {
       showTransitionSpinner();
     }
     
-    updateADMDropdown();
-    updateLLMDropdown();
-    
     // Clear transition flag and load results
     appState.isTransitioning = false;
     
@@ -1062,8 +881,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function getValidKDMAsForCurrentSelection() {
-    const selectedAdm = document.getElementById("adm-type-select").value;
-    const selectedLLM = document.getElementById("llm-select").value;
+    // Use appState values instead of DOM elements
+    const selectedAdm = appState.selectedAdmType;
+    const selectedLLM = appState.selectedLLM;
     const currentScenario = appState.selectedScenario || getFirstAvailableScenario();
     
     const constraints = {
@@ -1076,9 +896,11 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Convert Sets to sorted arrays to match original format
     const validKDMAs = {};
-    Object.keys(validOptions.kdmas).forEach(kdma => {
-      validKDMAs[kdma] = Array.from(validOptions.kdmas[kdma]).sort((a, b) => a - b);
-    });
+    if (validOptions.kdmas) {
+      Object.keys(validOptions.kdmas).forEach(kdma => {
+        validKDMAs[kdma] = Array.from(validOptions.kdmas[kdma]).sort((a, b) => a - b);
+      });
+    }
     
     return validKDMAs;
   }
@@ -1605,170 +1427,15 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateKDMASliders() {
-    const selectedAdm = document.getElementById("adm-type-select").value;
-    const selectedLLM = document.getElementById("llm-select").value;
-    const validKDMAs = getValidKDMAsForCurrentSelection();
-    
-    // Remove KDMAs that are no longer valid
-    Object.keys(appState.activeKDMAs).forEach(kdmaType => {
-      if (!validKDMAs[kdmaType]) {
-        removeKDMASelector(kdmaType);
-      }
-    });
-    
-    // Fix invalid values for remaining KDMAs first
-    Object.keys(appState.activeKDMAs).forEach(kdmaType => {
-      const validValues = validKDMAs[kdmaType] || [];
-      const currentValue = appState.activeKDMAs[kdmaType];
-      
-      // If current value is not valid, update to a valid value
-      if (validValues.length > 0 && !validValues.includes(currentValue)) {
-        const newValue = validValues[0]; // Use first valid value
-        appState.activeKDMAs[kdmaType] = newValue;
-        
-        // Update the slider and display
-        const slider = document.getElementById(`${kdmaType}-slider`);
-        const valueSpan = document.getElementById(`${kdmaType}-value`);
-        if (slider && valueSpan) {
-          slider.value = newValue;
-          valueSpan.textContent = newValue.toFixed(1);
-        }
-      }
-    });
-    
-    // Auto-correct parameters if we have invalid combination
-    if (Object.keys(validKDMAs).length === 0) {
-      // Use auto-correction to find valid parameter combination
-      const correctedParams = correctParametersToValid({});
-      
-      // Apply corrections to UI if parameters changed
-      if (correctedParams.scenario !== appState.selectedScenario ||
-          correctedParams.admType !== appState.selectedAdmType ||
-          correctedParams.llmBackbone !== appState.selectedLLM) {
-        
-        updateUIFromCorrectedParams(correctedParams);
-        
-        // Update appState 
-        appState.selectedScenario = correctedParams.scenario;
-        appState.selectedAdmType = correctedParams.admType;
-        appState.selectedLLM = correctedParams.llmBackbone;
-        
-        // Recursive call with corrected parameters
-        updateKDMASliders();
-        return;
-      }
-    }
-    
-    // Add a KDMA if we have none and valid options are available
-    if (Object.keys(appState.activeKDMAs).length === 0 && Object.keys(validKDMAs).length > 0) {
-      const availableKDMAs = Object.keys(validKDMAs).sort();
-      const firstKDMAType = availableKDMAs[0];
-      const validValuesForKDMA = validKDMAs[firstKDMAType] || [];
-      const firstValidValue = validValuesForKDMA.length > 0 ? validValuesForKDMA[0] : 0.5;
-      addKDMASelector(firstKDMAType, firstValidValue);
-    }
-    
-    // Update all KDMA type selectors with proper filtering
-    updateAllKDMATypeSelectors();
-    
-    // Update values for existing KDMAs and show warnings
-    Object.keys(appState.activeKDMAs).forEach(kdmaType => {
-      const slider = document.getElementById(`${kdmaType}-slider`);
-      const warningSpan = document.getElementById(`${kdmaType}-warning`);
-      
-      if (slider && warningSpan) {
-        let currentValue = appState.activeKDMAs[kdmaType];
-        const validValues = validKDMAs[kdmaType] || [];
-        
-        // Validate current value
-        validateKDMAValue(kdmaType, currentValue, warningSpan);
-        
-        if (validValues.length === 0) {
-          slider.disabled = true;
-        } else {
-          slider.disabled = false;
-        }
-      }
-    });
-    
-    updateAddKDMAButton();
+    // No-op: sidebar elements no longer exist
   }
 
   function updateBaseScenarioDropdown() {
-    const baseScenarioSelect = document.getElementById("base-scenario-select");
-    if (!baseScenarioSelect) {
-      console.error("base-scenario-select element not found");
-      return;
-    }
-
-    baseScenarioSelect.innerHTML = "";
-
-    // Use all available base scenarios (not filtered by ADM/KDMA)
-    if (appState.availableBaseScenarios.length === 0) {
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = "No base scenarios available";
-      baseScenarioSelect.appendChild(option);
-      baseScenarioSelect.disabled = true;
-      return;
-    }
-
-    baseScenarioSelect.disabled = false;
-    appState.availableBaseScenarios.forEach((baseScenarioId) => {
-      const option = document.createElement("option");
-      option.value = baseScenarioId;
-      option.textContent = baseScenarioId;
-      baseScenarioSelect.appendChild(option);
-    });
-
-    // Set initial base scenario if none selected
-    if (!appState.selectedBaseScenario && appState.availableBaseScenarios.length > 0) {
-      appState.selectedBaseScenario = appState.availableBaseScenarios[0];
-      baseScenarioSelect.value = appState.selectedBaseScenario;
-      updateSpecificScenarioDropdown();
-    }
+    // No-op: sidebar elements no longer exist
   }
 
   function updateSpecificScenarioDropdown() {
-    const scenarioSelect = document.getElementById("scenario-select");
-    scenarioSelect.innerHTML = "";
-
-    if (!appState.selectedBaseScenario) {
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = "Select a scenario type first";
-      scenarioSelect.appendChild(option);
-      scenarioSelect.disabled = true;
-      return;
-    }
-
-    // Find all scenarios that match the selected base scenario
-    const matchingScenarios = appState.availableScenarios.filter((scenarioId) => {
-      const baseScenarioId = scenarioId.replace(/-\d+$/, "");
-      return baseScenarioId === appState.selectedBaseScenario;
-    });
-
-    if (matchingScenarios.length === 0) {
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = "No specific scenarios available";
-      scenarioSelect.appendChild(option);
-      scenarioSelect.disabled = true;
-      return;
-    }
-
-    scenarioSelect.disabled = false;
-    matchingScenarios.forEach((scenarioId) => {
-      const option = document.createElement("option");
-      option.value = scenarioId;
-      option.textContent = scenarioId;
-      scenarioSelect.appendChild(option);
-    });
-
-    // Always set to first matching scenario when base scenario changes
-    // This ensures consistent state and prevents "No data found" flashes
-    appState.selectedScenario = matchingScenarios[0];
-    scenarioSelect.value = appState.selectedScenario;
+    // No-op: sidebar elements no longer exist
   }
 
   // Function to construct the key based on current UI selections
@@ -2378,35 +2045,33 @@ document.addEventListener("DOMContentLoaded", () => {
     renderComparisonTable();
   }
 
-  // Render the comparison table with current run + pinned runs
+  // Render the comparison table with pinned runs only
   function renderComparisonTable() {
     const container = document.getElementById('runs-container');
     if (!container) return;
 
-    // Get current run data
-    const currentRunData = getCurrentRunData();
-    
-    // Get all runs for comparison (current + pinned)
-    const allRuns = [currentRunData, ...Array.from(appState.pinnedRuns.values())];
+    // Get all pinned runs for comparison
+    const allRuns = Array.from(appState.pinnedRuns.values());
     
     // Extract all parameters from runs
     const parameters = extractParametersFromRuns(allRuns);
     
     // Build the table
     let tableHTML = '<div class="comparison-table-container">';
+    
+    // Add header with "Add Column" button
+    tableHTML += '<div class="table-header">';
+    tableHTML += '<h2 style="margin: 0; display: inline-block;">Results</h2>';
+    if (appState.pinnedRuns.size > 0) {
+      tableHTML += '<button id="add-column-btn" class="btn btn-primary" style="float: right;">+ Add Column</button>';
+    }
+    tableHTML += '</div>';
+    
     tableHTML += '<table class="comparison-table">';
     
     // Header row
     tableHTML += '<thead><tr>';
     tableHTML += '<th class="parameter-header">Parameter</th>';
-    
-    // Current run header
-    tableHTML += '<th class="current-run-header">';
-    tableHTML += '<div class="run-header-content">';
-    tableHTML += '<span class="run-title">Current Run</span>';
-    tableHTML += '<span class="live-badge">Live</span>';
-    tableHTML += '</div>';
-    tableHTML += '</th>';
     
     // Pinned run headers
     appState.pinnedRuns.forEach((runData, runId) => {
@@ -2428,27 +2093,16 @@ document.addEventListener("DOMContentLoaded", () => {
       tableHTML += `<tr class="parameter-row" data-category="${paramInfo.category}">`;
       tableHTML += `<td class="parameter-name">${formatParameterName(paramName)}</td>`;
       
-      // Get all values for this parameter to check for differences
-      const allValues = [];
-      const currentValue = getParameterValue(currentRunData, paramName);
-      allValues.push(currentValue);
-      
-      appState.pinnedRuns.forEach((runData) => {
-        const pinnedValue = getParameterValue(runData, paramName);
-        allValues.push(pinnedValue);
-      });
-      
-      // Current run value (no left border needed for first column)
-      tableHTML += `<td class="current-run-value">${formatValue(currentValue, paramInfo.type, paramName, 'current')}</td>`;
-      
       // Pinned run values with border if different from previous column
-      let previousValue = currentValue;
+      let previousValue = null;
+      let isFirstColumn = true;
       appState.pinnedRuns.forEach((runData) => {
         const pinnedValue = getParameterValue(runData, paramName);
-        const isDifferent = !compareValues(previousValue, pinnedValue);
+        const isDifferent = !isFirstColumn && !compareValues(previousValue, pinnedValue);
         const borderStyle = isDifferent ? 'border-left: 3px solid #ffc107;' : '';
         tableHTML += `<td class="pinned-run-value" style="${borderStyle}">${formatValue(pinnedValue, paramInfo.type, paramName, runData.id)}</td>`;
         previousValue = pinnedValue;
+        isFirstColumn = false;
       });
       
       tableHTML += '</tr>';
@@ -2459,6 +2113,12 @@ document.addEventListener("DOMContentLoaded", () => {
     tableHTML += '</div>';
     
     container.innerHTML = tableHTML;
+    
+    // Add event listener for the Add Column button
+    const addColumnBtn = document.getElementById('add-column-btn');
+    if (addColumnBtn) {
+      addColumnBtn.addEventListener('click', addNewColumn);
+    }
   }
 
   // Extract parameters from all runs to determine table structure
@@ -3044,6 +2704,28 @@ document.addEventListener("DOMContentLoaded", () => {
       return `${keys[0]}: ${obj[keys[0]]}`;
     }
     return `{${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '...' : ''}}`;
+  }
+
+  // Add a new column by duplicating the rightmost column's parameters
+  function addNewColumn() {
+    if (appState.pinnedRuns.size === 0) return;
+    
+    // Get the rightmost (last) pinned run
+    const pinnedRunsArray = Array.from(appState.pinnedRuns.values());
+    const lastRun = pinnedRunsArray[pinnedRunsArray.length - 1];
+    
+    // Create a new run configuration with the same parameters
+    const newConfig = {
+      scenario: lastRun.scenario,
+      baseScenario: lastRun.baseScenario,
+      admType: lastRun.admType,
+      llmBackbone: lastRun.llmBackbone,
+      kdmaValues: { ...lastRun.kdmaValues },
+      experimentKey: lastRun.experimentKey
+    };
+    
+    // Pin the new configuration
+    pinRunFromConfig(newConfig);
   }
 
   // Toggle functions for expandable content
