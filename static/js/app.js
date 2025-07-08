@@ -1398,12 +1398,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const validValues = availableKDMAs[kdmaType] || [];
     const initialValue = validValues.length > 0 ? validValues[0] : 0.5;
     
-    // Update the run's KDMA values
+    // Update the run's KDMA values directly
     const newKDMAs = { ...currentKDMAs, [kdmaType]: initialValue };
-    updateParameterForRun(runId, 'kdmas', newKDMAs);
+    run.kdmaValues = newKDMAs;
     
     // Refresh the comparison display to show new KDMA control
     updateComparisonDisplay();
+    
+    // Update URL state
+    urlState.updateURL();
   };
 
   // Handle removing KDMA from pinned run - global for onclick access
@@ -1414,11 +1417,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const currentKDMAs = { ...(run.kdmaValues || {}) };
     delete currentKDMAs[kdmaType];
     
-    // Update the run's KDMA values
-    updateParameterForRun(runId, 'kdmas', currentKDMAs);
+    // Update the run's KDMA values directly
+    run.kdmaValues = currentKDMAs;
     
     // Refresh the comparison display
     updateComparisonDisplay();
+    
+    // Update URL state
+    urlState.updateURL();
   };
 
   // Handle KDMA type change for pinned run - global for onclick access
@@ -1443,11 +1449,14 @@ document.addEventListener("DOMContentLoaded", () => {
     
     currentKDMAs[newKdmaType] = newValue;
     
-    // Update the run's KDMA values
-    updateParameterForRun(runId, 'kdmas', currentKDMAs);
+    // Update the run's KDMA values directly
+    run.kdmaValues = currentKDMAs;
     
     // Refresh the comparison display
     updateComparisonDisplay();
+    
+    // Update URL state
+    urlState.updateURL();
   };
 
   // Handle KDMA value change for pinned run - global for onclick access
@@ -1458,8 +1467,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const currentKDMAs = { ...(run.kdmaValues || {}) };
     currentKDMAs[kdmaType] = newValue;
     
-    // Update the run's KDMA values
-    updateParameterForRun(runId, 'kdmas', currentKDMAs);
+    // Update the run's KDMA values directly
+    run.kdmaValues = currentKDMAs;
+    
+    // Update the columnParameters to sync with the new KDMA values
+    const params = getParametersForRun(runId);
+    params.kdmas = currentKDMAs;
     
     // Reload data for this specific run (since KDMA value affects results)
     await reloadPinnedRun(runId);
@@ -1995,7 +2008,8 @@ document.addEventListener("DOMContentLoaded", () => {
       kdmaParts.push(`${kdma}-${value.toFixed(1)}`);
     });
     const kdmaString = kdmaParts.sort().join("_");
-    const experimentKey = `${admType}_${llmBackbone}_${kdmaString}`;
+    // If no KDMAs, don't append the trailing underscore
+    const experimentKey = kdmaString ? `${admType}_${llmBackbone}_${kdmaString}` : `${admType}_${llmBackbone}`;
 
     console.log("Loading experiment data:", experimentKey, "Scenario:", scenario);
 
@@ -2686,6 +2700,21 @@ document.addEventListener("DOMContentLoaded", () => {
     
     return validOptions.kdmas;
   }
+  
+  // Check if removing KDMAs is allowed for a run (i.e., experiments exist without KDMAs)
+  function canRemoveKDMAsForRun(runId) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return false;
+    
+    // Check if there are any experiments for this ADM/LLM combination without KDMAs
+    const experiments = manifest.experiment_keys || manifest;
+    const baseKey = `${run.admType}_${run.llmBackbone}`;
+    
+    // Look for experiments that match the base key exactly (no KDMAs)
+    return experiments.hasOwnProperty(baseKey) && 
+           experiments[baseKey].scenarios && 
+           experiments[baseKey].scenarios[run.scenario];
+  }
 
   // Create KDMA controls HTML for table cells (similar to sidebar but compact)
   function createKDMAControlsForRun(runId, currentKDMAs) {
@@ -2739,6 +2768,18 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const validValues = Array.from(availableKDMAs[kdmaType] || []);
     
+    // Ensure current value is in the list (in case of data inconsistencies)
+    if (value !== undefined && value !== null) {
+      // Check with tolerance for floating point
+      const hasValue = validValues.some(v => Math.abs(v - value) < 0.001);
+      if (!hasValue) {
+        // Add current value and sort
+        validValues.push(value);
+        validValues.sort((a, b) => a - b);
+      }
+    }
+    
+    
     return `
       <div class="table-kdma-control" style="display: flex; align-items: center; gap: 5px; margin-bottom: 3px; font-size: 12px;">
         <select class="table-kdma-type-select" 
@@ -2752,13 +2793,18 @@ document.addEventListener("DOMContentLoaded", () => {
         <select class="table-kdma-value-select" 
                 onchange="handleRunKDMAValueChange('${runId}', '${kdmaType}', parseFloat(this.value))"
                 style="min-width: 50px; font-size: 11px; padding: 1px 3px;">
-          ${validValues.map(val => 
-            `<option value="${val}" ${Math.abs(val - value) < 0.001 ? 'selected' : ''}>${val.toFixed(1)}</option>`
-          ).join('')}
+          ${validValues.map(val => {
+            // Round both values to 1 decimal place for comparison
+            const roundedVal = Math.round(val * 10) / 10;
+            const roundedValue = Math.round(value * 10) / 10;
+            return `<option value="${val}" ${roundedVal === roundedValue ? 'selected' : ''}>${val.toFixed(1)}</option>`;
+          }).join('')}
         </select>
         
         <button onclick="removeKDMAFromRun('${runId}', '${kdmaType}')" 
-                style="font-size: 10px; padding: 1px 4px; margin-left: 2px;">×</button>
+                ${!canRemoveKDMAsForRun(runId) ? 'disabled' : ''}
+                style="font-size: 10px; padding: 1px 4px; margin-left: 2px;"
+                title="${!canRemoveKDMAsForRun(runId) ? 'No experiments available without KDMAs' : 'Remove KDMA'}">×</button>
       </div>
     `;
   }
