@@ -1370,6 +1370,104 @@ document.addEventListener("DOMContentLoaded", () => {
     urlState.updateURL();
   };
 
+  // Handle adding KDMA to pinned run - global for onclick access
+  window.addKDMAToRun = function(runId) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return;
+    
+    const availableKDMAs = getValidKDMAsForRun(runId);
+    const currentKDMAs = run.kdmaValues || {};
+    const maxKDMAs = getMaxKDMAsForRun(runId);
+    
+    if (Object.keys(currentKDMAs).length >= maxKDMAs) {
+      console.warn(`Cannot add KDMA: max limit (${maxKDMAs}) reached for run ${runId}`);
+      return;
+    }
+    
+    // Find first available KDMA type
+    const availableTypes = Object.keys(availableKDMAs).filter(type => 
+      currentKDMAs[type] === undefined
+    );
+    
+    if (availableTypes.length === 0) {
+      console.warn(`No available KDMA types for run ${runId}`);
+      return;
+    }
+    
+    const kdmaType = availableTypes[0];
+    const validValues = availableKDMAs[kdmaType] || [];
+    const initialValue = validValues.length > 0 ? validValues[0] : 0.5;
+    
+    // Update the run's KDMA values
+    const newKDMAs = { ...currentKDMAs, [kdmaType]: initialValue };
+    updateParameterForRun(runId, 'kdmas', newKDMAs);
+    
+    // Refresh the comparison display to show new KDMA control
+    updateComparisonDisplay();
+  };
+
+  // Handle removing KDMA from pinned run - global for onclick access
+  window.removeKDMAFromRun = function(runId, kdmaType) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return;
+    
+    const currentKDMAs = { ...(run.kdmaValues || {}) };
+    delete currentKDMAs[kdmaType];
+    
+    // Update the run's KDMA values
+    updateParameterForRun(runId, 'kdmas', currentKDMAs);
+    
+    // Refresh the comparison display
+    updateComparisonDisplay();
+  };
+
+  // Handle KDMA type change for pinned run - global for onclick access
+  window.handleRunKDMATypeChange = function(runId, oldKdmaType, newKdmaType) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return;
+    
+    const currentKDMAs = { ...(run.kdmaValues || {}) };
+    const currentValue = currentKDMAs[oldKdmaType];
+    
+    // Remove old type and add new type
+    delete currentKDMAs[oldKdmaType];
+    
+    // Get valid values for new type and adjust value if needed
+    const availableKDMAs = getValidKDMAsForRun(runId);
+    const validValues = availableKDMAs[newKdmaType] || [];
+    let newValue = currentValue;
+    
+    if (validValues.length > 0 && !validValues.includes(currentValue)) {
+      newValue = validValues[0]; // Use first valid value
+    }
+    
+    currentKDMAs[newKdmaType] = newValue;
+    
+    // Update the run's KDMA values
+    updateParameterForRun(runId, 'kdmas', currentKDMAs);
+    
+    // Refresh the comparison display
+    updateComparisonDisplay();
+  };
+
+  // Handle KDMA value change for pinned run - global for onclick access
+  window.handleRunKDMAValueChange = async function(runId, kdmaType, newValue) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return;
+    
+    const currentKDMAs = { ...(run.kdmaValues || {}) };
+    currentKDMAs[kdmaType] = newValue;
+    
+    // Update the run's KDMA values
+    updateParameterForRun(runId, 'kdmas', currentKDMAs);
+    
+    // Reload data for this specific run (since KDMA value affects results)
+    await reloadPinnedRun(runId);
+    
+    // Update URL state
+    urlState.updateURL();
+  };
+
   function getMaxKDMAsForCurrentSelection() {
     const selectedAdm = document.getElementById("adm-type-select").value;
     const selectedLLM = document.getElementById("llm-select").value;
@@ -2518,6 +2616,153 @@ document.addEventListener("DOMContentLoaded", () => {
     return html;
   }
 
+  // Get max KDMAs allowed for a specific run based on its constraints
+  function getMaxKDMAsForRun(runId) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return 0;
+    
+    const scenario = run.scenario;
+    const admType = run.admType;
+    const llmBackbone = run.llmBackbone;
+    
+    // Check actual experiment data to find max KDMAs for this run's constraints
+    const experiments = manifest.experiment_keys || manifest;
+    let maxKDMAs = 0;
+    
+    // Look through all experiments to find the one with the most KDMAs for this combination
+    for (const expKey in experiments) {
+      const experiment = experiments[expKey];
+      
+      // Check if this experiment has the current scenario
+      if (experiment.scenarios && experiment.scenarios[scenario]) {
+        const config = experiment.scenarios[scenario].config;
+        if (!config) continue;
+        
+        const expAdm = config.adm ? config.adm.name : "unknown_adm";
+        const expLLM = config.adm && 
+          config.adm.structured_inference_engine && 
+          config.adm.structured_inference_engine.model_name
+          ? config.adm.structured_inference_engine.model_name 
+          : "no_llm";
+        
+        // Only count KDMAs from experiments that match this run's constraints
+        if (expAdm === admType && expLLM === llmBackbone) {
+          if (config.alignment_target && config.alignment_target.kdma_values) {
+            maxKDMAs = Math.max(maxKDMAs, config.alignment_target.kdma_values.length);
+          }
+        }
+      }
+    }
+    
+    // If no experiments found for current scenario, fallback to checking all experiments for this ADM/LLM
+    if (maxKDMAs === 0) {
+      for (const expKey in experiments) {
+        if (expKey.startsWith(`${admType}_${llmBackbone}_`)) {
+          const scenarios = experiments[expKey].scenarios;
+          if (scenarios && Object.keys(scenarios).length > 0) {
+            const firstScenario = Object.values(scenarios)[0];
+            if (firstScenario.config && firstScenario.config.alignment_target) {
+              const kdmaValues = firstScenario.config.alignment_target.kdma_values;
+              maxKDMAs = Math.max(maxKDMAs, kdmaValues.length);
+            }
+          }
+        }
+      }
+    }
+    
+    return maxKDMAs > 0 ? maxKDMAs : 3; // Default fallback
+  }
+
+  // Get valid KDMAs for a specific run
+  function getValidKDMAsForRun(runId) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return {};
+    
+    const validOptions = getValidOptionsForConstraints({
+      scenario: run.scenario,
+      admType: run.admType,
+      llmBackbone: run.llmBackbone
+    });
+    
+    return validOptions.kdmas;
+  }
+
+  // Create KDMA controls HTML for table cells (similar to sidebar but compact)
+  function createKDMAControlsForRun(runId, currentKDMAs) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return '<span class="na-value">N/A</span>';
+    
+    const maxKDMAs = getMaxKDMAsForRun(runId);
+    const currentKDMAEntries = Object.entries(currentKDMAs || {});
+    const canAddMore = currentKDMAEntries.length < maxKDMAs;
+    
+    let html = `<div class="table-kdma-container" data-run-id="${runId}">`;
+    
+    // Render existing KDMA controls
+    currentKDMAEntries.forEach(([kdmaType, value], index) => {
+      html += createSingleKDMAControlForRun(runId, kdmaType, value, index);
+    });
+    
+    // Add button
+    if (canAddMore) {
+      const availableKDMAs = getValidKDMAsForRun(runId);
+      const availableTypes = Object.keys(availableKDMAs).filter(type => 
+        !currentKDMAs || currentKDMAs[type] === undefined
+      );
+      
+      if (availableTypes.length > 0) {
+        html += `<button class="add-kdma-btn" onclick="addKDMAToRun('${runId}')" 
+                   style="margin-top: 5px; font-size: 12px; padding: 2px 6px;">
+                   Add KDMA
+                 </button>`;
+      } else {
+        html += `<div style="font-size: 12px; color: #666; margin-top: 5px;">All KDMA types added</div>`;
+      }
+    } else {
+      html += `<div style="font-size: 12px; color: #666; margin-top: 5px;">Max KDMAs reached (${maxKDMAs})</div>`;
+    }
+    
+    html += '</div>';
+    return html;
+  }
+
+  // Create individual KDMA control for table cell
+  function createSingleKDMAControlForRun(runId, kdmaType, value, index) {
+    const availableKDMAs = getValidKDMAsForRun(runId);
+    const run = appState.pinnedRuns.get(runId);
+    const currentKDMAs = run.kdmaValues || {};
+    
+    // Get available types (current type + unused types)
+    const availableTypes = Object.keys(availableKDMAs).filter(type => 
+      type === kdmaType || currentKDMAs[type] === undefined
+    );
+    
+    const validValues = Array.from(availableKDMAs[kdmaType] || []);
+    
+    return `
+      <div class="table-kdma-control" style="display: flex; align-items: center; gap: 5px; margin-bottom: 3px; font-size: 12px;">
+        <select class="table-kdma-type-select" 
+                onchange="handleRunKDMATypeChange('${runId}', '${kdmaType}', this.value)" 
+                style="min-width: 80px; font-size: 11px; padding: 1px 3px;">
+          ${availableTypes.map(type => 
+            `<option value="${type}" ${type === kdmaType ? 'selected' : ''}>${type}</option>`
+          ).join('')}
+        </select>
+        
+        <select class="table-kdma-value-select" 
+                onchange="handleRunKDMAValueChange('${runId}', '${kdmaType}', parseFloat(this.value))"
+                style="min-width: 50px; font-size: 11px; padding: 1px 3px;">
+          ${validValues.map(val => 
+            `<option value="${val}" ${Math.abs(val - value) < 0.001 ? 'selected' : ''}>${val.toFixed(1)}</option>`
+          ).join('')}
+        </select>
+        
+        <button onclick="removeKDMAFromRun('${runId}', '${kdmaType}')" 
+                style="font-size: 10px; padding: 1px 4px; margin-left: 2px;">×</button>
+      </div>
+    `;
+  }
+
   // Format values for display in table cells
   function formatValue(value, type, paramName = '', runId = '') {
     if (value === null || value === undefined || value === 'N/A') {
@@ -2537,6 +2782,9 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       if (paramName === 'scenario') {
         return createSpecificScenarioDropdownForRun(runId, value);
+      }
+      if (paramName === 'kdma_values') {
+        return createKDMAControlsForRun(runId, value);
       }
     }
     
