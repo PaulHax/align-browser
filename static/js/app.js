@@ -910,14 +910,13 @@ document.addEventListener("DOMContentLoaded", () => {
   window.handleRunLLMChange = async function(runId, newLLM) {
     console.log(`Changing LLM for run ${runId} to ${newLLM}`);
     
-    // Update parameters for the run with validation
-    updateParameterForRun(runId, 'llmBackbone', newLLM);
-    
-    // Reload data for this specific run
-    await reloadPinnedRun(runId);
-    
-    // Update URL state
-    urlState.updateURL();
+    await updatePinnedRunState({
+      runId,
+      parameter: 'llmBackbone',
+      value: newLLM,
+      needsReload: true,
+      updateUI: false // reloadPinnedRun calls updateComparisonDisplay
+    });
   };
 
   // Handle ADM type change for pinned runs - global for onclick access
@@ -1608,17 +1607,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function clearAllPins() {
-    // Clean up expansion states for all pinned runs
-    appState.pinnedRuns.forEach((runData, runId) => {
-      cleanupRunStates(runId);
+    updatePinnedRunState({
+      action: 'clear'
     });
-    
-    appState.pinnedRuns.clear();
-    updatePinnedCount();
-    updateComparisonDisplay();
-    
-    // Update URL after clearing pins
-    urlState.updateURL();
   }
 
   // Pin run from configuration (for URL restoration)
@@ -2655,13 +2646,93 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Remove a pinned run
   function removePinnedRun(runId) {
-    appState.pinnedRuns.delete(runId);
-    
-    // Clean up expansion states for this run
-    cleanupRunStates(runId);
-    
-    updatePinnedCount();
-    updateComparisonDisplay();
+    updatePinnedRunState({
+      runId,
+      action: 'remove',
+      needsCleanup: true
+    });
+  }
+  
+  // Generalized function for handling pinned run state updates
+  window.updatePinnedRunState = async function(options = {}) {
+    const {
+      runId,
+      action = 'update', // 'update', 'add', 'remove', 'clear'
+      parameter,
+      value,
+      needsReload = false,
+      needsCleanup = false,
+      updateUI = true,
+      updateURL = true,
+      debounceMs = 0
+    } = options;
+
+    const executeUpdate = async () => {
+      try {
+        // Handle different types of actions
+        switch (action) {
+          case 'remove':
+            if (runId) {
+              appState.pinnedRuns.delete(runId);
+              if (needsCleanup) {
+                cleanupRunStates(runId);
+              }
+            }
+            break;
+            
+          case 'clear':
+            // Clean up all runs before clearing
+            appState.pinnedRuns.forEach((_, id) => cleanupRunStates(id));
+            appState.pinnedRuns.clear();
+            break;
+            
+          case 'add':
+            if (runId && value) {
+              appState.pinnedRuns.set(runId, value);
+            }
+            break;
+            
+          case 'update':
+          default:
+            if (runId && parameter !== undefined) {
+              updateParameterForRun(runId, parameter, value);
+            }
+            break;
+        }
+
+        // Reload data if needed
+        if (needsReload && runId) {
+          await reloadPinnedRun(runId);
+        }
+
+        // Update UI if requested
+        if (updateUI) {
+          updatePinnedCount();
+          updateComparisonDisplay();
+        }
+
+        // Update URL state if requested
+        if (updateURL) {
+          urlState.updateURL();
+        }
+
+      } catch (error) {
+        console.error('Error updating pinned run state:', error);
+        throw error;
+      }
+    };
+
+    // Execute immediately or with debounce
+    if (debounceMs > 0) {
+      // Clear any existing timeout for this operation
+      if (updatePinnedRunState._debounceTimeout) {
+        clearTimeout(updatePinnedRunState._debounceTimeout);
+      }
+      
+      updatePinnedRunState._debounceTimeout = setTimeout(executeUpdate, debounceMs);
+    } else {
+      await executeUpdate();
+    }
   }
   
   // Clean up expansion states when a run is removed
