@@ -1,7 +1,6 @@
 // Client-side application logic for ADM Results
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Sidebar elements removed - using table-only mode
 
   let manifest = {};
   
@@ -190,7 +189,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Update UI if it's the current run
     if (runId === CURRENT_RUN_ID && updateUI) {
       syncAppStateFromRun(CURRENT_RUN_ID);
-      updateUIFromCorrectedParams(correctedParams);
     }
     
     return correctedParams;
@@ -199,7 +197,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Initialize the run context system after manifest is loaded
   function initializeRunContextSystem() {
     // Initialize current run parameters from appState
-    // This establishes the baseline for the current sidebar state
+    // This establishes the baseline for the current run state
     syncRunFromAppState();
     
     console.log('Run context system initialized with current run:', getParametersForRun(CURRENT_RUN_ID));
@@ -250,8 +248,6 @@ document.addEventListener("DOMContentLoaded", () => {
           if (state.llm) appState.selectedLLM = state.llm;
           if (state.kdmas) appState.activeKDMAs = { ...state.kdmas };
           
-          // Update UI controls to reflect restored state
-          updateUIFromState();
           
           // Sync restored state to current run parameters
           syncRunFromAppState();
@@ -790,56 +786,13 @@ document.addEventListener("DOMContentLoaded", () => {
       appState.selectedLLM = correctedParams.llmBackbone;
       appState.activeKDMAs = correctedParams.kdmas;
       
-      // Update UI controls
-      updateUIFromCorrectedParams(correctedParams);
     }
     
     return correctedParams;
   }
   
-  // Helper function to update UI controls from corrected parameters
-  function updateUIFromCorrectedParams(params) {
-    appState.isUpdatingProgrammatically = true;
-    
-    // Update scenario selects
-    if (params.scenario !== appState.selectedScenario) {
-      const baseScenarioId = params.scenario.replace(/-\d+$/, "");
-      const baseScenarioSelect = document.getElementById("base-scenario-select");
-      const scenarioSelect = document.getElementById("scenario-select");
-      
-      if (baseScenarioSelect && baseScenarioSelect.value !== baseScenarioId) {
-        appState.selectedBaseScenario = baseScenarioId;
-        baseScenarioSelect.value = baseScenarioId;
-        // No longer needed: updateSpecificScenarioDropdown();
-      }
-      
-      if (scenarioSelect && scenarioSelect.value !== params.scenario) {
-        scenarioSelect.value = params.scenario;
-      }
-    }
-    
-    // Update ADM select
-    const admSelect = document.getElementById("adm-type-select");
-    if (admSelect && admSelect.value !== params.admType) {
-      admSelect.value = params.admType;
-    }
-    
-    // Update LLM select
-    const llmSelect = document.getElementById("llm-select");
-    if (llmSelect && llmSelect.value !== params.llmBackbone) {
-      llmSelect.value = params.llmBackbone;
-    }
-    
-    appState.isUpdatingProgrammatically = false;
-  }
 
   function populateUIControls() {
-    // Sidebar UI controls removed - using table-only mode
-    // All parameter controls are now within the table cells
-    
-    // Note: Scenario selection, ADM type, LLM, and KDMA controls are now
-    // handled directly in the table cells through dropdown/slider interactions
-    
     // Initialize current run parameters with initial state
     syncRunFromAppState();
   }
@@ -849,18 +802,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const validOptions = getValidOptionsForConstraints({ scenario: currentScenario });
     return Array.from(validOptions.admTypes).sort();
   }
-
-  function updateADMDropdown() {
-    // No-op: sidebar elements no longer exist
-  }
-
-  function updateLLMDropdown() {
-    // No-op: sidebar elements no longer exist
-  }
-
-
-
-
 
   // Show loading spinner during transitions
   function showTransitionSpinner() {
@@ -924,127 +865,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  function addKDMASelector(kdmaType, initialValue) {
-    if (appState.activeKDMAs[kdmaType] !== undefined) {
-      return; // Already exists
-    }
-
-    const activeKDMAsDiv = document.getElementById("active-kdmas");
-    const kdmaDiv = document.createElement("div");
-    kdmaDiv.className = "kdma-selector";
-    kdmaDiv.id = `kdma-selector-${kdmaType}`;
-    kdmaDiv.style.marginBottom = "10px";
-    
-    const validValues = getValidKDMAsForCurrentSelection()[kdmaType] || [];
-    const value = initialValue !== undefined ? initialValue : (validValues[0] || 0.5);
-    
-    const availableKDMAs = getValidKDMAsForCurrentSelection();
-    const availableForThisSelector = Object.keys(availableKDMAs).filter(k => 
-      k === kdmaType || appState.activeKDMAs[k] === undefined
-    );
-    
-    kdmaDiv.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-        <select id="${kdmaType}-type-select" style="min-width: 120px;">
-          ${availableForThisSelector.map(k => 
-            `<option value="${k}" ${k === kdmaType ? 'selected' : ''}>${k}</option>`
-          ).join('')}
-        </select>
-        <input type="range" id="${kdmaType}-slider" min="0" max="1" step="0.1" value="${value}" style="min-width: 150px;">
-        <span id="${kdmaType}-value" style="min-width: 30px;">${value.toFixed(1)}</span>
-        <span id="${kdmaType}-warning" style="color: red; font-size: 12px; display: none;">⚠️ Invalid value</span>
-        <button onclick="removeKDMASelector('${kdmaType}')" style="margin-left: 10px;">Remove</button>
-      </div>
-    `;
-    
-    activeKDMAsDiv.appendChild(kdmaDiv);
-    
-    // Add event listeners
-    const typeSelect = kdmaDiv.querySelector(`#${kdmaType}-type-select`);
-    const slider = kdmaDiv.querySelector(`#${kdmaType}-slider`);
-    const valueSpan = kdmaDiv.querySelector(`#${kdmaType}-value`);
-    const warningSpan = kdmaDiv.querySelector(`#${kdmaType}-warning`);
-    
-    // Handle KDMA type change
-    typeSelect.addEventListener("change", () => {
-      const newKdmaType = typeSelect.value;
-      const oldKdmaType = kdmaType;
-      
-      // Update the active KDMAs tracking
-      const currentValue = appState.activeKDMAs[oldKdmaType];
-      delete appState.activeKDMAs[oldKdmaType];
-      
-      // Get valid values for new type and adjust value if needed
-      const validValues = getValidKDMAsForCurrentSelection()[newKdmaType] || [];
-      let newValue = currentValue;
-      if (validValues.length > 0 && !validValues.includes(currentValue)) {
-        newValue = validValues[0]; // Use first valid value
-      }
-      
-      appState.activeKDMAs[newKdmaType] = newValue;
-      
-      // Update slider value and display
-      slider.value = newValue;
-      valueSpan.textContent = newValue.toFixed(1);
-      
-      // Update the kdmaType reference for future operations
-      kdmaType = newKdmaType;
-      
-      // Update IDs to match new type
-      slider.id = `${newKdmaType}-slider`;
-      valueSpan.id = `${newKdmaType}-value`;
-      warningSpan.id = `${newKdmaType}-warning`;
-      kdmaDiv.id = `kdma-selector-${newKdmaType}`;
-      
-      // Update remove button onclick
-      const removeButton = kdmaDiv.querySelector('button');
-      removeButton.setAttribute('onclick', `removeKDMASelector('${newKdmaType}')`);
-      
-      validateKDMAValue(newKdmaType, newValue, warningSpan);
-      updateAllKDMATypeSelectors(); // Update all KDMA dropdowns
-      updateAddKDMAButton();
-      if (!appState.isTransitioning) {
-        loadResults();
-      }
-      urlState.updateURL(); // Update URL with new state
-    });
-    
-    // Handle slider value change
-    slider.addEventListener("input", () => {
-      const rawValue = parseFloat(slider.value);
-      const validValues = getValidKDMAsForCurrentSelection()[kdmaType] || [];
-      
-      // Snap to nearest valid value if we have valid values
-      let newValue = rawValue;
-      if (validValues.length > 0) {
-        newValue = validValues.reduce((closest, validValue) => 
-          Math.abs(validValue - rawValue) < Math.abs(closest - rawValue) ? validValue : closest
-        );
-        
-        // Update slider to show snapped value
-        if (newValue !== rawValue) {
-          slider.value = newValue;
-        }
-      }
-      
-      valueSpan.textContent = newValue.toFixed(1);
-      appState.activeKDMAs[kdmaType] = newValue;
-      
-      validateKDMAValue(kdmaType, newValue, warningSpan);
-      if (!appState.isTransitioning) {
-        loadResults();
-      }
-      urlState.updateURL(); // Update URL with new state
-      
-      // Sync to current run parameters
-      syncRunFromAppState();
-    });
-    
-    appState.activeKDMAs[kdmaType] = value;
-    
-    // Update all KDMA dropdowns to reflect the new addition
-    updateAllKDMATypeSelectors();
-  }
 
   // Helper function to validate KDMA value and show/hide warning
   function validateKDMAValue(kdmaType, value, warningSpan) {
@@ -1085,23 +905,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Make removeKDMASelector global so onclick can access it
-  window.removeKDMASelector = function(kdmaType) {
-    const kdmaDiv = document.getElementById(`kdma-selector-${kdmaType}`);
-    if (kdmaDiv) {
-      kdmaDiv.remove();
-      delete appState.activeKDMAs[kdmaType];
-      updateAllKDMATypeSelectors(); // Update all remaining KDMA dropdowns
-      updateAddKDMAButton();
-      if (!appState.isTransitioning) {
-        loadResults();
-      }
-      urlState.updateURL(); // Update URL with new state
-      
-      // Sync to current run parameters
-      syncRunFromAppState();
-    }
-  };
 
   // Handle LLM change for pinned runs - global for onclick access
   window.handleRunLLMChange = async function(runId, newLLM) {
@@ -1351,8 +1154,8 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   function getMaxKDMAsForCurrentSelection() {
-    const selectedAdm = document.getElementById("adm-type-select").value;
-    const selectedLLM = document.getElementById("llm-select").value;
+    const selectedAdm = appState.selectedAdmType;
+    const selectedLLM = appState.selectedLLM;
     const currentScenario = appState.selectedScenario || getFirstAvailableScenario();
     
     // Check actual experiment data to find max KDMAs for this ADM/LLM/Scenario combination
@@ -1403,48 +1206,14 @@ document.addEventListener("DOMContentLoaded", () => {
     return maxKDMAs;
   }
 
-  function updateAddKDMAButton() {
-    const addButton = document.getElementById("add-kdma-btn");
-    const validKDMAs = getValidKDMAsForCurrentSelection();
-    const availableToAdd = Object.keys(validKDMAs).filter(k => appState.activeKDMAs[k] === undefined);
-    const maxKDMAs = getMaxKDMAsForCurrentSelection();
-    const currentKDMACount = Object.keys(appState.activeKDMAs).length;
-    
-    // Update button state based on both available KDMAs and max limit
-    // Check max limit first - this takes precedence
-    if (maxKDMAs > 0 && currentKDMACount >= maxKDMAs) {
-      addButton.disabled = true;
-      addButton.textContent = `Max KDMAs reached (${maxKDMAs})`;
-    } else if (availableToAdd.length === 0) {
-      addButton.disabled = true;
-      // If max limit is known to be 1 and we have 1 KDMA, show limit message instead
-      if (maxKDMAs === 1 && currentKDMACount === 1) {
-        addButton.textContent = `Max KDMAs reached (${maxKDMAs})`;
-      } else {
-        addButton.textContent = "All KDMA types added";
-      }
-    } else {
-      addButton.disabled = false;
-      addButton.textContent = "Add KDMA";
-    }
-  }
 
-  function updateKDMASliders() {
-    // No-op: sidebar elements no longer exist
-  }
 
-  function updateBaseScenarioDropdown() {
-    // No-op: sidebar elements no longer exist
-  }
 
-  function updateSpecificScenarioDropdown() {
-    // No-op: sidebar elements no longer exist
-  }
 
   // Function to construct the key based on current UI selections
   function getSelectedKey() {
-    const admType = appState.selectedAdmType || document.getElementById("adm-type-select").value;
-    const llmBackbone = appState.selectedLLM || document.getElementById("llm-select").value;
+    const admType = appState.selectedAdmType;
+    const llmBackbone = appState.selectedLLM;
 
     const kdmaParts = [];
     // Use activeKDMAs instead of querying DOM
@@ -1947,45 +1716,6 @@ document.addEventListener("DOMContentLoaded", () => {
     updateComparisonDisplay();
   }
 
-  // Update UI controls to reflect current app state
-  function updateUIFromState() {
-    // Update base scenario dropdown
-    const baseScenarioSelect = document.getElementById("base-scenario-select");
-    if (baseScenarioSelect && appState.selectedBaseScenario) {
-      baseScenarioSelect.value = appState.selectedBaseScenario;
-    }
-    
-    // Update scenario dropdown
-    const scenarioSelect = document.getElementById("scenario-select");
-    if (scenarioSelect && appState.selectedScenario) {
-      scenarioSelect.value = appState.selectedScenario;
-    }
-    
-    // Update ADM type
-    const admTypeInputs = document.querySelectorAll('input[name="adm-type"]');
-    admTypeInputs.forEach(input => {
-      input.checked = input.value === appState.selectedAdmType;
-    });
-    
-    // Update LLM selection
-    const llmInputs = document.querySelectorAll('input[name="llm"]');
-    llmInputs.forEach(input => {
-      input.checked = input.value === appState.selectedLLM;
-    });
-    
-    // Update KDMA sliders
-    for (const [kdma, value] of Object.entries(appState.activeKDMAs)) {
-      const slider = document.getElementById(`kdma-${kdma}`);
-      if (slider) {
-        slider.value = value;
-        // Update display value
-        const display = document.getElementById(`kdma-${kdma}-value`);
-        if (display) {
-          display.textContent = value;
-        }
-      }
-    }
-  }
 
   // Load results for a specific configuration
   async function loadResultsForConfig(config) {
@@ -2057,7 +1787,6 @@ document.addEventListener("DOMContentLoaded", () => {
       tableHTML += '<th class="pinned-run-header">';
       tableHTML += '<div class="run-header-content">';
       tableHTML += `<span class="run-title">${runData.displayName}</span>`;
-      tableHTML += '<span class="pinned-badge">Pinned</span>';
       // Only show delete button if it's not the first column or if there are multiple columns
       if (index > 0 || appState.pinnedRuns.size > 1) {
         tableHTML += `<button class="remove-run-btn" onclick="removePinnedRun('${runId}')">×</button>`;
@@ -2408,7 +2137,7 @@ document.addEventListener("DOMContentLoaded", () => {
            experiments[baseKey].scenarios[run.scenario];
   }
 
-  // Create KDMA controls HTML for table cells (similar to sidebar but compact)
+  // Create KDMA controls HTML for table cells
   function createKDMAControlsForRun(runId, currentKDMAs) {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return '<span class="na-value">N/A</span>';
@@ -2813,13 +2542,7 @@ document.addEventListener("DOMContentLoaded", () => {
     title.className = 'run-title';
     title.textContent = runData.displayName;
     
-    const badge = document.createElement('span');
-    badge.className = 'pinned-badge';
-    badge.textContent = 'Pinned';
-    badge.style.marginLeft = '8px';
-    
     titleArea.appendChild(title);
-    titleArea.appendChild(badge);
     
     const removeBtn = document.createElement('button');
     removeBtn.className = 'remove-run-btn';
