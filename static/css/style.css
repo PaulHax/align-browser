@@ -695,7 +695,8 @@ footer {
 /* Table cell controls for editable parameters */
 .table-llm-select,
 .table-adm-select,
-.table-scenario-select {
+.table-scenario-select,
+.table-kdma-select {
   width: 100%;
   max-width: 280px;
   padding: 4px 6px;
@@ -709,13 +710,15 @@ footer {
 
 .table-llm-select:hover,
 .table-adm-select:hover,
-.table-scenario-select:hover {
+.table-scenario-select:hover,
+.table-kdma-select:hover {
   border-color: #007bff;
 }
 
 .table-llm-select:focus,
 .table-adm-select:focus,
-.table-scenario-select:focus {
+.table-scenario-select:focus,
+.table-kdma-select:focus {
   outline: none;
   border-color: #007bff;
   box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
@@ -724,6 +727,80 @@ footer {
 /* Ensure proper sizing in table cells */
 .pinned-run-value .table-llm-select,
 .pinned-run-value .table-adm-select,
-.pinned-run-value .table-scenario-select {
+.pinned-run-value .table-scenario-select,
+.pinned-run-value .table-kdma-select {
   margin: 0;
+}
+
+/* KDMA Controls for Table Cells */
+.table-kdma-container {
+  min-width: 200px;
+  max-width: 300px;
+}
+
+.table-kdma-control {
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 3px;
+  padding: 3px;
+  margin-bottom: 3px;
+}
+
+.table-kdma-type-select,
+.table-kdma-value-select {
+  border: 1px solid #ced4da;
+  border-radius: 3px;
+  font-family: inherit;
+  background-color: white;
+  cursor: pointer;
+}
+
+.table-kdma-type-select:hover,
+.table-kdma-value-select:hover {
+  border-color: #007bff;
+}
+
+.table-kdma-type-select:focus,
+.table-kdma-value-select:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 1px rgba(0, 123, 255, 0.25);
+}
+
+.add-kdma-btn {
+  background-color: #007bff;
+  color: white;
+  border: 1px solid #007bff;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.add-kdma-btn:hover {
+  background-color: #0056b3;
+  border-color: #0056b3;
+}
+
+.add-kdma-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.table-kdma-control button {
+  background-color: #dc3545;
+  color: white;
+  border: 1px solid #dc3545;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.table-kdma-control button:hover {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
+
+.table-kdma-control button:focus {
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(220, 53, 69, 0.25);
 }
