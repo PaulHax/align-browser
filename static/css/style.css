@@ -8,12 +8,6 @@ body {
   color: #333;
 }
 
-header {
-  background-color: #6c757d;
-  color: white;
-  padding: 1em 0;
-  text-align: center;
-}
 
 main {
   display: flex;
@@ -21,13 +15,6 @@ main {
 }
 
 
-.run {
-  flex: 3;
-  background-color: #fff;
-  padding: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
 
 footer {
   text-align: center;
@@ -582,9 +569,6 @@ footer {
   }
   
   
-  .run {
-    flex: 1;
-  }
   
   /* Stack comparison controls on mobile */
   #comparison-controls .btn {

@@ -16,7 +16,6 @@ def test_page_load(page, test_server):
     expect(page).to_have_title("Align Browser")
 
     # Check that main elements exist
-    expect(page.locator("h1")).to_contain_text("Align Browser")
     expect(page.locator("#runs-container")).to_be_visible()
     
     # Wait for table to load
@@ -243,12 +242,12 @@ def test_responsive_layout(page, test_server):
     page.set_viewport_size({"width": 1200, "height": 800})
     page.wait_for_selector(".comparison-table", timeout=10000)
     expect(page.locator(".comparison-table")).to_be_visible()
-    expect(page.locator(".run")).to_be_visible()
+    expect(page.locator("#runs-container")).to_be_visible()
 
     # Test tablet size
     page.set_viewport_size({"width": 768, "height": 1024})
     expect(page.locator(".comparison-table")).to_be_visible()
-    expect(page.locator(".run")).to_be_visible()
+    expect(page.locator("#runs-container")).to_be_visible()
 
     # Test mobile size
     page.set_viewport_size({"width": 375, "height": 667})
