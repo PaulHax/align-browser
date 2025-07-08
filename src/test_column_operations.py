@@ -121,7 +121,7 @@ def test_column_scenario_selector_changes_data(page, test_server):
     # Find scenario selector in the second column (if editable)
     # This depends on Phase 5C implementation
     scenario_selects = page.locator(
-        ".comparison-table tbody tr[data-category='Configuration'] td:nth-child(3) select"
+        ".comparison-table tbody tr[data-category='base_scenario'] td:nth-child(3) select"
     )
 
     if scenario_selects.count() > 0:

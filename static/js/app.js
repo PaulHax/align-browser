@@ -1786,7 +1786,7 @@ document.addEventListener("DOMContentLoaded", () => {
     tableHTML += '<tbody>';
     
     parameters.forEach((paramInfo, paramName) => {
-      tableHTML += `<tr class="parameter-row" data-category="${paramInfo.category}">`;
+      tableHTML += `<tr class="parameter-row" data-category="${paramName}">`;
       tableHTML += `<td class="parameter-name">${formatParameterName(paramName)}</td>`;
       
       // Pinned run values with border if different from previous column
@@ -1816,27 +1816,23 @@ document.addEventListener("DOMContentLoaded", () => {
     const parameters = new Map();
     
     // Configuration parameters
-    parameters.set("base_scenario", { type: "string", required: true, category: "Configuration" });
-    parameters.set("scenario", { type: "string", required: true, category: "Configuration" });
-    parameters.set("adm_type", { type: "string", required: true, category: "Configuration" });
-    parameters.set("llm_backbone", { type: "string", required: true, category: "Configuration" });
-    
-    // KDMA Values - single row showing all KDMA values
-    parameters.set("kdma_values", { type: "kdma_values", required: false, category: "KDMA Values" });
-    
-    // Scenario details
-    parameters.set("scenario_state", { type: "longtext", required: false, category: "Scenario Details" });
-    parameters.set("available_choices", { type: "choices", required: false, category: "Choices" });
+    parameters.set("base_scenario", { type: "string", required: true });
+    parameters.set("scenario", { type: "string", required: true });
+    parameters.set("scenario_state", { type: "longtext", required: false });
+    parameters.set("available_choices", { type: "choices", required: false });
+    parameters.set("kdma_values", { type: "kdma_values", required: false });
+    parameters.set("adm_type", { type: "string", required: true });
+    parameters.set("llm_backbone", { type: "string", required: true });
     
     // ADM Decision (using Pydantic model structure)
-    parameters.set("adm_decision", { type: "text", required: false, category: "ADM Decision" });
-    parameters.set("justification", { type: "longtext", required: false, category: "ADM Decision" });
+    parameters.set("adm_decision", { type: "text", required: false });
+    parameters.set("justification", { type: "longtext", required: false });
     
     // Timing data
-    parameters.set("probe_time", { type: "number", required: false, category: "Timing" });
+    parameters.set("probe_time", { type: "number", required: false });
     
     // Raw Data
-    parameters.set("input_output_json", { type: "object", required: false, category: "Raw Data" });
+    parameters.set("input_output_json", { type: "object", required: false });
     
     return parameters;
   }
@@ -2339,6 +2335,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function formatParameterName(paramName) {
+    // Handle specific parameter name overrides
+    if (paramName === 'kdma_values') return 'KDMAs';
+    if (paramName === 'adm_type') return 'ADM';
+    if (paramName === 'llm_backbone') return 'LLM Backbone';
+    if (paramName === 'input_output_json') return 'Input Output JSON';
+    
     return paramName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
   }
 
