@@ -1459,10 +1459,33 @@ document.addEventListener("DOMContentLoaded", () => {
     urlState.updateURL();
   };
 
-  // Handle KDMA value change for pinned run - global for onclick access
-  window.handleRunKDMAValueChange = async function(runId, kdmaType, newValue) {
+  // Handle KDMA slider input for pinned run - global for onclick access
+  window.handleRunKDMASliderInput = function(runId, kdmaType, sliderElement) {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return;
+    
+    const rawValue = parseFloat(sliderElement.value);
+    const availableKDMAs = getValidKDMAsForRun(runId);
+    const validValues = Array.from(availableKDMAs[kdmaType] || []);
+    
+    // Snap to nearest valid value if we have valid values
+    let newValue = rawValue;
+    if (validValues.length > 0) {
+      newValue = validValues.reduce((closest, validValue) => 
+        Math.abs(validValue - rawValue) < Math.abs(closest - rawValue) ? validValue : closest
+      );
+      
+      // Update slider to show snapped value
+      if (newValue !== rawValue) {
+        sliderElement.value = newValue;
+      }
+    }
+    
+    // Update the display value immediately
+    const valueDisplay = document.getElementById(`kdma-value-${runId}-${kdmaType}`);
+    if (valueDisplay) {
+      valueDisplay.textContent = newValue.toFixed(1);
+    }
     
     const currentKDMAs = { ...(run.kdmaValues || {}) };
     currentKDMAs[kdmaType] = newValue;
@@ -1474,11 +1497,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const params = getParametersForRun(runId);
     params.kdmas = currentKDMAs;
     
-    // Reload data for this specific run (since KDMA value affects results)
-    await reloadPinnedRun(runId);
-    
-    // Update URL state
-    urlState.updateURL();
+    // Debounce the reload to avoid too many requests while sliding
+    if (window.kdmaReloadTimeout) {
+      clearTimeout(window.kdmaReloadTimeout);
+    }
+    window.kdmaReloadTimeout = setTimeout(async () => {
+      await reloadPinnedRun(runId);
+      urlState.updateURL();
+    }, 500);
   };
 
   function getMaxKDMAsForCurrentSelection() {
@@ -2781,29 +2807,25 @@ document.addEventListener("DOMContentLoaded", () => {
     
     
     return `
-      <div class="table-kdma-control" style="display: flex; align-items: center; gap: 5px; margin-bottom: 3px; font-size: 12px;">
+      <div class="table-kdma-control">
         <select class="table-kdma-type-select" 
-                onchange="handleRunKDMATypeChange('${runId}', '${kdmaType}', this.value)" 
-                style="min-width: 80px; font-size: 11px; padding: 1px 3px;">
+                onchange="handleRunKDMATypeChange('${runId}', '${kdmaType}', this.value)">
           ${availableTypes.map(type => 
             `<option value="${type}" ${type === kdmaType ? 'selected' : ''}>${type}</option>`
           ).join('')}
         </select>
         
-        <select class="table-kdma-value-select" 
-                onchange="handleRunKDMAValueChange('${runId}', '${kdmaType}', parseFloat(this.value))"
-                style="min-width: 50px; font-size: 11px; padding: 1px 3px;">
-          ${validValues.map(val => {
-            // Round both values to 1 decimal place for comparison
-            const roundedVal = Math.round(val * 10) / 10;
-            const roundedValue = Math.round(value * 10) / 10;
-            return `<option value="${val}" ${roundedVal === roundedValue ? 'selected' : ''}>${val.toFixed(1)}</option>`;
-          }).join('')}
-        </select>
+        <input type="range" 
+               class="table-kdma-value-slider"
+               id="kdma-slider-${runId}-${kdmaType}"
+               min="0" max="1" step="0.1" 
+               value="${value}"
+               oninput="handleRunKDMASliderInput('${runId}', '${kdmaType}', this)">
+        <span class="table-kdma-value-display" id="kdma-value-${runId}-${kdmaType}">${value.toFixed(1)}</span>
         
-        <button onclick="removeKDMAFromRun('${runId}', '${kdmaType}')" 
+        <button class="table-kdma-remove-btn" 
+                onclick="removeKDMAFromRun('${runId}', '${kdmaType}')" 
                 ${!canRemoveKDMAsForRun(runId) ? 'disabled' : ''}
-                style="font-size: 10px; padding: 1px 4px; margin-left: 2px;"
                 title="${!canRemoveKDMAsForRun(runId) ? 'No experiments available without KDMAs' : 'Remove KDMA'}">×</button>
       </div>
     `;
