@@ -1465,8 +1465,27 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!run) return;
     
     const rawValue = parseFloat(sliderElement.value);
-    const availableKDMAs = getValidKDMAsForRun(runId);
-    const validValues = Array.from(availableKDMAs[kdmaType] || []);
+    
+    // Get valid values considering current KDMA constraints
+    const currentKDMAs = { ...(run.kdmaValues || {}) };
+    
+    // Create a constraint that includes other KDMAs but NOT the one being changed
+    const constraintKDMAs = { ...currentKDMAs };
+    delete constraintKDMAs[kdmaType]; // Remove the one we're changing
+    
+    const constraints = {
+      scenario: run.scenario,
+      admType: run.admType,  
+      llmBackbone: run.llmBackbone
+    };
+    
+    // Add other KDMAs as constraints if any exist
+    if (Object.keys(constraintKDMAs).length > 0) {
+      constraints.kdmas = constraintKDMAs;
+    }
+    
+    const validOptions = getValidOptionsForConstraints(constraints);
+    const validValues = Array.from(validOptions.kdmas[kdmaType] || []);
     
     // Snap to nearest valid value if we have valid values
     let newValue = rawValue;
@@ -1487,7 +1506,6 @@ document.addEventListener("DOMContentLoaded", () => {
       valueDisplay.textContent = newValue.toFixed(1);
     }
     
-    const currentKDMAs = { ...(run.kdmaValues || {}) };
     currentKDMAs[kdmaType] = newValue;
     
     // Update the run's KDMA values directly
@@ -2656,61 +2674,59 @@ document.addEventListener("DOMContentLoaded", () => {
     return html;
   }
 
-  // Get max KDMAs allowed for a specific run based on its constraints
+  // Get max KDMAs allowed for a specific run based on its constraints and current selections
   function getMaxKDMAsForRun(runId) {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return 0;
     
-    const scenario = run.scenario;
-    const admType = run.admType;
-    const llmBackbone = run.llmBackbone;
+    // First check if we can add more KDMAs given current constraints
+    const currentKDMAs = run.kdmaValues || {};
+    const currentCount = Object.keys(currentKDMAs).length;
     
-    // Check actual experiment data to find max KDMAs for this run's constraints
+    // Try to see if adding one more KDMA is possible
+    const constraints = {
+      scenario: run.scenario,
+      admType: run.admType,
+      llmBackbone: run.llmBackbone
+    };
+    
+    // If we have current KDMAs, include them as constraints
+    if (currentCount > 0) {
+      constraints.kdmas = { ...currentKDMAs };
+    }
+    
+    const validOptions = getValidOptionsForConstraints(constraints);
+    const availableTypes = Object.keys(validOptions.kdmas || {}).filter(type => 
+      !currentKDMAs[type]
+    );
+    
+    // If we can add more types, max is at least current + 1
+    if (availableTypes.length > 0) {
+      return currentCount + 1;
+    }
+    
+    // Otherwise, check what we actually have experimentally
     const experiments = manifest.experiment_keys || manifest;
-    let maxKDMAs = 0;
+    let maxKDMAs = currentCount;
     
-    // Look through all experiments to find the one with the most KDMAs for this combination
     for (const expKey in experiments) {
-      const experiment = experiments[expKey];
-      
-      // Check if this experiment has the current scenario
-      if (experiment.scenarios && experiment.scenarios[scenario]) {
-        const config = experiment.scenarios[scenario].config;
-        if (!config) continue;
+      if (expKey.startsWith(`${run.admType}_${run.llmBackbone}_`) && 
+          experiments[expKey].scenarios && 
+          experiments[expKey].scenarios[run.scenario]) {
         
-        const expAdm = config.adm ? config.adm.name : "unknown_adm";
-        const expLLM = config.adm && 
-          config.adm.structured_inference_engine && 
-          config.adm.structured_inference_engine.model_name
-          ? config.adm.structured_inference_engine.model_name 
-          : "no_llm";
-        
-        // Only count KDMAs from experiments that match this run's constraints
-        if (expAdm === admType && expLLM === llmBackbone) {
-          if (config.alignment_target && config.alignment_target.kdma_values) {
-            maxKDMAs = Math.max(maxKDMAs, config.alignment_target.kdma_values.length);
+        // Count KDMAs in this experiment key
+        const keyParts = expKey.split('_');
+        let kdmaCount = 0;
+        for (let i = 2; i < keyParts.length; i++) {
+          if (keyParts[i].includes('-')) {
+            kdmaCount++;
           }
         }
+        maxKDMAs = Math.max(maxKDMAs, kdmaCount);
       }
     }
     
-    // If no experiments found for current scenario, fallback to checking all experiments for this ADM/LLM
-    if (maxKDMAs === 0) {
-      for (const expKey in experiments) {
-        if (expKey.startsWith(`${admType}_${llmBackbone}_`)) {
-          const scenarios = experiments[expKey].scenarios;
-          if (scenarios && Object.keys(scenarios).length > 0) {
-            const firstScenario = Object.values(scenarios)[0];
-            if (firstScenario.config && firstScenario.config.alignment_target) {
-              const kdmaValues = firstScenario.config.alignment_target.kdma_values;
-              maxKDMAs = Math.max(maxKDMAs, kdmaValues.length);
-            }
-          }
-        }
-      }
-    }
-    
-    return maxKDMAs > 0 ? maxKDMAs : 3; // Default fallback
+    return Math.max(maxKDMAs, 1); // At least 1 KDMA should be possible
   }
 
   // Get valid KDMAs for a specific run
@@ -2718,11 +2734,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return {};
     
-    const validOptions = getValidOptionsForConstraints({
+    // Include current KDMAs as constraints to ensure we only get valid combinations
+    const constraints = {
       scenario: run.scenario,
       admType: run.admType,
       llmBackbone: run.llmBackbone
-    });
+    };
+    
+    // If there are existing KDMAs, include them as constraints
+    if (run.kdmaValues && Object.keys(run.kdmaValues).length > 0) {
+      constraints.kdmas = { ...run.kdmaValues };
+    }
+    
+    const validOptions = getValidOptionsForConstraints(constraints);
     
     return validOptions.kdmas;
   }
