@@ -54,7 +54,7 @@ def test_table_column_scenario_selection(page, test_server):
     # Find scenario selectors in the second column (first pinned column)
     # Look for selects in configuration rows
     scenario_selects = page.locator(
-        ".comparison-table tbody tr[data-category='Configuration'] td:nth-child(2) select"
+        ".comparison-table tbody tr[data-category='base_scenario'] td:nth-child(2) select"
     )
 
     if scenario_selects.count() > 0:
@@ -215,7 +215,7 @@ def test_table_column_base_scenario_updates_specific(page, test_server):
 
     # Find selectors in second column
     selects = page.locator(
-        ".comparison-table tbody tr[data-category='Configuration'] td:nth-child(2) select"
+        ".comparison-table tbody tr[data-category='base_scenario'] td:nth-child(2) select"
     ).all()
 
     # Identify base and specific scenario selectors
