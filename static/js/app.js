@@ -1115,6 +1115,50 @@ document.addEventListener("DOMContentLoaded", () => {
     urlState.updateURL();
   };
 
+  // Handle ADM type change for pinned runs - global for onclick access
+  window.handleRunADMChange = async function(runId, newADM) {
+    console.log(`Changing ADM type for run ${runId} to ${newADM}`);
+    
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) {
+      console.warn(`Run ${runId} not found`);
+      return;
+    }
+    
+    // Initialize LLM preferences for this run if not present
+    if (!run.llmPreferences) {
+      run.llmPreferences = {};
+    }
+    
+    // Store current LLM preference for the old ADM type
+    if (run.admType && run.llmBackbone) {
+      run.llmPreferences[run.admType] = run.llmBackbone;
+    }
+    
+    // Update ADM type with validation
+    const updatedParams = updateParameterForRun(runId, 'admType', newADM);
+    
+    // Try to restore LLM preference for the new ADM type
+    if (run.llmPreferences[newADM]) {
+      // Check if preferred LLM is valid for new ADM
+      const validOptions = getValidOptionsForConstraints({
+        scenario: updatedParams.scenario,
+        admType: newADM
+      });
+      
+      if (validOptions.llmBackbones.has(run.llmPreferences[newADM])) {
+        console.log(`Restoring LLM preference for ADM ${newADM}: ${run.llmPreferences[newADM]}`);
+        updateParameterForRun(runId, 'llmBackbone', run.llmPreferences[newADM]);
+      }
+    }
+    
+    // Reload data for this specific run
+    await reloadPinnedRun(runId);
+    
+    // Update URL state
+    urlState.updateURL();
+  };
+
   function getMaxKDMAsForCurrentSelection() {
     const selectedAdm = document.getElementById("adm-type-select").value;
     const selectedLLM = document.getElementById("llm-select").value;
@@ -2191,15 +2235,40 @@ document.addEventListener("DOMContentLoaded", () => {
     return html;
   }
 
+  // Create dropdown HTML for ADM type selection in table cells
+  function createADMDropdownForRun(runId, currentValue) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return escapeHtml(currentValue);
+    
+    const validOptions = getValidOptionsForConstraints({ 
+      scenario: run.scenario
+    });
+    const validADMs = Array.from(validOptions.admTypes).sort();
+    
+    let html = `<select class="table-adm-select" onchange="handleRunADMChange('${runId}', this.value)">`;
+    validADMs.forEach(adm => {
+      const selected = adm === currentValue ? 'selected' : '';
+      html += `<option value="${escapeHtml(adm)}" ${selected}>${escapeHtml(adm)}</option>`;
+    });
+    html += '</select>';
+    
+    return html;
+  }
+
   // Format values for display in table cells
   function formatValue(value, type, paramName = '', runId = '') {
     if (value === null || value === undefined || value === 'N/A') {
       return '<span class="na-value">N/A</span>';
     }
     
-    // Special handling for LLM backbone in pinned runs - make it editable
-    if (paramName === 'llm_backbone' && runId !== 'current' && runId !== '') {
-      return createLLMDropdownForRun(runId, value);
+    // Special handling for editable parameters in pinned runs
+    if (runId !== 'current' && runId !== '') {
+      if (paramName === 'llm_backbone') {
+        return createLLMDropdownForRun(runId, value);
+      }
+      if (paramName === 'adm_type') {
+        return createADMDropdownForRun(runId, value);
+      }
     }
     
     switch (type) {
