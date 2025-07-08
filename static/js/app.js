@@ -2231,8 +2231,8 @@ document.addEventListener("DOMContentLoaded", () => {
         return typeof value === 'number' ? value.toFixed(3) : value.toString();
       
       case 'longtext':
-        if (typeof value === 'string' && value.length > 400) {
-          const truncated = value.substring(0, 400);
+        if (typeof value === 'string' && value.length > 800) {
+          const truncated = value.substring(0, 800);
           // Include runId for per-column state persistence
           const id = `text_${paramName}_${runId}_${type}`;
           const isExpanded = expandableStates.text.get(id) || false;
