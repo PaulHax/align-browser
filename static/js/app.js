@@ -57,8 +57,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  // ===== RUN ID CONTEXT SYSTEM (Phase 4) =====
-  
   // Constants for run identification
   const CURRENT_RUN_ID = 'current';
   
@@ -121,13 +119,6 @@ document.addEventListener("DOMContentLoaded", () => {
     columnParameters.set(runId, createParameterStructure(validParams));
     
     return validParams;
-  }
-  
-  // Remove parameters for a run ID (cleanup)
-  function removeParametersForRun(runId) {
-    if (runId !== CURRENT_RUN_ID) {
-      columnParameters.delete(runId);
-    }
   }
   
   // Sync appState FROM current run parameters
@@ -370,8 +361,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // Convert Sets to sorted Arrays for easier use in UI
-    appState.availableScenarios = Array.from(appState.availableScenarios).sort();
+    // Convert Sets to Arrays for easier use in UI
+    appState.availableScenarios = Array.from(appState.availableScenarios);
     appState.availableBaseScenarios = Array.from(appState.availableBaseScenarios).sort();
     appState.availableAdmTypes = Array.from(appState.availableAdmTypes).sort();
     appState.availableKDMAs = Array.from(appState.availableKDMAs).sort();
@@ -388,12 +379,8 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    console.log("Available base scenarios:", appState.availableBaseScenarios);
-    console.log("Available scenarios:", appState.availableScenarios);
     console.log("Valid Combinations (structured):", appState.validCombinations);
   }
-
-  // ===== EXTRACTED VALIDITY LOGIC (Phase 1) =====
   
   // Core function that extracts parameters from experiment config
   function extractParametersFromConfig(config) {
@@ -494,8 +481,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const validOptions = getValidOptionsForConstraints(constraints);
     return validOptions.scenarios.has(scenario);
   }
-  
-  // ===== PARAMETER AUTO-CORRECTION LOGIC (Phase 2) =====
   
   // Find a valid parameter combination given partial constraints and preferences
   // Priority order: 1) Scenario (highest), 2) KDMA values, 3) ADM type, 4) LLM backbone (lowest)
@@ -797,33 +782,6 @@ document.addEventListener("DOMContentLoaded", () => {
     syncRunFromAppState();
   }
 
-  function getValidADMsForCurrentScenario() {
-    const currentScenario = appState.selectedScenario || getFirstAvailableScenario();
-    const validOptions = getValidOptionsForConstraints({ scenario: currentScenario });
-    return Array.from(validOptions.admTypes).sort();
-  }
-
-  // Show loading spinner during transitions
-  function showTransitionSpinner() {
-    // Loading state will be shown in the table
-    updateComparisonDisplay();
-  }
-
-  // Update function for scenario changes
-  function updateFromScenarioChange() {
-    // Show spinner immediately during transitions
-    if (appState.isTransitioning) {
-      showTransitionSpinner();
-    }
-    
-    // Clear transition flag and load results
-    appState.isTransitioning = false;
-    
-    if (appState.selectedScenario) {
-      loadResults();
-    }
-  }
-
   function getValidKDMAsForCurrentSelection() {
     // Use appState values instead of DOM elements
     const selectedAdm = appState.selectedAdmType;
@@ -864,47 +822,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     return null;
   }
-
-
-  // Helper function to validate KDMA value and show/hide warning
-  function validateKDMAValue(kdmaType, value, warningSpan) {
-    const validValues = getValidKDMAsForCurrentSelection()[kdmaType] || [];
-    
-    if (validValues.length === 0) {
-      warningSpan.style.display = 'inline';
-      warningSpan.textContent = '⚠️ KDMA not available for current selection';
-    } else if (!validValues.includes(value)) {
-      warningSpan.style.display = 'inline';
-      warningSpan.textContent = `⚠️ Value ${value.toFixed(1)} not valid. Valid: ${validValues.map(v => v.toFixed(1)).join(', ')}`;
-    } else {
-      warningSpan.style.display = 'none';
-    }
-  }
-
-  // Function to update all KDMA type selectors with filtered options
-  function updateAllKDMATypeSelectors() {
-    const validKDMAs = getValidKDMAsForCurrentSelection();
-    
-    Object.keys(appState.activeKDMAs).forEach(kdmaType => {
-      const typeSelect = document.getElementById(`${kdmaType}-type-select`);
-      if (typeSelect) {
-        const currentSelection = typeSelect.value;
-        const availableForThisSelector = Object.keys(validKDMAs).filter(k => 
-          k === currentSelection || appState.activeKDMAs[k] === undefined
-        );
-        
-        typeSelect.innerHTML = '';
-        availableForThisSelector.forEach(k => {
-          const option = document.createElement('option');
-          option.value = k;
-          option.textContent = k;
-          option.selected = k === currentSelection;
-          typeSelect.appendChild(option);
-        });
-      }
-    });
-  }
-
 
   // Handle LLM change for pinned runs - global for onclick access
   window.handleRunLLMChange = async function(runId, newLLM) {
@@ -1812,7 +1729,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Extract parameters from all runs to determine table structure
-  function extractParametersFromRuns(runs) {
+  function extractParametersFromRuns() {
     const parameters = new Map();
     
     // Configuration parameters
@@ -1835,24 +1752,6 @@ document.addEventListener("DOMContentLoaded", () => {
     parameters.set("input_output_json", { type: "object", required: false });
     
     return parameters;
-  }
-
-  // Get current run data from the current state and loaded data
-  function getCurrentRunData() {
-    return {
-      id: 'current',
-      displayName: 'Current Run',
-      scenario: appState.selectedScenario,
-      baseScenario: appState.selectedBaseScenario,
-      admType: appState.selectedAdmType,
-      llmBackbone: appState.selectedLLM,
-      kdmaValues: { ...appState.activeKDMAs },
-      inputOutput: appState.currentInputOutput,
-      inputOutputArray: appState.currentInputOutputArray,
-      scores: appState.currentScores,
-      timing: appState.currentTiming,
-      experimentKey: getSelectedKey()
-    };
   }
 
   // Extract parameter value from run data using Pydantic model structure
@@ -2004,7 +1903,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const matchingScenarios = Array.from(appState.availableScenarios).filter((scenarioId) => {
       const extractedBase = scenarioId.replace(/-\d+$/, "");
       return extractedBase === baseScenarioId;
-    }).sort();
+    });
     
     if (matchingScenarios.length === 0) {
       return '<span class="na-value">No scenarios available</span>';
@@ -2503,148 +2402,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Save state for persistence
     expandableStates.objects.set(id, newExpanded);
   };
-
-
-  // Create a pinned run element
-  function createPinnedRunElement(runId, runData) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'run-wrapper';
-    wrapper.id = `pinned-run-${runId}`;
-    
-    // Create header
-    const header = document.createElement('div');
-    header.className = 'run-content-header';
-    
-    const titleArea = document.createElement('div');
-    titleArea.style.display = 'flex';
-    titleArea.style.alignItems = 'center';
-    
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'remove-run-btn';
-    removeBtn.innerHTML = '×';
-    removeBtn.title = 'Remove this pinned run';
-    removeBtn.addEventListener('click', () => removePinnedRun(runId));
-    
-    header.appendChild(titleArea);
-    header.appendChild(removeBtn);
-    
-    // Create content area
-    const content = document.createElement('div');
-    content.className = 'run-content';
-    
-    // Render the pinned run data
-    renderPinnedRunData(content, runData);
-    
-    wrapper.appendChild(header);
-    wrapper.appendChild(content);
-    
-    return wrapper;
-  }
-
-  // Render pinned run data using existing display logic
-  function renderPinnedRunData(container, runData) {
-    if (!runData.inputOutput) {
-      container.innerHTML = '<p>No data available for this pinned run.</p>';
-      return;
-    }
-    
-    // Reuse the existing formatting logic from loadResultsInternal
-    const inputOutputItem = runData.inputOutput;
-    const scoreItem = runData.scores;
-    
-    // Format results using the same logic as the current run
-    const formatResults = () => {
-      let html = '';
-      
-      if (inputOutputItem && inputOutputItem.input) {
-        const input = inputOutputItem.input;
-        
-        // Simple scenario header
-        html += `<h3>${runData.scenario}</h3>`;
-        
-        // Scenario description
-        if (input.state) {
-          html += `<p style="margin-bottom: 20px; font-size: 16px; line-height: 1.6;">${input.state}</p>`;
-        }
-        
-        // Simplified choices with horizontal layout
-        if (input.choices && Array.isArray(input.choices)) {
-          html += '<h4>Choices</h4>';
-          html += '<div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px;">';
-          input.choices.forEach((choice, idx) => {
-            html += `<div style="flex: 1; min-width: 200px; padding: 12px; background-color: #f8f9fa; border-radius: 6px;">`;
-            html += `<div style="font-weight: 500; margin-bottom: 8px;">${choice.unstructured || choice.description || 'No description'}</div>`;
-            
-            // Short KDMA bars
-            if (choice.kdma_association) {
-              Object.entries(choice.kdma_association).forEach(([kdma, value]) => {
-                const percentage = Math.round(value * 100);
-                const color = value >= 0.7 ? '#28a745' : value >= 0.4 ? '#ffc107' : '#dc3545';
-                
-                html += '<div style="display: flex; align-items: center; gap: 8px; margin: 3px 0;">';
-                html += `<span style="min-width: 60px; font-size: 0.9em; color: #666;">${kdma}</span>`;
-                html += `<div style="width: 60px; height: 4px; background-color: #e9ecef; border-radius: 2px;">`;
-                html += `<div style="width: ${percentage}%; height: 100%; background-color: ${color}; border-radius: 2px;"></div>`;
-                html += '</div>';
-                html += `<span style="font-size: 0.85em; color: ${color}; font-weight: 500;">${value}</span>`;
-                html += '</div>';
-              });
-            }
-            html += '</div>';
-          });
-          html += '</div>';
-        }
-      }
-      
-      // Simplified ADM Decision
-      if (inputOutputItem && inputOutputItem.output) {
-        const output = inputOutputItem.output;
-        
-        html += '<h4>ADM Decision</h4>';
-        
-        // Show the action text
-        if (output.action && output.action.unstructured) {
-          html += `<p style="font-weight: 600; color: #2e7d32; margin-bottom: 10px;">${output.action.unstructured}</p>`;
-        } else if (output.action && output.action.action_id) {
-          html += `<p style="font-weight: 600; color: #2e7d32; margin-bottom: 10px;">${output.action.action_id}</p>`;
-        }
-        
-        // Show the justification
-        if (output.action && output.action.justification) {
-          html += `<p style="line-height: 1.6; color: #555;"><strong>Justification:</strong> ${output.action.justification}</p>`;
-        } else if (output.justification) {
-          html += `<p style="line-height: 1.6; color: #555;"><strong>Justification:</strong> ${output.justification}</p>`;
-        }
-      } else {
-        html += '<h4>ADM Decision</h4>';
-        html += '<p style="color: #666;">No decision data available</p>';
-      }
-      
-      return html;
-    };
-    
-    container.innerHTML = formatResults();
-    
-    // Add scores section if available
-    if (scoreItem) {
-      const scoresDiv = document.createElement('div');
-      scoresDiv.style.marginTop = '20px';
-      scoresDiv.style.paddingTop = '15px';
-      scoresDiv.style.borderTop = '1px solid #e9ecef';
-      
-      let scoresHtml = '<h4>Results Summary</h4>';
-      if (scoreItem.score !== undefined) {
-        scoresHtml += `<div style="margin: 8px 0;"><strong>Score:</strong> ${scoreItem.score.toFixed(3)}</div>`;
-      }
-      
-      if (runData.timing && runData.timing.avg_time_s !== undefined) {
-        scoresHtml += `<div style="margin: 8px 0;"><strong>Average Decision Time:</strong> ${runData.timing.avg_time_s.toFixed(4)}s</div>`;
-      }
-      
-      scoresDiv.innerHTML = scoresHtml;
-      container.appendChild(scoresDiv);
-    }
-  }
 
   // Remove a pinned run
   function removePinnedRun(runId) {
