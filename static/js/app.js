@@ -1679,32 +1679,42 @@ document.addEventListener("DOMContentLoaded", () => {
       addColumnBtn.style.display = appState.pinnedRuns.size > 0 ? 'inline-block' : 'none';
     }
     
-    // Build the table
-    let tableHTML = '<div class="comparison-table-container">';
-    tableHTML += '<table class="comparison-table">';
+    // Find the existing table elements
+    const table = container.querySelector('.comparison-table');
+    if (!table) return;
     
-    // Header row
-    tableHTML += '<thead><tr>';
-    tableHTML += '<th class="parameter-header"></th>';
+    const thead = table.querySelector('thead tr');
+    const tbody = table.querySelector('tbody');
+    if (!thead || !tbody) return;
     
-    // Pinned run headers
+    // Clear existing run columns from header (keep first column)
+    const headerCells = thead.querySelectorAll('th:not(.parameter-header)');
+    headerCells.forEach(cell => cell.remove());
+    
+    // Add pinned run headers
     Array.from(appState.pinnedRuns.entries()).forEach(([runId, runData], index) => {
-      tableHTML += '<th class="pinned-run-header">';
+      const th = document.createElement('th');
+      th.className = 'pinned-run-header';
+      
       // Always render button but control visibility to prevent layout shifts
       const shouldShowButton = index > 0 || appState.pinnedRuns.size > 1;
       const visibility = shouldShowButton ? 'visible' : 'hidden';
-      tableHTML += `<button class="remove-run-btn" onclick="removePinnedRun('${runId}')" style="visibility: ${visibility};">×</button>`;
-      tableHTML += '</th>';
+      th.innerHTML = `<button class="remove-run-btn" onclick="removePinnedRun('${runId}')" style="visibility: ${visibility};">×</button>`;
+      
+      thead.appendChild(th);
     });
     
-    tableHTML += '</tr></thead>';
+    // Clear existing run value columns from all parameter rows (keep first column)
+    const parameterRows = tbody.querySelectorAll('.parameter-row');
+    parameterRows.forEach(row => {
+      const valueCells = row.querySelectorAll('td:not(.parameter-name)');
+      valueCells.forEach(cell => cell.remove());
+    });
     
-    // Body rows
-    tableHTML += '<tbody>';
-    
+    // Add pinned run values to each parameter row
     parameters.forEach((paramInfo, paramName) => {
-      tableHTML += `<tr class="parameter-row" data-category="${paramName}">`;
-      tableHTML += `<td class="parameter-name">${formatParameterName(paramName)}</td>`;
+      const row = tbody.querySelector(`tr[data-category="${paramName}"]`);
+      if (!row) return;
       
       // Pinned run values with border if different from previous column
       let previousValue = null;
@@ -1713,19 +1723,18 @@ document.addEventListener("DOMContentLoaded", () => {
         const pinnedValue = getParameterValue(runData, paramName);
         const isDifferent = !isFirstColumn && !compareValues(previousValue, pinnedValue);
         const borderStyle = isDifferent ? 'border-left: 3px solid #ffc107;' : '';
-        tableHTML += `<td class="pinned-run-value" style="${borderStyle}">${formatValue(pinnedValue, paramInfo.type, paramName, runData.id)}</td>`;
+        
+        const td = document.createElement('td');
+        td.className = 'pinned-run-value';
+        td.style.cssText = borderStyle;
+        td.innerHTML = formatValue(pinnedValue, paramInfo.type, paramName, runData.id);
+        
+        row.appendChild(td);
+        
         previousValue = pinnedValue;
         isFirstColumn = false;
       });
-      
-      tableHTML += '</tr>';
     });
-    
-    tableHTML += '</tbody>';
-    tableHTML += '</table>';
-    tableHTML += '</div>';
-    
-    container.innerHTML = tableHTML;
   }
 
   // Extract parameters from all runs to determine table structure
