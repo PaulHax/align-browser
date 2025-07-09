@@ -12,6 +12,10 @@
 
 - **Run all tests**: `uv run pytest -v`
 - **Frontend tests only**: `uv run pytest src/test_frontend.py -v`
+- **ALWAYS run frontend tests at the start of any coding session before making changes**
+- **Run frontend tests frequently during refactoring - after every 2-3 small changes**
+- **If making UI or state management changes, run `uv run pytest src/test_frontend.py::test_no_console_errors -v` after each change**
+- **Use `uv run pytest src/test_frontend.py -v -k "not pinned_run_removal"` to skip known flaky tests**
 - Pytest automatically handles the build process via the `built_frontend` fixture
 - No need to manually run build.py - pytest manages the full build and test cycle
 - Tests include comprehensive browser automation with Playwright

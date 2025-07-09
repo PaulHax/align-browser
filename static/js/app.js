@@ -1,4 +1,15 @@
 // Client-side application logic for ADM Results
+import {
+  createInitialState,
+  updateUserSelections,
+  updateCurrentData,
+  addPinnedRun,
+  removePinnedRun,
+  clearAllPinnedRuns,
+  getSelectedKey,
+  hasPinnedRuns,
+  hasCurrentData
+} from './state.js';
 
 document.addEventListener("DOMContentLoaded", () => {
 
@@ -10,36 +21,16 @@ document.addEventListener("DOMContentLoaded", () => {
     objects: new Map() // parameterName -> isExpanded
   };
   
-  // Central application state
-  const appState = {
-    // Data from manifest
+  // Central application state initialized with functional state
+  let appState = {
+    ...createInitialState(),
+    // Convert arrays to Sets to maintain existing behavior
     availableScenarios: new Set(),
     availableBaseScenarios: new Set(),
     availableAdmTypes: new Set(),
     availableKDMAs: new Set(),
     availableLLMs: new Set(),
-    validCombinations: {},
     
-    // User selections
-    selectedBaseScenario: null,
-    selectedScenario: null,
-    selectedAdmType: null,
-    selectedLLM: null,
-    activeKDMAs: {},
-    
-    // LLM preferences per ADM type for preservation
-    llmPreferences: {},
-    
-    // UI state
-    isUpdatingProgrammatically: false,
-    isTransitioning: false,
-    
-    // Comparison state
-    pinnedRuns: new Map(), // Map<runId, runData> for pinned comparisons
-    currentInputOutput: null,
-    currentScores: null, 
-    currentTiming: null,
-
     // Run configuration factory
     createRunConfig: function() {
       return {
@@ -50,7 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
         admType: appState.selectedAdmType,
         llmBackbone: appState.selectedLLM,
         kdmaValues: { ...appState.activeKDMAs },
-        experimentKey: getSelectedKey(),
+        experimentKey: getSelectedKey(appState),
         displayName: generateDisplayName(),
         loadStatus: 'pending'
       };
@@ -125,11 +116,13 @@ document.addEventListener("DOMContentLoaded", () => {
   function syncAppStateFromRun(runId = CURRENT_RUN_ID) {
     if (runId === CURRENT_RUN_ID) {
       const params = getParametersForRun(CURRENT_RUN_ID);
-      appState.selectedScenario = params.scenario;
-      appState.selectedBaseScenario = params.baseScenario;
-      appState.selectedAdmType = params.admType;
-      appState.selectedLLM = params.llmBackbone;
-      appState.activeKDMAs = { ...params.kdmas };
+      appState = updateUserSelections(appState, {
+        scenario: params.scenario,
+        baseScenario: params.baseScenario,
+        admType: params.admType,
+        llm: params.llmBackbone,
+        kdmas: { ...params.kdmas }
+      });
     }
   }
   
@@ -233,11 +226,13 @@ document.addEventListener("DOMContentLoaded", () => {
           const state = JSON.parse(atob(stateParam));
           
           // Restore selections
-          if (state.baseScenario) appState.selectedBaseScenario = state.baseScenario;
-          if (state.scenario) appState.selectedScenario = state.scenario;
-          if (state.admType) appState.selectedAdmType = state.admType;
-          if (state.llm) appState.selectedLLM = state.llm;
-          if (state.kdmas) appState.activeKDMAs = { ...state.kdmas };
+          appState = updateUserSelections(appState, {
+            baseScenario: state.baseScenario || appState.selectedBaseScenario,
+            scenario: state.scenario || appState.selectedScenario,
+            admType: state.admType || appState.selectedAdmType,
+            llm: state.llm || appState.selectedLLM,
+            kdmas: state.kdmas || appState.activeKDMAs
+          });
           
           
           // Sync restored state to current run parameters
@@ -756,55 +751,10 @@ document.addEventListener("DOMContentLoaded", () => {
     
     return findValidParameterCombination(currentParams, preferences);
   }
-  
-  // Update a single parameter and auto-correct others to maintain validity
-  function updateParameterWithValidation(paramType, newValue, updateUI = true) {
-    const constraints = {};
-    constraints[paramType] = newValue;
-    
-    const correctedParams = correctParametersToValid(constraints);
-    
-    if (updateUI) {
-      // Update appState
-      appState.selectedScenario = correctedParams.scenario;
-      appState.selectedAdmType = correctedParams.admType;
-      appState.selectedLLM = correctedParams.llmBackbone;
-      appState.activeKDMAs = correctedParams.kdmas;
-      
-    }
-    
-    return correctedParams;
-  }
-  
 
   function populateUIControls() {
     // Initialize current run parameters with initial state
     syncRunFromAppState();
-  }
-
-  function getValidKDMAsForCurrentSelection() {
-    // Use appState values instead of DOM elements
-    const selectedAdm = appState.selectedAdmType;
-    const selectedLLM = appState.selectedLLM;
-    const currentScenario = appState.selectedScenario || getFirstAvailableScenario();
-    
-    const constraints = {
-      scenario: currentScenario,
-      admType: selectedAdm,
-      llmBackbone: selectedLLM
-    };
-    
-    const validOptions = getValidOptionsForConstraints(constraints);
-    
-    // Convert Sets to sorted arrays to match original format
-    const validKDMAs = {};
-    if (validOptions.kdmas) {
-      Object.keys(validOptions.kdmas).forEach(kdma => {
-        validKDMAs[kdma] = Array.from(validOptions.kdmas[kdma]).sort((a, b) => a - b);
-      });
-    }
-    
-    return validKDMAs;
   }
   
   function getFirstAvailableScenario() {
@@ -825,14 +775,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Handle LLM change for pinned runs - global for onclick access
   window.handleRunLLMChange = async function(runId, newLLM) {
-    console.log(`Changing LLM for run ${runId} to ${newLLM}`);
-    
-    await updatePinnedRunState({
+    await window.updatePinnedRunState({
       runId,
       parameter: 'llmBackbone',
       value: newLLM,
       needsReload: true,
-      updateUI: false // reloadPinnedRun calls updateComparisonDisplay
+      updateUI: false 
     });
   };
 
@@ -1124,41 +1072,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
 
-
-
-  // Function to construct the key based on current UI selections
-  function getSelectedKey() {
-    const admType = appState.selectedAdmType;
-    const llmBackbone = appState.selectedLLM;
-
-    const kdmaParts = [];
-    // Use activeKDMAs instead of querying DOM
-    Object.entries(appState.activeKDMAs).forEach(([kdma, value]) => {
-      kdmaParts.push(`${kdma}-${value.toFixed(1)}`);
-    });
-    
-    // Sort KDMA parts to match the key generation in build.py
-    const kdmaString = kdmaParts.sort().join("_");
-
-    return `${admType}_${llmBackbone}_${kdmaString}`;
-  }
-
   // Internal function to load results without loading guard
   async function loadResultsInternal() {
     if (!appState.selectedScenario) {
       // Message will be displayed in the table
       
       // Clear current data when no scenario
-      appState.currentInputOutput = null;
-      appState.currentInputOutputArray = null;
-      appState.currentScores = null;
-      appState.currentTiming = null;
+      appState = updateCurrentData(appState, {
+        inputOutput: null,
+        inputOutputArray: null,
+        scores: null,
+        timing: null
+      });
       updatePinnedCount(); // Disable pin button when no data
       updateComparisonDisplay(); // Update table with no scenario state
       return;
     }
 
-    const selectedKey = getSelectedKey();
+    const selectedKey = getSelectedKey(appState);
     console.log(
       "Attempting to load:",
       selectedKey,
@@ -1321,10 +1252,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // Content will be displayed via the comparison table
         
         // Store current data for pinning
-        appState.currentInputOutput = inputOutputItem;
-        appState.currentInputOutputArray = inputOutputArray; // Store full array for raw data access
-        appState.currentScores = scoreItem;
-        appState.currentTiming = timingData;
+        appState = updateCurrentData(appState, {
+          inputOutput: inputOutputItem,
+          inputOutputArray: inputOutputArray,
+          scores: scoreItem,
+          timing: timingData
+        });
         updatePinnedCount(); // Enable pin button when data loads
         
         // Update scores and timing in parameters section
@@ -1337,10 +1270,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // Error will be displayed in the table
         
         // Clear current data on error
-        appState.currentInputOutput = null;
-        appState.currentInputOutputArray = null;
-        appState.currentScores = null;
-        appState.currentTiming = null;
+        appState = updateCurrentData(appState, {
+          inputOutput: null,
+          inputOutputArray: null,
+          scores: null,
+          timing: null
+        });
         updatePinnedCount(); // Disable pin button when no data
         updateComparisonDisplay(); // Update table with error state
       }
@@ -1523,11 +1458,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function clearAllPins() {
-    updatePinnedRunState({
-      action: 'clear'
-    });
-  }
 
   // Pin run from configuration (for URL restoration)
   async function pinRunFromConfig(runConfig) {
@@ -1699,7 +1629,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Always render button but control visibility to prevent layout shifts
       const shouldShowButton = index > 0 || appState.pinnedRuns.size > 1;
       const visibility = shouldShowButton ? 'visible' : 'hidden';
-      th.innerHTML = `<button class="remove-run-btn" onclick="removePinnedRun('${runId}')" style="visibility: ${visibility};">×</button>`;
+      th.innerHTML = `<button class="remove-run-btn" onclick="removeRun('${runId}')" style="visibility: ${visibility};">×</button>`;
       
       thead.appendChild(th);
     });
@@ -2242,16 +2172,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return div.innerHTML;
   }
 
-  function formatParameterName(paramName) {
-    // Handle specific parameter name overrides
-    if (paramName === 'kdma_values') return 'KDMAs';
-    if (paramName === 'adm_type') return 'ADM';
-    if (paramName === 'llm_backbone') return 'LLM Backbone';
-    if (paramName === 'input_output_json') return 'Input Output JSON';
-    
-    return paramName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-  }
-
   function compareValues(val1, val2) {
     if (val1 === val2) return true;
     
@@ -2413,8 +2333,8 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // Remove a pinned run
-  function removePinnedRun(runId) {
-    updatePinnedRunState({
+  function removeRun(runId) {
+    window.updatePinnedRunState({
       runId,
       action: 'remove',
       needsCleanup: true
@@ -2493,11 +2413,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // Execute immediately or with debounce
     if (debounceMs > 0) {
       // Clear any existing timeout for this operation
-      if (updatePinnedRunState._debounceTimeout) {
-        clearTimeout(updatePinnedRunState._debounceTimeout);
+      if (window.updatePinnedRunState._debounceTimeout) {
+        clearTimeout(window.updatePinnedRunState._debounceTimeout);
       }
       
-      updatePinnedRunState._debounceTimeout = setTimeout(executeUpdate, debounceMs);
+      window.updatePinnedRunState._debounceTimeout = setTimeout(executeUpdate, debounceMs);
     } else {
       await executeUpdate();
     }
@@ -2521,7 +2441,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Make removePinnedRun globally accessible for onclick handlers
-  window.removePinnedRun = removePinnedRun;
+  window.removeRun = removeRun;
 
   function generateRunId() {
     const timestamp = new Date().getTime();
@@ -2559,21 +2479,6 @@ document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => notification.remove(), 3000);
   }
 
-  function initializeComparisonFeatures() {
-    const pinButton = document.getElementById("pin-current-run");
-    const clearButton = document.getElementById("clear-all-pins");
-    
-    if (pinButton) {
-      pinButton.addEventListener("click", pinCurrentRun);
-    }
-    
-    if (clearButton) {
-      clearButton.addEventListener("click", clearAllPins);
-    }
-    
-    updatePinnedCount(); // Initial state
-  }
-
   // Initialize static button event listeners
   const addColumnBtn = document.getElementById('add-column-btn');
   if (addColumnBtn) {
@@ -2582,7 +2487,4 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Initial manifest fetch on page load
   fetchManifest();
-  
-  // Initialize comparison features after DOM is loaded
-  initializeComparisonFeatures();
 });
