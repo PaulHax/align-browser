@@ -5,6 +5,11 @@ import socket
 from pathlib import Path
 import argparse
 from datetime import datetime
+try:
+    from importlib.resources import files
+except ImportError:
+    # Fallback for Python < 3.9
+    from importlib_resources import files
 from align_browser.experiment_parser import (
     parse_experiments_directory,
     build_manifest_from_experiments,
@@ -14,23 +19,43 @@ from align_browser.experiment_parser import (
 
 def copy_static_assets(output_dir):
     """Copy static assets from package static/ directory to output directory."""
-    script_dir = Path(__file__).parent
-    static_dir = script_dir / "static"
-    
-    if not static_dir.exists():
-        raise FileNotFoundError(f"Static assets directory not found: {static_dir}")
-    
-    static_files = ["index.html", "app.js", "state.js", "style.css"]
-    
-    for filename in static_files:
-        src_file = static_dir / filename
-        dst_file = output_dir / filename
+    try:
+        # Use importlib.resources for robust package data access
+        static_files = files("align_browser.static")
         
-        if src_file.exists():
-            shutil.copy2(src_file, dst_file)
-            print(f"Copied {filename} to {dst_file}")
-        else:
-            print(f"Warning: Static asset not found: {src_file}")
+        for filename in ["index.html", "app.js", "state.js", "style.css"]:
+            try:
+                # Read the file content from the package
+                file_content = (static_files / filename).read_bytes()
+                
+                # Write to destination
+                dst_file = output_dir / filename
+                dst_file.write_bytes(file_content)
+                print(f"Copied {filename} to {dst_file}")
+                
+            except FileNotFoundError:
+                print(f"Warning: Static asset not found in package: {filename}")
+                
+    except Exception as e:
+        # Fallback to filesystem approach for development
+        print(f"Package resource access failed, trying filesystem fallback: {e}")
+        script_dir = Path(__file__).parent
+        static_dir = script_dir / "static"
+        
+        if not static_dir.exists():
+            raise FileNotFoundError(f"Static assets directory not found: {static_dir}")
+        
+        static_files = ["index.html", "app.js", "state.js", "style.css"]
+        
+        for filename in static_files:
+            src_file = static_dir / filename
+            dst_file = output_dir / filename
+            
+            if src_file.exists():
+                shutil.copy2(src_file, dst_file)
+                print(f"Copied {filename} to {dst_file}")
+            else:
+                print(f"Warning: Static asset not found: {src_file}")
 
 
 def main():
