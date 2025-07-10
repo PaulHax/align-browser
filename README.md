@@ -1,35 +1,39 @@
 # Align Browser
 
-A static web application for visualizing ADM (Alignment for Decision Making) results.
-
-## Installation
-
-```bash
-# Install dependencies with uv
-uv sync
-
-# Install with development dependencies
-uv sync --group dev
-```
+A static web application for visualizing [align-system](https://github.com/ITM-Kitware/align-system) experiment results.
 
 ## Usage
 
-### Building the Site
-
-Generate the static site from your experiments:
+Generate the static site from an experiments directory and start HTTP server:
 
 ```bash
+# Build and serve on default port (8000)
 uv run python src/build.py ../experiments
 ```
 
-After building, serve the site locally:
+Then open http://localhost:8000
+
+### Serving the Site
+
+You can serve the site in several ways:
 
 ```bash
-# Serve the site on http://localhost:8000
-python -m http.server 8000 -d dist
+# Build and serve on custom port
+uv run python src/build.py ../experiments --port 3000
+
+# Build and serve on all network interfaces (accessible from other devices)
+uv run python src/build.py ../experiments --host 0.0.0.0
 ```
 
-Then open http://localhost:8000 in your browser to view the app.
+**Option 2: Manual serving after build**
+
+```bash
+# Build only
+uv run python src/build.py ../experiments --build-only
+
+# Then serve manually
+python -m http.server 8000 -d dist
+```
 
 ### Expected Directory Structure
 
@@ -52,7 +56,7 @@ experiments/
     └── ...
 ```
 
-### Usage Examples
+### Build details
 
 ```bash
 # Correct - use the root experiments directory
@@ -70,6 +74,25 @@ The script will search for:
 
 ## Development
 
+### Code Quality
+
+Check linting and formatting:
+
+```bash
+# Check code quality (linting and formatting)
+uv run ruff check --diff && uv run ruff format --check
+
+# Auto-fix linting issues and format code
+uv run ruff check --fix && uv run ruff format
+```
+
+### Installation
+
+```bash
+# Install with development dependencies
+uv sync --group dev
+```
+
 ### Running Tests
 
 ```bash
@@ -84,7 +107,7 @@ uv run pytest src/test_build.py -v
 uv run pytest --cov=src
 ```
 
-#### Test Configuration
+##### Tests
 
 This directory contains test files that can work with both mock data and real experiment data.
 
@@ -101,28 +124,6 @@ uv run python test_parsing.py
 uv run python test_experiment_parser.py
 uv run python test_build.py
 ```
-
-**Test Behavior:**
-
-- **If experiments directory exists**: Tests will run against real data
-- **If experiments directory doesn't exist**: Tests will either skip gracefully or run with mock data only
-- **Custom path via environment**: Use `TEST_EXPERIMENTS_PATH` to point to experiments anywhere on your system
-
-**Test Files:**
-
-1. **`test_experiment_parser.py`** - Unit tests for parsing models and functions
-
-   - Runs with mock data by default
-   - Has one test that optionally tests with real experiments if available
-
-2. **`test_parsing.py`** - Integration tests with real experiment data
-
-   - Designed specifically for real data testing
-   - Skips tests gracefully if experiments directory not found
-
-3. **`test_build.py`** - End-to-end build testing
-   - Tests the build script with real experiments
-   - Skips if experiments directory not available
 
 ### Frontend Testing
 
@@ -147,19 +148,6 @@ uv run pytest src/test_frontend.py::test_page_load -v
 
 The frontend tests will:
 
-- Build the static site with test data
 - Start a local HTTP server
 - Run automated browser tests to verify functionality
 - Test UI interactions, data loading, and error handling
-
-### Code Quality
-
-Check linting and formatting:
-
-```bash
-# Check code quality (linting and formatting)
-uv run ruff check --diff && uv run ruff format --check
-
-# Auto-fix linting issues and format code
-uv run ruff check --fix && uv run ruff format
-```
