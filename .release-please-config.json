@@ -2,7 +2,8 @@
   "release-type": "python",
   "packages": {
     ".": {
-      "package-name": "align-browser"
+      "package-name": "align-browser",
+      "version-file": "align_browser/__init__.py"
     }
   },
   "pull-request-title-pattern": "chore: release ${version}",
