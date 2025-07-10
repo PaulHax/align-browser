@@ -218,7 +218,7 @@ def built_frontend():
     # Ensure the dist directory exists and has the required files
     if not dist_dir.exists() or not (dist_dir / "manifest.json").exists():
         # Build the frontend if it doesn't exist
-        cmd = ["uv", "run", "python", "src/build.py", "../experiments"]
+        cmd = ["uv", "run", "align-browser", "../experiments", "--dev", "--build-only"]
         result = subprocess.run(
             cmd, capture_output=True, text=True, cwd=str(project_root)
         )

@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import os
 from pathlib import Path
-from test_config import check_experiments_path_exists
+from align_browser.test_config import check_experiments_path_exists
 
 
 def get_resolved_experiments_path():

@@ -4,7 +4,7 @@ import json
 import yaml
 import tempfile
 from pathlib import Path
-from experiment_models import (
+from align_browser.experiment_models import (
     KDMAValue,
     ADMConfig,
     ExperimentConfig,
@@ -16,11 +16,11 @@ from experiment_models import (
     ExperimentSummary,
     ChunkedExperimentData,
 )
-from experiment_parser import (
+from align_browser.experiment_parser import (
     parse_experiments_directory,
     build_manifest_from_experiments,
 )
-from test_config import get_experiments_path_or_skip
+from align_browser.test_config import get_experiments_path_or_skip
 
 
 def create_sample_config_data():

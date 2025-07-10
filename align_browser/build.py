@@ -5,11 +5,32 @@ import socket
 from pathlib import Path
 import argparse
 from datetime import datetime
-from experiment_parser import (
+from align_browser.experiment_parser import (
     parse_experiments_directory,
     build_manifest_from_experiments,
     copy_experiment_files,
 )
+
+
+def copy_static_assets(output_dir):
+    """Copy static assets from dist/ directory to output directory."""
+    script_dir = Path(__file__).parent
+    dist_dir = script_dir.parent / "dist"
+    
+    if not dist_dir.exists():
+        raise FileNotFoundError(f"Static assets directory not found: {dist_dir}")
+    
+    static_files = ["index.html", "app.js", "state.js", "style.css"]
+    
+    for filename in static_files:
+        src_file = dist_dir / filename
+        dst_file = output_dir / filename
+        
+        if src_file.exists():
+            shutil.copy2(src_file, dst_file)
+            print(f"Copied {filename} to {dst_file}")
+        else:
+            print(f"Warning: Static asset not found: {src_file}")
 
 
 def main():
@@ -24,8 +45,8 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="dist",
-        help="Output directory for the generated data (default: dist)",
+        default="align-browser-site",
+        help="Output directory for the generated site (default: align-browser-site)",
     )
     parser.add_argument(
         "--build-only",
@@ -44,17 +65,38 @@ def main():
         default="localhost",
         help="Host to bind to (default: localhost, use 0.0.0.0 for all interfaces)",
     )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Development mode: serve from dist/ directory and edit files directly",
+    )
     args = parser.parse_args()
 
     experiments_root = Path(args.experiments).resolve()
 
     print(f"Processing experiments directory: {experiments_root}")
 
-    # Output directory is always relative to current working directory
-    output_dir = Path(args.output_dir).resolve()
-
-    # Ensure output directory exists
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Determine output directory based on mode
+    if args.dev:
+        # Development mode: use dist/ directory
+        script_dir = Path(__file__).parent
+        output_dir = script_dir.parent / "dist"
+        print("Development mode: using dist/ directory")
+        
+        # Ensure dist directory exists
+        if not output_dir.exists():
+            raise FileNotFoundError(f"Development mode requires dist/ directory: {output_dir}")
+            
+    else:
+        # Production mode: use specified output directory and copy static assets
+        output_dir = Path(args.output_dir).resolve()
+        print(f"Production mode: creating site in {output_dir}")
+        
+        # Ensure output directory exists
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Copy static assets to output directory
+        copy_static_assets(output_dir)
 
     # Create data subdirectory and clean it
     data_output_dir = output_dir / "data"

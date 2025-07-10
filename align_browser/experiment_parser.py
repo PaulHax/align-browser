@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from typing import Dict, List, Any
-from experiment_models import ExperimentData, GlobalManifest
+from align_browser.experiment_models import ExperimentData, GlobalManifest
 
 
 def parse_experiments_directory(experiments_root: Path) -> List[ExperimentData]:
