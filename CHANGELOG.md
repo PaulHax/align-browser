@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0](https://github.com/PaulHax/align-browser/compare/v0.1.0...v0.2.0) (2025-07-10)
+
+
+### Features
+
+* improve static asset access for uvx compatibility ([920e706](https://github.com/PaulHax/align-browser/commit/920e70631af17fabe0f3be9ec829f80cd8261bd6))
+
+
+### Bug Fixes
+
+* include frontend assets in Python package for PyPI ([8ea9213](https://github.com/PaulHax/align-browser/commit/8ea9213c48f5959857558669698db3b76964d0f4))
+
 ## 0.1.0 (2025-07-10)
 
 
