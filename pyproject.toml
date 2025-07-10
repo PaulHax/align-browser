@@ -1,6 +1,6 @@
 [project]
 name = "align-browser"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Static web application for visualizing ADM results"
 requires-python = ">=3.10"
 dependencies = [
@@ -11,6 +11,8 @@ dependencies = [
 [project.scripts]
 align-browser = "align_browser.build:main"
 
+[tool.setuptools.dynamic]
+version = {attr = "align_browser.__version__"}
 
 [dependency-groups]
 dev = [
