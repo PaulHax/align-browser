@@ -3,7 +3,11 @@ import {
   createInitialState,
   updateUserSelections,
   updateCurrentData,
-  getSelectedKey
+  getSelectedKey,
+  createRunConfig,
+  createParameterStructure,
+  encodeStateToURL,
+  decodeStateFromURL
 } from './state.js';
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -28,18 +32,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Run configuration factory
     createRunConfig: function() {
-      return {
-        id: generateRunId(),
-        timestamp: new Date().toISOString(),
-        scenario: appState.selectedScenario,
-        baseScenario: appState.selectedBaseScenario,
-        admType: appState.selectedAdmType,
-        llmBackbone: appState.selectedLLM,
-        kdmaValues: { ...appState.activeKDMAs },
-        experimentKey: getSelectedKey(appState),
-        displayName: generateDisplayName(),
-        loadStatus: 'pending'
-      };
+      return createRunConfig(appState);
     }
   };
 
@@ -49,16 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Parameter storage by run ID - enables multi-run parameter management
   const columnParameters = new Map();
   
-  // Parameter structure for each run
-  function createParameterStructure(params = {}) {
-    return {
-      scenario: params.scenario || null,
-      baseScenario: params.baseScenario || null,
-      admType: params.admType || null,
-      llmBackbone: params.llmBackbone || null,
-      kdmas: params.kdmas || {}
-    };
-  }
+  // Use imported parameter structure factory
   
   // Get parameters for any run ID
   function getParametersForRun(runId) {
@@ -186,71 +170,40 @@ document.addEventListener("DOMContentLoaded", () => {
   const urlState = {
     // Encode current state to URL
     updateURL() {
-      const state = {
-        baseScenario: appState.selectedBaseScenario,
-        scenario: appState.selectedScenario,
-        admType: appState.selectedAdmType,
-        llm: appState.selectedLLM,
-        kdmas: appState.activeKDMAs,
-        pinnedRuns: Array.from(appState.pinnedRuns.values()).map(run => ({
-          scenario: run.scenario,
-          baseScenario: run.baseScenario,
-          admType: run.admType,
-          llmBackbone: run.llmBackbone,
-          kdmaValues: run.kdmaValues,
-          id: run.id
-        }))
-      };
-      
-      try {
-        const encodedState = btoa(JSON.stringify(state));
-        const newURL = `${window.location.pathname}?state=${encodedState}`;
-        window.history.replaceState(null, '', newURL);
-      } catch (e) {
-        console.warn('Failed to encode URL state:', e);
-      }
+      const newURL = encodeStateToURL(appState);
+      window.history.replaceState(null, '', newURL);
     },
 
     // Restore state from URL on page load
     async restoreFromURL() {
-      const params = new URLSearchParams(window.location.search);
-      const stateParam = params.get('state');
+      const state = decodeStateFromURL();
       
-      if (stateParam) {
-        try {
-          const state = JSON.parse(atob(stateParam));
-          
-          // Restore selections
-          appState = updateUserSelections(appState, {
-            baseScenario: state.baseScenario || appState.selectedBaseScenario,
-            scenario: state.scenario || appState.selectedScenario,
-            admType: state.admType || appState.selectedAdmType,
-            llm: state.llm || appState.selectedLLM,
-            kdmas: state.kdmas || appState.activeKDMAs
-          });
-          
-          
-          // Sync restored state to current run parameters
-          syncRunFromAppState();
-          
-          // Restore pinned runs
-          if (state.pinnedRuns && state.pinnedRuns.length > 0) {
-            for (const runConfig of state.pinnedRuns) {
-              await pinRunFromConfig(runConfig);
-            }
+      if (state) {
+        // Restore selections
+        appState = updateUserSelections(appState, {
+          baseScenario: state.baseScenario || appState.selectedBaseScenario,
+          scenario: state.scenario || appState.selectedScenario,
+          admType: state.admType || appState.selectedAdmType,
+          llm: state.llm || appState.selectedLLM,
+          kdmas: state.kdmas || appState.activeKDMAs
+        });
+        
+        // Sync restored state to current run parameters
+        syncRunFromAppState();
+        
+        // Restore pinned runs
+        if (state.pinnedRuns && state.pinnedRuns.length > 0) {
+          for (const runConfig of state.pinnedRuns) {
+            await pinRunFromConfig(runConfig);
           }
-          
-          // Load current run if configured
-          if (appState.selectedScenario) {
-            await loadResults();
-          }
-          
-          return true; // Successfully restored
-          
-        } catch (e) {
-          console.warn('Invalid URL state, using defaults:', e);
-          return false;
         }
+        
+        // Load current run if configured
+        if (appState.selectedScenario) {
+          await loadResults();
+        }
+        
+        return true; // Successfully restored
       }
       return false; // No state to restore
     }
@@ -2289,28 +2242,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Make removePinnedRun globally accessible for onclick handlers
   window.removeRun = removeRun;
 
-  function generateRunId() {
-    const timestamp = new Date().getTime();
-    const random = Math.random().toString(36).substr(2, 9);
-    return `run_${timestamp}_${random}`;
-  }
-
-  function generateDisplayName() {
-    const parts = [];
-    if (appState.selectedAdmType) {
-      parts.push(appState.selectedAdmType.replace(/_/g, ' '));
-    }
-    if (appState.selectedLLM) {
-      parts.push(appState.selectedLLM.replace(/_/g, ' '));
-    }
-    const kdmaKeys = Object.keys(appState.activeKDMAs || {});
-    if (kdmaKeys.length > 0) {
-      const kdmaStr = kdmaKeys.map(k => `${k}=${appState.activeKDMAs[k]}`).join(', ');
-      parts.push(`(${kdmaStr})`);
-    }
-    const result = parts.join(' - ') || 'Unnamed Run';
-    return result === '' ? 'Unnamed Run' : result;
-  }
+  // Display name generation uses imported function
 
   function showNotification(message, type = 'info') {
     const notification = document.createElement('div');
