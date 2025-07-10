@@ -3,12 +3,7 @@ import {
   createInitialState,
   updateUserSelections,
   updateCurrentData,
-  addPinnedRun,
-  removePinnedRun,
-  clearAllPinnedRuns,
-  getSelectedKey,
-  hasPinnedRuns,
-  hasCurrentData
+  getSelectedKey
 } from './state.js';
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -757,21 +752,6 @@ document.addEventListener("DOMContentLoaded", () => {
     syncRunFromAppState();
   }
   
-  function getFirstAvailableScenario() {
-    // Get first scenario from available scenarios, fallback to first in manifest
-    if (appState.availableScenarios.length > 0) {
-      return appState.availableScenarios[0];
-    }
-    
-    const experiments = manifest.experiment_keys || manifest;
-    for (const expKey in experiments) {
-      const scenarios = experiments[expKey].scenarios;
-      if (scenarios && Object.keys(scenarios).length > 0) {
-        return Object.keys(scenarios)[0];
-      }
-    }
-    return null;
-  }
 
   // Handle LLM change for pinned runs - global for onclick access
   window.handleRunLLMChange = async function(runId, newLLM) {
@@ -1017,61 +997,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 500);
   };
 
-  function getMaxKDMAsForCurrentSelection() {
-    const selectedAdm = appState.selectedAdmType;
-    const selectedLLM = appState.selectedLLM;
-    const currentScenario = appState.selectedScenario || getFirstAvailableScenario();
-    
-    // Check actual experiment data to find max KDMAs for this ADM/LLM/Scenario combination
-    const experiments = manifest.experiment_keys || manifest;
-    let maxKDMAs = 0;
-    
-    // Look through all experiments to find the one with the most KDMAs for this ADM/LLM combination
-    for (const expKey in experiments) {
-      const experiment = experiments[expKey];
-      
-      // Check if this experiment has the current scenario
-      if (experiment.scenarios && experiment.scenarios[currentScenario]) {
-        const config = experiment.scenarios[currentScenario].config;
-        if (!config) continue;
-        
-        const expAdm = config.adm ? config.adm.name : "unknown_adm";
-        const expLLM = config.adm && 
-          config.adm.structured_inference_engine && 
-          config.adm.structured_inference_engine.model_name
-          ? config.adm.structured_inference_engine.model_name 
-          : "no_llm";
-        
-        // Only count KDMAs from experiments that match our ADM/LLM selection
-        if (expAdm === selectedAdm && expLLM === selectedLLM) {
-          if (config.alignment_target && config.alignment_target.kdma_values) {
-            maxKDMAs = Math.max(maxKDMAs, config.alignment_target.kdma_values.length);
-          }
-        }
-      }
-    }
-    
-    // If no experiments found for current scenario, fallback to checking all experiments for this ADM/LLM
-    if (maxKDMAs === 0) {
-      for (const expKey in experiments) {
-        if (expKey.startsWith(`${selectedAdm}_${selectedLLM}_`)) {
-          const scenarios = experiments[expKey].scenarios;
-          if (scenarios && Object.keys(scenarios).length > 0) {
-            const firstScenario = Object.values(scenarios)[0];
-            if (firstScenario.config && firstScenario.config.alignment_target) {
-              const kdmaValues = firstScenario.config.alignment_target.kdma_values;
-              maxKDMAs = Math.max(maxKDMAs, kdmaValues.length);
-            }
-          }
-        }
-      }
-    }
-    
-    return maxKDMAs;
-  }
-
-
-
   // Internal function to load results without loading guard
   async function loadResultsInternal() {
     if (!appState.selectedScenario) {
@@ -1118,7 +1043,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Helper function to format complex data structures cleanly
         const formatValue = (value, depth = 0) => {
-          const indent = '  '.repeat(depth);
           
           if (value === null || value === undefined) {
             return '<span style="color: #999; font-style: italic;">null</span>';
@@ -1175,80 +1099,6 @@ document.addEventListener("DOMContentLoaded", () => {
           return String(value);
         };
 
-        // Format and display the specific element
-        const formatResults = () => {
-          let html = '';
-          
-          if (inputOutputItem && inputOutputItem.input) {
-            const input = inputOutputItem.input;
-            
-            // Simple scenario header
-            html += `<h3>${appState.selectedScenario}</h3>`;
-            
-            // Scenario description
-            if (input.state) {
-              html += `<p style="margin-bottom: 20px; font-size: 16px; line-height: 1.6;">${input.state}</p>`;
-            }
-            
-            
-            // Simplified choices with horizontal layout
-            if (input.choices && Array.isArray(input.choices)) {
-              html += '<h4>Choices</h4>';
-              html += '<div style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px;">';
-              input.choices.forEach((choice, idx) => {
-                html += `<div style="flex: 1; min-width: 200px; padding: 12px; background-color: #f8f9fa; border-radius: 6px;">`;
-                html += `<div style="font-weight: 500; margin-bottom: 8px;">${choice.unstructured || choice.description || 'No description'}</div>`;
-                
-                // Short KDMA bars
-                if (choice.kdma_association) {
-                  Object.entries(choice.kdma_association).forEach(([kdma, value]) => {
-                    const percentage = Math.round(value * 100);
-                    const color = value >= 0.7 ? '#28a745' : value >= 0.4 ? '#ffc107' : '#dc3545';
-                    
-                    html += '<div style="display: flex; align-items: center; gap: 8px; margin: 3px 0;">';
-                    html += `<span style="min-width: 60px; font-size: 0.9em; color: #666;">${kdma}</span>`;
-                    html += `<div style="width: 60px; height: 4px; background-color: #e9ecef; border-radius: 2px;">`;
-                    html += `<div style="width: ${percentage}%; height: 100%; background-color: ${color}; border-radius: 2px;"></div>`;
-                    html += '</div>';
-                    html += `<span style="font-size: 0.85em; color: ${color}; font-weight: 500;">${value}</span>`;
-                    html += '</div>';
-                  });
-                }
-                html += '</div>';
-              });
-              html += '</div>';
-            }
-          }
-          
-          // Simplified ADM Decision
-          if (inputOutputItem && inputOutputItem.output) {
-            const output = inputOutputItem.output;
-            
-            html += '<h4>ADM Decision</h4>';
-            
-            // Show the action text
-            if (output.action && output.action.unstructured) {
-              html += `<p style="font-weight: 600; color: #2e7d32; margin-bottom: 10px;">${output.action.unstructured}</p>`;
-            } else if (output.action && output.action.action_id) {
-              html += `<p style="font-weight: 600; color: #2e7d32; margin-bottom: 10px;">${output.action.action_id}</p>`;
-            }
-            
-            // Show the justification
-            if (output.action && output.action.justification) {
-              html += `<p style="line-height: 1.6; color: #555;"><strong>Justification:</strong> ${output.action.justification}</p>`;
-            } else if (output.justification) {
-              html += `<p style="line-height: 1.6; color: #555;"><strong>Justification:</strong> ${output.justification}</p>`;
-            }
-          } else {
-            html += '<h4>ADM Decision</h4>';
-            html += '<p style="color: #666;">No decision data available</p>';
-          }
-          
-          
-          
-          return html;
-        };
-        
         // Content will be displayed via the comparison table
         
         // Store current data for pinning
@@ -1280,10 +1130,6 @@ document.addEventListener("DOMContentLoaded", () => {
         updateComparisonDisplay(); // Update table with error state
       }
     } else {
-      // Generate debug information to help identify the issue
-      const availableKeys = Object.keys(experiments).filter(key => 
-        key.startsWith(`${selectedKey.split('_')[0]}_${selectedKey.split('_')[1]}_`)
-      );
       
       // No data message will be displayed in the table
       
@@ -1622,7 +1468,7 @@ document.addEventListener("DOMContentLoaded", () => {
     headerCells.forEach(cell => cell.remove());
     
     // Add pinned run headers
-    Array.from(appState.pinnedRuns.entries()).forEach(([runId, runData], index) => {
+    Array.from(appState.pinnedRuns.entries()).forEach(([runId], index) => {
       const th = document.createElement('th');
       th.className = 'pinned-run-header';
       
@@ -1990,7 +1836,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Create individual KDMA control for table cell
-  function createSingleKDMAControlForRun(runId, kdmaType, value, index) {
+  function createSingleKDMAControlForRun(runId, kdmaType, value) {
     const availableKDMAs = getValidKDMAsForRun(runId);
     const run = appState.pinnedRuns.get(runId);
     const currentKDMAs = run.kdmaValues || {};
@@ -2093,7 +1939,7 @@ document.addEventListener("DOMContentLoaded", () => {
       case 'choices':
         if (Array.isArray(value)) {
           let choicesHtml = '<div class="choices-display">';
-          value.forEach((choice, idx) => {
+          value.forEach((choice) => {
             choicesHtml += `<div class="choice-card">
               <div class="choice-text">${escapeHtml(choice.unstructured || choice.description || 'No description')}</div>`;
             
@@ -2426,14 +2272,14 @@ document.addEventListener("DOMContentLoaded", () => {
   // Clean up expansion states when a run is removed
   function cleanupRunStates(runId) {
     // Remove text expansion states for this run
-    for (const [key, value] of expandableStates.text.entries()) {
+    for (const [key] of expandableStates.text.entries()) {
       if (key.includes(`_${runId}_`)) {
         expandableStates.text.delete(key);
       }
     }
     
     // Remove object expansion states for this run
-    for (const [key, value] of expandableStates.objects.entries()) {
+    for (const [key] of expandableStates.objects.entries()) {
       if (key.includes(`_${runId}_`)) {
         expandableStates.objects.delete(key);
       }
