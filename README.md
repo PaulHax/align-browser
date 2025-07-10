@@ -2,37 +2,45 @@
 
 A static web application for visualizing [align-system](https://github.com/ITM-Kitware/align-system) experiment results.
 
+## Installation
+
+```bash
+# Install the CLI tool for local use
+uv pip install -e .
+```
+
 ## Usage
 
-Generate the static site from an experiments directory and start HTTP server:
+Generate deployable sites from experiment data:
 
 ```bash
-# Build and serve on default port (8000)
-uv run python src/build.py ../experiments
-```
+# Creates complete site in ./align-browser-site/
+uv run align-browser ../experiments
 
-Then open http://localhost:8000
+# Creates complete site in custom directory  
+uv run align-browser ../experiments --output-dir ./my-site
 
-### Serving the Site
-
-You can serve the site in several ways:
-
-```bash
 # Build and serve on custom port
-uv run python src/build.py ../experiments --port 3000
+uv run align-browser ../experiments --port 3000
 
-# Build and serve on all network interfaces (accessible from other devices)
-uv run python src/build.py ../experiments --host 0.0.0.0
+# Build and serve on all network interfaces
+uv run align-browser ../experiments --host 0.0.0.0
+
+# Build only without serving
+uv run align-browser ../experiments --build-only
 ```
 
-**Option 2: Manual serving after build**
+### CLI Tool Usage
+
+Once published to PyPI:
 
 ```bash
-# Build only
-uv run python src/build.py ../experiments --build-only
+# No installation needed - downloads and runs automatically
+uvx align-browser ../experiments
+# Creates site in ./align-browser-site/
 
-# Then serve manually
-python -m http.server 8000 -d dist
+# Or specify custom directory
+uvx align-browser ../experiments --output-dir ./demo-site
 ```
 
 ### Expected Directory Structure
@@ -60,10 +68,10 @@ experiments/
 
 ```bash
 # Correct - use the root experiments directory
-uv run python src/build.py ../experiments
+uv run python align_browser/build.py ../experiments
 
 # Incorrect - don't use individual pipeline directories
-uv run python src/build.py ../experiments/pipeline_baseline
+uv run python align_browser/build.py ../experiments/pipeline_baseline
 ```
 
 The script will search for:
@@ -73,6 +81,25 @@ The script will search for:
 - Required files: `.hydra/config.yaml`, `input_output.json`
 
 ## Development
+
+### Development Mode (Edit and Refresh)
+
+For active development of the HTML/CSS/JavaScript:
+
+```bash
+# Development mode: edit files in dist/ directory directly
+uv run python align_browser/build.py ../experiments --dev
+# OR: uv run align-browser ../experiments --dev
+
+# Edit dist/index.html, dist/app.js, dist/style.css
+# Refresh browser to see changes immediately
+```
+
+This mode:
+- Serves from `dist/` directory
+- Generates data in `dist/data/`
+- Edit static files directly and refresh browser
+- Perfect for development workflow
 
 ### Code Quality
 
@@ -100,11 +127,11 @@ uv sync --group dev
 uv run pytest
 
 # Run specific test files
-uv run pytest src/test_parsing.py -v
-uv run pytest src/test_build.py -v
+uv run pytest align_browser/test_parsing.py -v
+uv run pytest align_browser/test_build.py -v
 
 # Run with coverage
-uv run pytest --cov=src
+uv run pytest --cov=align_browser
 ```
 
 ##### Tests
@@ -137,13 +164,13 @@ uv sync --group dev
 uv run playwright install
 
 # Run frontend tests
-uv run pytest src/test_frontend.py -v
+uv run pytest align_browser/test_frontend.py -v
 
 # Run frontend tests with visible browser (for debugging)
-uv run pytest src/test_frontend.py -v --headed
+uv run pytest align_browser/test_frontend.py -v --headed
 
 # Run specific frontend test
-uv run pytest src/test_frontend.py::test_page_load -v
+uv run pytest align_browser/test_frontend.py::test_page_load -v
 ```
 
 The frontend tests will:
