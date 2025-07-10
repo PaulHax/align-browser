@@ -212,7 +212,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Function to fetch and parse manifest.json
   async function fetchManifest() {
     try {
-      const response = await fetch("/manifest.json");
+      const response = await fetch("./data/manifest.json");
       manifest = await response.json();
       console.log("Manifest loaded:", manifest);
       extractParametersFromManifest();
