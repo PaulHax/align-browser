@@ -22,7 +22,7 @@ Generate the static site from your experiments:
 uv run python src/build.py ../experiments
 ```
 
-After building, serve the generated site locally:
+After building, serve the site locally:
 
 ```bash
 # Serve the site on http://localhost:8000

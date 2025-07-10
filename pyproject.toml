@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Static web application for visualizing ADM results"
 requires-python = ">=3.10"
 dependencies = [
-    "jinja2",
     "pyyaml",
     "pydantic"
 ]
