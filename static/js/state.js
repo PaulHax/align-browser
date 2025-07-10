@@ -68,30 +68,6 @@ export function updateCurrentData(state, updates) {
   };
 }
 
-export function addPinnedRun(state, runData) {
-  const newPinnedRuns = new Map(state.pinnedRuns);
-  newPinnedRuns.set(runData.id, runData);
-  return {
-    ...state,
-    pinnedRuns: newPinnedRuns
-  };
-}
-
-export function removePinnedRun(state, runId) {
-  const newPinnedRuns = new Map(state.pinnedRuns);
-  newPinnedRuns.delete(runId);
-  return {
-    ...state,
-    pinnedRuns: newPinnedRuns
-  };
-}
-
-export function clearAllPinnedRuns(state) {
-  return {
-    ...state,
-    pinnedRuns: new Map()
-  };
-}
 
 // Pure selectors (computed values)
 export function getSelectedKey(state) {
@@ -109,11 +85,4 @@ export function getSelectedKey(state) {
   return `${admType}_${llmBackbone}_${kdmaString}`;
 }
 
-export function hasPinnedRuns(state) {
-  return state.pinnedRuns.size > 0;
-}
-
-export function hasCurrentData(state) {
-  return state.currentInputOutput !== null;
-}
 
