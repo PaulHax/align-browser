@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "align-browser"
 dynamic = ["version"]
@@ -13,6 +17,19 @@ align-browser = "align_browser.build:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "align_browser.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["align_browser*"]
+
+[tool.setuptools.package-data]
+align_browser = ["*.py", "static/*"]
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[tool.setuptools]
+include-package-data = true
 
 [dependency-groups]
 dev = [
