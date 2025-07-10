@@ -13,17 +13,17 @@ from align_browser.experiment_parser import (
 
 
 def copy_static_assets(output_dir):
-    """Copy static assets from dist/ directory to output directory."""
+    """Copy static assets from package static/ directory to output directory."""
     script_dir = Path(__file__).parent
-    dist_dir = script_dir.parent / "dist"
+    static_dir = script_dir / "static"
     
-    if not dist_dir.exists():
-        raise FileNotFoundError(f"Static assets directory not found: {dist_dir}")
+    if not static_dir.exists():
+        raise FileNotFoundError(f"Static assets directory not found: {static_dir}")
     
     static_files = ["index.html", "app.js", "state.js", "style.css"]
     
     for filename in static_files:
-        src_file = dist_dir / filename
+        src_file = static_dir / filename
         dst_file = output_dir / filename
         
         if src_file.exists():
@@ -78,14 +78,14 @@ def main():
 
     # Determine output directory based on mode
     if args.dev:
-        # Development mode: use dist/ directory
+        # Development mode: use align-browser-site/ directory
         script_dir = Path(__file__).parent
-        output_dir = script_dir.parent / "dist"
-        print("Development mode: using dist/ directory")
+        output_dir = script_dir.parent / "align-browser-site"
+        print("Development mode: using align-browser-site/ directory")
         
-        # Ensure dist directory exists
+        # Ensure development directory exists
         if not output_dir.exists():
-            raise FileNotFoundError(f"Development mode requires dist/ directory: {output_dir}")
+            raise FileNotFoundError(f"Development mode requires align-browser-site/ directory: {output_dir}")
             
     else:
         # Production mode: use specified output directory and copy static assets
