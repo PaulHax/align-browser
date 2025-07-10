@@ -962,7 +962,6 @@ document.addEventListener("DOMContentLoaded", () => {
         scores: null,
         timing: null
       });
-      updatePinnedCount(); // Disable pin button when no data
       updateComparisonDisplay(); // Update table with no scenario state
       return;
     }
@@ -1061,8 +1060,7 @@ document.addEventListener("DOMContentLoaded", () => {
           scores: scoreItem,
           timing: timingData
         });
-        updatePinnedCount(); // Enable pin button when data loads
-        
+          
         // Update scores and timing in parameters section
         updateScoresTimingSection(scoreItem, timingData);
         
@@ -1079,8 +1077,7 @@ document.addEventListener("DOMContentLoaded", () => {
           scores: null,
           timing: null
         });
-        updatePinnedCount(); // Disable pin button when no data
-        updateComparisonDisplay(); // Update table with error state
+          updateComparisonDisplay(); // Update table with error state
       }
     } else {
       
@@ -1090,7 +1087,6 @@ document.addEventListener("DOMContentLoaded", () => {
       appState.currentInputOutput = null;
       appState.currentScores = null;
       appState.currentTiming = null;
-      updatePinnedCount(); // Disable pin button when no data
       updateComparisonDisplay(); // Update table with no data state
     }
   }
@@ -1234,28 +1230,12 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     
     appState.pinnedRuns.set(runConfig.id, pinnedData);
-    updatePinnedCount();
     updateComparisonDisplay();
     
     // Update URL after pinning
     urlState.updateURL();
   }
 
-  // Helper functions for comparison feature
-  function updatePinnedCount() {
-    const count = appState.pinnedRuns.size;
-    
-    const clearButton = document.getElementById('clear-all-pins');
-    if (clearButton) {
-      clearButton.disabled = count === 0;
-    }
-    
-    // Enable pin button only when we have current data
-    const pinButton = document.getElementById('pin-current-run');
-    if (pinButton) {
-      pinButton.disabled = !appState.currentInputOutput;
-    }
-  }
 
 
   // Pin run from configuration (for URL restoration)
@@ -1282,8 +1262,7 @@ document.addEventListener("DOMContentLoaded", () => {
       };
       
       appState.pinnedRuns.set(runConfig.id, pinnedData);
-      updatePinnedCount();
-      
+        
     } catch (error) {
       console.warn('Failed to load data for pinned configuration:', error);
       // Still add to pinned runs but mark as failed
@@ -2065,8 +2044,7 @@ document.addEventListener("DOMContentLoaded", () => {
       };
       
       appState.pinnedRuns.set(runConfig.id, pinnedData);
-      updatePinnedCount();
-      updateComparisonDisplay();
+        updateComparisonDisplay();
       urlState.updateURL();
       
     } catch (error) {
@@ -2078,8 +2056,7 @@ document.addEventListener("DOMContentLoaded", () => {
         error: error.message
       };
       appState.pinnedRuns.set(runConfig.id, pinnedData);
-      updatePinnedCount();
-      updateComparisonDisplay();
+        updateComparisonDisplay();
     }
     
     // Restore original app state
@@ -2194,8 +2171,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Update UI if requested
         if (updateUI) {
-          updatePinnedCount();
-          updateComparisonDisplay();
+                updateComparisonDisplay();
         }
 
         // Update URL state if requested
