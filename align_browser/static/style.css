@@ -1,0 +1,579 @@
+/* Basic styles for the ADM Results app */
+
+:root {
+  --run-column-min-width: 350px;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f4f4f4;
+  color: #333;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
+
+footer {
+  text-align: center;
+  padding: 1em 0;
+  color: #777;
+  font-size: 0.9em;
+  border-top: 1px solid #eee;
+  margin-top: 20px;
+}
+
+
+
+/* Table header styling */
+.table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 15px;
+}
+
+.table-header h2 {
+  margin: 0;
+  color: #495057;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+/* Comparison controls styling */
+#comparison-controls {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #ddd;
+}
+
+/* Runs container for side-by-side display */
+.runs-container {
+  display: flex;
+  gap: 20px;
+  padding: 10px 0;
+  min-height: 400px;
+}
+
+
+.remove-run-btn {
+  background: none;
+  border: none;
+  color: #dc3545;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.remove-run-btn:hover {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+/* Comparison table styles */
+.comparison-table-container {
+  overflow: visible;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.comparison-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #f8f9fa;
+}
+
+.comparison-table th {
+  padding: 6px 8px;
+  border: 1px solid #dee2e6;
+  background: #f8f9fa;
+  font-weight: 600;
+  text-align: center;
+  vertical-align: middle;
+  position: relative;
+}
+
+.parameter-header {
+  position: sticky;
+  left: 0;
+  z-index: 11;
+  background: #e9ecef !important;
+  width: 180px;
+  text-align: left;
+}
+
+.pinned-run-header {
+  background: #f5f5f5 !important;
+  min-width: var(--run-column-min-width);
+}
+
+
+.comparison-table td {
+  padding: 8px;
+  border: 1px solid #dee2e6;
+  vertical-align: top;
+  word-wrap: break-word;
+}
+
+.parameter-name {
+  position: sticky;
+  left: 0;
+  background: #f8f9fa;
+  font-weight: 500;
+  z-index: 5;
+  width: 180px;
+}
+
+.pinned-run-value {
+  background: #fafafa;
+}
+
+.parameter-row[data-category="base_scenario"],
+.parameter-row[data-category="scenario"],
+.parameter-row[data-category="adm_type"],
+.parameter-row[data-category="llm_backbone"] {
+  background: rgba(0, 123, 255, 0.05);
+}
+
+.parameter-row[data-category="kdma_values"] {
+  background: rgba(220, 53, 69, 0.05);
+}
+
+.parameter-row[data-category="adm_decision"],
+.parameter-row[data-category="justification"] {
+  background: rgba(40, 167, 69, 0.05);
+}
+
+.parameter-row[data-category="probe_time"] {
+  background: rgba(255, 193, 7, 0.05);
+}
+
+/* Content formatting styles */
+.na-value {
+  color: #6c757d;
+  font-style: italic;
+}
+
+.expandable-text {
+  line-height: 1.4;
+}
+
+.show-more-btn {
+  background: none;
+  border: 1px solid #007bff;
+  color: #007bff;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+.show-more-btn:hover {
+  background: #007bff;
+  color: white;
+}
+
+.choices-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.choice-card {
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 8px;
+  background: #f8f9fa;
+  flex: 0 1 auto;
+  min-width: 200px;
+  max-width: 300px;
+}
+
+.choice-text {
+  font-weight: 500;
+  margin-bottom: 6px;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.kdma-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kdma-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.kdma-name {
+  min-width: 40px;
+  font-weight: 500;
+  color: #495057;
+}
+
+.kdma-bar-container {
+  flex: 1;
+  height: 4px;
+  background: #e9ecef;
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 30px;
+}
+
+.kdma-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.kdma-value {
+  font-weight: 600;
+  min-width: 25px;
+  text-align: right;
+}
+
+.object-display {
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+}
+
+.object-display pre {
+  background: #f8f9fa;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+  margin: 4px 0;
+  max-height: 150px;
+  overflow-y: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Make Raw Data section much taller for better JSON viewing */
+.parameter-row[data-category="input_output_json"] .object-display pre {
+  max-height: 400px;
+  min-height: 200px;
+}
+
+.kdma-values-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.kdma-value-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #f8f9fa;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+  font-size: 13px;
+}
+
+.kdma-name {
+  font-weight: 500;
+  color: #495057;
+}
+
+.kdma-number {
+  font-weight: 600;
+  color: #dc3545;
+  font-family: "Courier New", monospace;
+}
+
+
+.btn {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  margin-right: 10px;
+  transition: background-color 0.2s ease;
+}
+
+.btn-primary {
+  background-color: #007bff;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #0056b3;
+}
+
+
+.btn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+
+/* Responsive design for smaller screens */
+@media (max-width: 768px) {
+  main {
+    flex-direction: column;
+  }
+
+  /* Stack comparison controls on mobile */
+  #comparison-controls .btn {
+    margin-bottom: 5px;
+    display: inline-block;
+  }
+
+  /* Adjust run layout for mobile */
+  .runs-container {
+    gap: 15px;
+    padding: 5px 0;
+  }
+
+  /* Responsive table styles for mobile */
+  .comparison-table-container {
+    max-height: 70vh;
+    font-size: 12px;
+  }
+
+  .comparison-table {
+    min-width: 600px;
+    font-size: 12px;
+  }
+
+  .comparison-table th {
+    padding: 8px 4px;
+  }
+
+  .comparison-table td {
+    padding: 6px 4px;
+    max-width: 200px;
+  }
+
+  .parameter-header {
+    min-width: 120px;
+    max-width: 120px;
+    font-size: 11px;
+  }
+  .parameter-name {
+    min-width: 120px;
+    max-width: 120px;
+    font-size: 11px;
+  }
+
+  .choice-card {
+    padding: 6px;
+    margin: 2px 0;
+  }
+
+  .choice-text {
+    font-size: 11px;
+  }
+
+  .kdma-bar {
+    font-size: 10px;
+  }
+
+  .show-more-btn {
+    font-size: 10px;
+    padding: 1px 4px;
+  }
+}
+
+/* Table cell controls for editable parameters */
+.table-llm-select,
+.table-adm-select,
+.table-scenario-select {
+  width: 100%;
+  max-width: 280px;
+  padding: 4px 6px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  background-color: white;
+  cursor: pointer;
+}
+
+.table-llm-select:hover,
+.table-adm-select:hover,
+.table-scenario-select:hover {
+  border-color: #007bff;
+}
+
+.table-llm-select:focus,
+.table-adm-select:focus,
+.table-scenario-select:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+/* Ensure proper sizing in table cells */
+.pinned-run-value .table-llm-select,
+.pinned-run-value .table-adm-select,
+.pinned-run-value .table-scenario-select {
+  margin: 0;
+}
+
+/* KDMA Controls for Table Cells */
+.table-kdma-container {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.table-kdma-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.table-kdma-type-select {
+  min-width: 70px;
+  max-width: 120px;
+  font-size: 12px;
+  padding: 2px 4px;
+  border: 1px solid #ced4da;
+  border-radius: 3px;
+  font-family: inherit;
+  background-color: white;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.table-kdma-type-select:hover {
+  border-color: #007bff;
+}
+
+.table-kdma-type-select:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 1px rgba(0, 123, 255, 0.25);
+}
+
+.add-kdma-btn {
+  background-color: #007bff;
+  color: white;
+  border: 1px solid #007bff;
+  border-radius: 3px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.add-kdma-btn:hover {
+  background-color: #0056b3;
+  border-color: #0056b3;
+}
+
+.add-kdma-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.table-kdma-remove-btn {
+  background-color: #dc3545;
+  color: white;
+  border: 1px solid #dc3545;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+  min-width: 18px;
+}
+
+.table-kdma-remove-btn:hover:not(:disabled) {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
+
+.table-kdma-remove-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.table-kdma-remove-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(220, 53, 69, 0.25);
+}
+
+/* KDMA slider styling for table cells */
+.table-kdma-value-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 50px;
+  width: 80px;
+  flex: 0 1 80px;
+  height: 4px;
+  background: #ddd;
+  outline: none;
+  opacity: 0.9;
+  transition: opacity 0.2s;
+  border-radius: 4px;
+}
+
+.table-kdma-value-slider:hover {
+  opacity: 1;
+}
+
+.table-kdma-value-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #007bff;
+  cursor: pointer;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.table-kdma-value-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #007bff;
+  cursor: pointer;
+  border-radius: 50%;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.table-kdma-value-display {
+  min-width: 24px;
+  text-align: center;
+  color: #495057;
+  font-weight: 600;
+  font-size: 11px;
+  flex-shrink: 0;
+}

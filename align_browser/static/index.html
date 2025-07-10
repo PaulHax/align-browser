@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Align Browser</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <main>
+        <div class="table-header">
+            <h2>Align System Experiments</h2>
+            <button id="add-column-btn" class="btn btn-primary" style="display: none;">+ Add Column</button>
+        </div>
+        <div id="runs-container" class="runs-container">
+            <div class="comparison-table-container">
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th class="parameter-header"></th>
+                            <!-- Dynamic run columns will be added here -->
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="parameter-row" data-category="base_scenario">
+                            <td class="parameter-name">Base Scenario</td>
+                            <!-- Dynamic run values will be added here -->
+                        </tr>
+                        <tr class="parameter-row" data-category="scenario">
+                            <td class="parameter-name">Scenario</td>
+                            <!-- Dynamic run values will be added here -->
+                        </tr>
+                        <tr class="parameter-row" data-category="scenario_state">
+                            <td class="parameter-name">Scenario State</td>
+                            <!-- Dynamic run values will be added here -->
+                        </tr>
+                        <tr class="parameter-row" data-category="available_choices">
+                            <td class="parameter-name">Available Choices</td>
+                            <!-- Dynamic run values will be added here -->
+                        </tr>
+                        <tr class="parameter-row" data-category="kdma_values">
+                            <td class="parameter-name">KDMAs</td>
+                            <!-- Dynamic run values will be added here -->
+                        </tr>
+                        <tr class="parameter-row" data-category="adm_type">
+                            <td class="parameter-name">ADM</td>
+                            <!-- Dynamic run values will be added here -->
+                        </tr>
+                        <tr class="parameter-row" data-category="llm_backbone">
+                            <td class="parameter-name">LLM Backbone</td>
+                            <!-- Dynamic run values will be added here -->
+                        </tr>
+                        <tr class="parameter-row" data-category="adm_decision">
+                            <td class="parameter-name">Adm Decision</td>
+                            <!-- Dynamic run values will be added here -->
+                        </tr>
+                        <tr class="parameter-row" data-category="justification">
+                            <td class="parameter-name">Justification</td>
+                            <!-- Dynamic run values will be added here -->
+                        </tr>
+                        <tr class="parameter-row" data-category="probe_time">
+                            <td class="parameter-name">Probe Time</td>
+                            <!-- Dynamic run values will be added here -->
+                        </tr>
+                        <tr class="parameter-row" data-category="input_output_json">
+                            <td class="parameter-name">Input Output JSON</td>
+                            <!-- Dynamic run values will be added here -->
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+    <script type="module" src="./app.js"></script>
+</body>
+</html>
