@@ -31,10 +31,9 @@ def copy_static_assets(output_dir):
                 # Write to destination
                 dst_file = output_dir / filename
                 dst_file.write_bytes(file_content)
-                print(f"Copied {filename} to {dst_file}")
                 
             except FileNotFoundError:
-                print(f"Warning: Static asset not found in package: {filename}")
+                pass
                 
     except Exception as e:
         # Fallback to filesystem approach for development
@@ -53,9 +52,6 @@ def copy_static_assets(output_dir):
             
             if src_file.exists():
                 shutil.copy2(src_file, dst_file)
-                print(f"Copied {filename} to {dst_file}")
-            else:
-                print(f"Warning: Static asset not found: {src_file}")
 
 
 def main():

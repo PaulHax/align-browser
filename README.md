@@ -2,45 +2,32 @@
 
 A static web application for visualizing [align-system](https://github.com/ITM-Kitware/align-system) experiment results.
 
-## Installation
-
-```bash
-# Install the CLI tool for local use
-uv pip install -e .
-```
-
 ## Usage
 
-Generate deployable sites from experiment data:
+Generate site from experiment data directory and serve website:
 
 ```bash
-# Creates complete site in ./align-browser-site/
-uv run align-browser ../experiments
-
-# Creates complete site in custom directory  
-uv run align-browser ../experiments --output-dir ./my-site
-
-# Build and serve on custom port
-uv run align-browser ../experiments --port 3000
-
-# Build and serve on all network interfaces
-uv run align-browser ../experiments --host 0.0.0.0
-
-# Build only without serving
-uv run align-browser ../experiments --build-only
-```
-
-### CLI Tool Usage
-
-Once published to PyPI:
-
-```bash
-# No installation needed - downloads and runs automatically
+# No installation needed with uvx
 uvx align-browser ../experiments
 # Creates site in ./align-browser-site/
+```
 
-# Or specify custom directory
+Then visit http://localhost:8000/
+
+Change the port, serve on all network interfaces, or just build the site and don't serve.
+
+```bash
+# Specify custom output directory
 uvx align-browser ../experiments --output-dir ./demo-site
+
+# Build and serve on custom port
+uvx align-browser ../experiments --port 3000
+
+# Build and serve on all network interfaces
+uvx align-browser ../experiments --host 0.0.0.0
+
+# Build only without serving
+uvx align-browser ../experiments --build-only
 ```
 
 ### Expected Directory Structure
@@ -64,40 +51,44 @@ experiments/
     └── ...
 ```
 
-### Build details
-
-```bash
-# Correct - use the root experiments directory
-uv run python align_browser/build.py ../experiments
-
-# Incorrect - don't use individual pipeline directories
-uv run python align_browser/build.py ../experiments/pipeline_baseline
-```
-
-The script will search for:
+The build.py script will search for:
 
 - Pipeline directories at the root level
 - KDMA experiment directories within each pipeline (identified by presence of `input_output.json`)
 - Required files: `.hydra/config.yaml`, `input_output.json`
 
+### Sharing Results
+
+The browser application stores the current selection state in the URL, making it easy to share specific views:
+
+- **Share a specific scenario**: URLs automatically update when you select different pipelines, KDMAs, or experiments
+- **Bookmark results**: Save URLs to return to specific experiment comparisons
+- **Collaborate**: Send URLs to colleagues to show exact same view of results
+
 ## Development
+
+### Installation
+
+```bash
+# Install with development dependencies
+uv sync --group dev
+```
 
 ### Development Mode (Edit and Refresh)
 
 For active development of the HTML/CSS/JavaScript:
 
 ```bash
-# Development mode: edit files in dist/ directory directly
-uv run python align_browser/build.py ../experiments --dev
-# OR: uv run align-browser ../experiments --dev
-
-# Edit dist/index.html, dist/app.js, dist/style.css
-# Refresh browser to see changes immediately
+# Development mode: edit files in align-browser-site/ directory directly
+uv run align-browser ../experiments --dev
 ```
 
+Edit align-browser-site/index.html, align-browser-site/app.js, align-browser-site/style.css and refresh browser to see changes immediately.
+
 This mode:
-- Serves from `dist/` directory
-- Generates data in `dist/data/`
+
+- Serves from `align-browser-site/` directory
+- Generates data in `align-browser-site/data/`
 - Edit static files directly and refresh browser
 - Perfect for development workflow
 
@@ -111,13 +102,6 @@ uv run ruff check --diff && uv run ruff format --check
 
 # Auto-fix linting issues and format code
 uv run ruff check --fix && uv run ruff format
-```
-
-### Installation
-
-```bash
-# Install with development dependencies
-uv sync --group dev
 ```
 
 ### Running Tests
@@ -134,22 +118,16 @@ uv run pytest align_browser/test_build.py -v
 uv run pytest --cov=align_browser
 ```
 
-##### Tests
-
-This directory contains test files that can work with both mock data and real experiment data.
-
-The test files are designed to be flexible about where experiment data is located. By default, they look for experiments in the relative path `../experiments`, but this can be customized.
-
-You can set the `TEST_EXPERIMENTS_PATH` environment variable to specify a custom path to your experiments directory:
+Tests can work with both mock data and real experiment data, and are designed to be flexible about where experiment data is located. By default, they look for experiments in `../experiments`, but you can customize this with the `TEST_EXPERIMENTS_PATH` environment variable:
 
 ```bash
 # Set custom experiments path
 export TEST_EXPERIMENTS_PATH="/path/to/your/experiments"
 
-# Run tests
-uv run python test_parsing.py
-uv run python test_experiment_parser.py
-uv run python test_build.py
+# Run specific tests
+uv run pytest align_browser/test_parsing.py -v
+uv run pytest align_browser/test_experiment_parser.py -v
+uv run pytest align_browser/test_build.py -v
 ```
 
 ### Frontend Testing
