@@ -4,12 +4,10 @@ A static web application for visualizing [align-system](https://github.com/ITM-K
 
 ## Usage
 
-Generate site from experiment data directory and serve website:
+Generate site from experiment data in align-browser-site directory and serves the website:
 
 ```bash
-# No installation needed with uvx
 uvx align-browser ../experiments
-# Creates site in ./align-browser-site/
 ```
 
 Then visit http://localhost:8000/
