@@ -7,6 +7,7 @@
 - Remember to run the build script so you can manually test
 - After you make a code change, run the build and the http server
 - Don't run the http server after stopping
+- Use semantic versioning commit messages
 
 ## Testing
 
