@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/PaulHax/align-browser/compare/v0.2.0...v0.2.1) (2025-07-11)
+
+
+### Bug Fixes
+
+* remove verbose build output and update docs ([1e50a6d](https://github.com/PaulHax/align-browser/commit/1e50a6dbce67f949ac13eb71591012fbbd3cfd93))
+
 ## [0.2.0](https://github.com/PaulHax/align-browser/compare/v0.1.0...v0.2.0) (2025-07-10)
 
 
