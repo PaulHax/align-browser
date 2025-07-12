@@ -31,7 +31,9 @@ def test_parse_real_experiments():
         print(f"📋 First experiment path: {first_exp.experiment_path}")
 
         # Test key generation
-        assert first_exp.key and first_exp.key != "unknown_adm_no_llm_", "Key generation may have issues"
+        assert first_exp.key and first_exp.key != "unknown_adm_no_llm_", (
+            "Key generation may have issues"
+        )
         print("✅ Key generation working correctly")
 
 
@@ -46,9 +48,7 @@ def test_build_manifest():
     experiments = parse_experiments_directory(experiments_root)
     manifest = build_manifest_from_experiments(experiments, experiments_root)
 
-    print(
-        f"✅ Built manifest with {len(manifest)} unique experiment configurations"
-    )
+    print(f"✅ Built manifest with {len(manifest)} unique experiment configurations")
 
     # Check manifest structure
     for key, value in list(manifest.items())[:3]:  # Show first 3
@@ -57,16 +57,18 @@ def test_build_manifest():
 
     # Verify manifest structure
     assert manifest, "Empty manifest generated"
-    
+
     first_key = list(manifest.keys())[0]
     first_entry = manifest[first_key]
 
     assert "scenarios" in first_entry, "Manifest missing scenarios key"
-    
+
     first_scenario = list(first_entry["scenarios"].values())[0]
     required_fields = ["input_output", "scores", "timing", "config"]
 
-    assert all(field in first_scenario for field in required_fields), "Manifest missing required fields"
+    assert all(field in first_scenario for field in required_fields), (
+        "Manifest missing required fields"
+    )
     print("✅ Manifest structure is correct")
 
 

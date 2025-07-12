@@ -8,6 +8,7 @@
 - After you make a code change, run the build and the http server
 - Don't run the http server after stopping
 - Use semantic versioning commit messages
+- After you make non trival changes, run ruff linting, then ruff formating, then the tests
 
 ## Testing
 

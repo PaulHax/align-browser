@@ -284,10 +284,10 @@ def test_build_manifest_from_experiments():
 
         mock_input_item = Mock()
         mock_input_item.input.scenario_id = "test_scenario"
-        
+
         mock_input_output = Mock()
         mock_input_output.data = [mock_input_item]
-        
+
         mock_experiment = Mock()
         mock_experiment.key = "test_key"
         mock_experiment.scenario_id = "test_scenario"
@@ -300,11 +300,11 @@ def test_build_manifest_from_experiments():
         manifest = build_manifest_from_experiments(experiments, experiments_root)
 
         assert "test_key" in manifest.experiment_keys
-        assert "scenarios" in manifest.experiment_keys["test_key"].dict()
+        assert "scenarios" in manifest.experiment_keys["test_key"].model_dump()
         assert "test_scenario" in manifest.experiment_keys["test_key"].scenarios
-        assert manifest.experiment_keys["test_key"].scenarios["test_scenario"].config == {
-            "test": "config"
-        }
+        assert manifest.experiment_keys["test_key"].scenarios[
+            "test_scenario"
+        ].config == {"test": "config"}
 
 
 def test_parse_real_experiments_if_available():
@@ -331,11 +331,11 @@ def test_experiment_summary_model():
     """Test ExperimentSummary model."""
     summary = ExperimentSummary(
         input_output="data/test/input_output.json",
-        scores="data/test/scores.json", 
+        scores="data/test/scores.json",
         timing="data/test/timing.json",
-        config={"test": "config"}
+        config={"test": "config"},
     )
-    
+
     assert summary.input_output == "data/test/input_output.json"
     assert summary.scores == "data/test/scores.json"
     assert summary.timing == "data/test/timing.json"
@@ -345,15 +345,15 @@ def test_experiment_summary_model():
 def test_scenario_manifest_model():
     """Test ScenarioManifest model."""
     manifest = ScenarioManifest()
-    
+
     # Test adding scenarios
     summary = ExperimentSummary(
         input_output="data/test/input_output.json",
         scores="data/test/scores.json",
-        timing="data/test/timing.json", 
-        config={"test": "config"}
+        timing="data/test/timing.json",
+        config={"test": "config"},
     )
-    
+
     manifest.scenarios["test_scenario"] = summary
     assert "test_scenario" in manifest.scenarios
     assert manifest.scenarios["test_scenario"] == summary
@@ -365,7 +365,7 @@ def test_global_manifest_model():
         temp_path = Path(temp_dir)
         experiments_root = temp_path / "experiments"
         experiments_root.mkdir()
-        
+
         # Create a complete experiment structure for testing
         pipeline_dir = experiments_root / "pipeline_test"
         pipeline_dir.mkdir()
@@ -373,43 +373,43 @@ def test_global_manifest_model():
         experiment_dir.mkdir()
         hydra_dir = experiment_dir / ".hydra"
         hydra_dir.mkdir()
-        
+
         # Create required files
         config_data = create_sample_config_data()
         with open(hydra_dir / "config.yaml", "w") as f:
             yaml.dump(config_data, f)
-            
+
         with open(experiment_dir / "input_output.json", "w") as f:
             json.dump(create_sample_input_output_data(), f)
-            
+
         with open(experiment_dir / "scores.json", "w") as f:
             json.dump(create_sample_scores_data(), f)
-            
+
         with open(experiment_dir / "timing.json", "w") as f:
             json.dump(create_sample_timing_data(), f)
-        
+
         # Test loading experiment
         experiment = ExperimentData.from_directory(experiment_dir)
-        
+
         # Test GlobalManifest
         manifest = GlobalManifest()
         manifest.add_experiment(experiment, experiments_root)
-        
+
         # Test experiment count
         assert manifest.get_experiment_count() == 1
-        
+
         # Test ADM types extraction
         adm_types = manifest.get_adm_types()
         assert "pipeline_random" in adm_types
-        
+
         # Test LLM backbones extraction
         llm_backbones = manifest.get_llm_backbones()
         assert "llama3.3-70b" in llm_backbones
-        
-        # Test KDMA combinations extraction  
+
+        # Test KDMA combinations extraction
         kdma_combinations = manifest.get_kdma_combinations()
         assert "affiliation-0.5" in kdma_combinations
-        
+
         # Test experiment key structure
         expected_key = "pipeline_random_llama3.3-70b_affiliation-0.5"
         assert expected_key in manifest.experiment_keys
@@ -422,7 +422,7 @@ def test_chunked_experiment_data_model():
         temp_path = Path(temp_dir)
         experiments_root = temp_path / "experiments"
         experiments_root.mkdir()
-        
+
         # Create sample experiment
         pipeline_dir = experiments_root / "pipeline_test"
         pipeline_dir.mkdir()
@@ -430,33 +430,37 @@ def test_chunked_experiment_data_model():
         experiment_dir.mkdir()
         hydra_dir = experiment_dir / ".hydra"
         hydra_dir.mkdir()
-        
+
         # Create required files
         config_data = create_sample_config_data()
         with open(hydra_dir / "config.yaml", "w") as f:
             yaml.dump(config_data, f)
-            
+
         with open(experiment_dir / "input_output.json", "w") as f:
             json.dump(create_sample_input_output_data(), f)
-            
+
         with open(experiment_dir / "scores.json", "w") as f:
             json.dump(create_sample_scores_data(), f)
-            
+
         with open(experiment_dir / "timing.json", "w") as f:
             json.dump(create_sample_timing_data(), f)
-        
+
         experiment = ExperimentData.from_directory(experiment_dir)
-        
+
         # Test ADM chunk creation
-        adm_chunk = ChunkedExperimentData.create_adm_chunk("pipeline_random", [experiment])
+        adm_chunk = ChunkedExperimentData.create_adm_chunk(
+            "pipeline_random", [experiment]
+        )
         assert adm_chunk.chunk_id == "adm_pipeline_random"
         assert adm_chunk.chunk_type == "by_adm"
         assert len(adm_chunk.experiments) == 1
         assert adm_chunk.metadata["adm_type"] == "pipeline_random"
         assert adm_chunk.metadata["count"] == 1
-        
+
         # Test scenario chunk creation
-        scenario_chunk = ChunkedExperimentData.create_scenario_chunk("June2025-AF-train", [experiment])
+        scenario_chunk = ChunkedExperimentData.create_scenario_chunk(
+            "June2025-AF-train", [experiment]
+        )
         assert scenario_chunk.chunk_id == "scenario_June2025-AF-train"
         assert scenario_chunk.chunk_type == "by_scenario"
         assert len(scenario_chunk.experiments) == 1
@@ -472,17 +476,17 @@ def test_global_manifest_serialization():
         "adm_types": [],
         "llm_backbones": [],
         "kdma_combinations": [],
-        "generated_at": "2024-01-01T00:00:00"
+        "generated_at": "2024-01-01T00:00:00",
     }
-    
+
     # Test serialization
-    manifest_dict = manifest.dict()
+    manifest_dict = manifest.model_dump()
     json_str = json.dumps(manifest_dict, indent=2)
-    
+
     # Test deserialization
     loaded_dict = json.loads(json_str)
     loaded_manifest = GlobalManifest(**loaded_dict)
-    
+
     assert loaded_manifest.metadata["total_experiments"] == 0
     assert loaded_manifest.metadata["generated_at"] == "2024-01-01T00:00:00"
 
@@ -490,36 +494,40 @@ def test_global_manifest_serialization():
 def test_end_to_end_build_process():
     """Test the complete build process from experiments to output validation."""
     import tempfile
-    import os
     import sys
     from pathlib import Path
-    
+
     # Only run this test if we have real experiments available
     experiments_root = get_experiments_path_or_skip()
     if not experiments_root:
         print("⏭️ Skipping end-to-end build test - experiments directory not available")
         return
-    
+
     with tempfile.TemporaryDirectory() as temp_dir:
         output_dir = Path(temp_dir) / "build_output"
-        
+
         # Add src to path for imports
-        sys.path.insert(0, '.')
-        
+        sys.path.insert(0, ".")
+
         try:
             from build import main
             import json
-            
+
             # Mock sys.argv for build script
             original_argv = sys.argv
-            sys.argv = ['build.py', str(experiments_root), '--output-dir', str(output_dir)]
-            
+            sys.argv = [
+                "build.py",
+                str(experiments_root),
+                "--output-dir",
+                str(output_dir),
+            ]
+
             # Run the build process
             main()
-            
+
             # Restore original argv
             sys.argv = original_argv
-            
+
             # Validate the output structure
             assert output_dir.exists(), "Output directory should exist"
             assert (output_dir / "manifest.json").exists(), "Manifest file should exist"
@@ -527,51 +535,69 @@ def test_end_to_end_build_process():
             assert (output_dir / "data").exists(), "Data directory should exist"
             assert (output_dir / "css").exists(), "CSS directory should exist"
             assert (output_dir / "js").exists(), "JS directory should exist"
-            
+
             # Load and validate manifest
             with open(output_dir / "manifest.json") as f:
                 manifest_data = json.load(f)
-            
+
             # Validate manifest structure using Pydantic
             manifest = GlobalManifest(**manifest_data)
-            
+
             # Basic validation
-            assert manifest.get_experiment_count() > 0, "Should have parsed some experiments"
+            assert manifest.get_experiment_count() > 0, (
+                "Should have parsed some experiments"
+            )
             assert len(manifest.get_adm_types()) > 0, "Should have identified ADM types"
-            assert manifest.metadata["generated_at"] is not None, "Should have generation timestamp"
-            
+            assert manifest.metadata["generated_at"] is not None, (
+                "Should have generation timestamp"
+            )
+
             # Validate that experiment files exist
             first_key = list(manifest.experiment_keys.keys())[0]
-            first_scenario = list(manifest.experiment_keys[first_key].scenarios.keys())[0]
-            experiment_summary = manifest.experiment_keys[first_key].scenarios[first_scenario]
-            
+            first_scenario = list(manifest.experiment_keys[first_key].scenarios.keys())[
+                0
+            ]
+            experiment_summary = manifest.experiment_keys[first_key].scenarios[
+                first_scenario
+            ]
+
             # Check that referenced files actually exist
             input_output_path = output_dir / experiment_summary.input_output
             scores_path = output_dir / experiment_summary.scores
             timing_path = output_dir / experiment_summary.timing
-            
-            assert input_output_path.exists(), f"Input/output file should exist: {input_output_path}"
+
+            assert input_output_path.exists(), (
+                f"Input/output file should exist: {input_output_path}"
+            )
             assert scores_path.exists(), f"Scores file should exist: {scores_path}"
             assert timing_path.exists(), f"Timing file should exist: {timing_path}"
-            
+
             # Validate JSON files are valid
             with open(input_output_path) as f:
                 input_output_data = json.load(f)
-                assert isinstance(input_output_data, list), "Input/output should be a list"
+                assert isinstance(input_output_data, list), (
+                    "Input/output should be a list"
+                )
                 assert len(input_output_data) > 0, "Input/output should have data"
-            
+
             with open(scores_path) as f:
                 scores_data = json.load(f)
                 assert isinstance(scores_data, list), "Scores should be a list"
-            
+
             with open(timing_path) as f:
                 timing_data = json.load(f)
                 assert "scenarios" in timing_data, "Timing should have scenarios"
-            
-            print(f"✅ End-to-end build test passed with {manifest.get_experiment_count()} experiments")
-            print(f"✅ Found {len(manifest.get_adm_types())} ADM types: {', '.join(manifest.get_adm_types()[:3])}...")
-            print(f"✅ Found {len(manifest.get_llm_backbones())} LLM backbones: {', '.join(manifest.get_llm_backbones()[:3])}...")
-            
+
+            print(
+                f"✅ End-to-end build test passed with {manifest.get_experiment_count()} experiments"
+            )
+            print(
+                f"✅ Found {len(manifest.get_adm_types())} ADM types: {', '.join(manifest.get_adm_types()[:3])}..."
+            )
+            print(
+                f"✅ Found {len(manifest.get_llm_backbones())} LLM backbones: {', '.join(manifest.get_llm_backbones()[:3])}..."
+            )
+
         except Exception as e:
             print(f"❌ End-to-end build test failed: {e}")
             raise
