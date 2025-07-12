@@ -1,7 +1,7 @@
 """Parser for experiment directory structures using Pydantic models."""
 
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import List
 from align_browser.experiment_models import ExperimentData, GlobalManifest
 
 
@@ -55,20 +55,20 @@ def build_manifest_from_experiments(
         GlobalManifest object with experiment data
     """
     manifest = GlobalManifest()
-    
+
     # Add each experiment to the manifest
     for experiment in experiments:
         manifest.add_experiment(experiment, experiments_root)
-    
+
     # Add metadata
     manifest.metadata = {
         "total_experiments": manifest.get_experiment_count(),
         "adm_types": manifest.get_adm_types(),
         "llm_backbones": manifest.get_llm_backbones(),
         "kdma_combinations": manifest.get_kdma_combinations(),
-        "generated_at": None  # Will be set in build.py
+        "generated_at": None,  # Will be set in build.py
     }
-    
+
     return manifest
 
 

@@ -5,6 +5,7 @@ import socket
 from pathlib import Path
 import argparse
 from datetime import datetime
+
 try:
     from importlib.resources import files
 except ImportError:
@@ -22,36 +23,91 @@ def copy_static_assets(output_dir):
     try:
         # Use importlib.resources for robust package data access
         static_files = files("align_browser.static")
-        
+
         for filename in ["index.html", "app.js", "state.js", "style.css"]:
             try:
                 # Read the file content from the package
                 file_content = (static_files / filename).read_bytes()
-                
+
                 # Write to destination
                 dst_file = output_dir / filename
                 dst_file.write_bytes(file_content)
-                
+
             except FileNotFoundError:
                 pass
-                
+
     except Exception as e:
         # Fallback to filesystem approach for development
         print(f"Package resource access failed, trying filesystem fallback: {e}")
         script_dir = Path(__file__).parent
         static_dir = script_dir / "static"
-        
+
         if not static_dir.exists():
             raise FileNotFoundError(f"Static assets directory not found: {static_dir}")
-        
+
         static_files = ["index.html", "app.js", "state.js", "style.css"]
-        
+
         for filename in static_files:
             src_file = static_dir / filename
             dst_file = output_dir / filename
-            
+
             if src_file.exists():
                 shutil.copy2(src_file, dst_file)
+
+
+def build_frontend(
+    experiments_root: Path,
+    output_dir: Path,
+    dev_mode: bool = False,
+    build_only: bool = True,
+):
+    """
+    Build frontend with experiment data.
+
+    Args:
+        experiments_root: Path to experiments directory
+        output_dir: Output directory for the site
+        dev_mode: Use development mode (no static asset copying)
+        build_only: Only build data, don't start server
+    """
+    print(f"Processing experiments directory: {experiments_root}")
+
+    # Determine output directory based on mode
+    if dev_mode:
+        print("Development mode: using provided directory")
+    else:
+        # Production mode: copy static assets
+        print(f"Production mode: creating site in {output_dir}")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        copy_static_assets(output_dir)
+
+    # Create data subdirectory and clean it
+    data_output_dir = output_dir / "data"
+    if data_output_dir.exists():
+        shutil.rmtree(data_output_dir)
+    data_output_dir.mkdir(exist_ok=True)
+
+    # Parse experiments and build manifest
+    experiments = parse_experiments_directory(experiments_root)
+    manifest = build_manifest_from_experiments(experiments, experiments_root)
+
+    # Add generation timestamp
+    manifest.metadata["generated_at"] = datetime.now().isoformat()
+
+    # Copy experiment data files
+    copy_experiment_files(experiments, experiments_root, data_output_dir)
+
+    # Save manifest in data subdirectory
+    with open(data_output_dir / "manifest.json", "w") as f:
+        json.dump(manifest.model_dump(), f, indent=2)
+
+    print(f"Data generated in {data_output_dir}")
+
+    # Start HTTP server unless build-only is specified
+    if not build_only:
+        serve_directory(output_dir)
+
+    return output_dir
 
 
 def main():
@@ -95,53 +151,29 @@ def main():
 
     experiments_root = Path(args.experiments).resolve()
 
-    print(f"Processing experiments directory: {experiments_root}")
-
     # Determine output directory based on mode
     if args.dev:
         # Development mode: use align-browser-site/ directory
         script_dir = Path(__file__).parent
         output_dir = script_dir.parent / "align-browser-site"
-        print("Development mode: using align-browser-site/ directory")
-        
+
         # Ensure development directory exists
         if not output_dir.exists():
-            raise FileNotFoundError(f"Development mode requires align-browser-site/ directory: {output_dir}")
-            
+            raise FileNotFoundError(
+                f"Development mode requires align-browser-site/ directory: {output_dir}"
+            )
+
+        build_frontend(
+            experiments_root, output_dir, dev_mode=True, build_only=args.build_only
+        )
     else:
-        # Production mode: use specified output directory and copy static assets
+        # Production mode: use specified output directory
         output_dir = Path(args.output_dir).resolve()
-        print(f"Production mode: creating site in {output_dir}")
-        
-        # Ensure output directory exists
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Copy static assets to output directory
-        copy_static_assets(output_dir)
+        build_frontend(
+            experiments_root, output_dir, dev_mode=False, build_only=args.build_only
+        )
 
-    # Create data subdirectory and clean it
-    data_output_dir = output_dir / "data"
-    if data_output_dir.exists():
-        shutil.rmtree(data_output_dir)
-    data_output_dir.mkdir(exist_ok=True)
-
-    # Parse experiments and build manifest
-    experiments = parse_experiments_directory(experiments_root)
-    manifest = build_manifest_from_experiments(experiments, experiments_root)
-
-    # Add generation timestamp
-    manifest.metadata["generated_at"] = datetime.now().isoformat()
-
-    # Copy experiment data files
-    copy_experiment_files(experiments, experiments_root, data_output_dir)
-
-    # Save manifest in data subdirectory
-    with open(data_output_dir / "manifest.json", "w") as f:
-        json.dump(manifest.model_dump(), f, indent=2)
-
-    print(f"Data generated in {data_output_dir}")
-
-    # Start HTTP server unless build-only is specified
+    # Start HTTP server if not build-only
     if not args.build_only:
         serve_directory(output_dir, args.host, args.port)
 

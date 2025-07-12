@@ -5,7 +5,6 @@ Shared pytest fixtures for frontend testing.
 
 import json
 import tempfile
-import subprocess
 import threading
 import time
 import yaml
@@ -14,6 +13,7 @@ import socketserver
 from pathlib import Path
 from contextlib import contextmanager
 import pytest
+import filelock
 from playwright.sync_api import sync_playwright
 
 
@@ -60,7 +60,7 @@ class FrontendTestServer:
                 self.server_thread.start()
 
                 # Wait for server to be ready
-                time.sleep(0.5)
+                time.sleep(0.1)  # Reduced from 0.5
 
                 yield self.base_url
 
@@ -152,54 +152,66 @@ class TestDataGenerator:
             with open(hydra_dir / "config.yaml", "w") as f:
                 yaml.dump(hydra_config, f)
 
-            # Create input/output data as single object (what Pydantic expects)
-            input_output = {
-                "input": {
-                    "scenario_id": config["scenario"],
-                    "state": f"Test scenario {config['scenario']} with medical triage situation",
-                    "choices": [
-                        {
-                            "action_id": "action_a",
-                            "kdma_association": {
-                                kdma["kdma"]: 0.8 for kdma in config["kdmas"]
-                            }
-                            if config["kdmas"]
-                            else {},
-                            "unstructured": f"Take action A in {config['scenario']} - apply treatment",
-                        },
-                        {
-                            "action_id": "action_b",
-                            "kdma_association": {
-                                kdma["kdma"]: 0.2 for kdma in config["kdmas"]
-                            }
-                            if config["kdmas"]
-                            else {},
-                            "unstructured": f"Take action B in {config['scenario']} - tag and evacuate",
-                        },
-                    ],
-                },
-                "output": {
-                    "choice": "action_a",
-                    "justification": f"Test justification for {config['scenario']}: This action aligns with the specified KDMA values.",
-                },
-            }
+            # Create input/output data as array (what the parser expects)
+            input_output = [
+                {
+                    "input": {
+                        "scenario_id": config["scenario"],
+                        "state": f"Test scenario {config['scenario']} with medical triage situation",
+                        "choices": [
+                            {
+                                "action_id": "action_a",
+                                "kdma_association": {
+                                    kdma["kdma"]: 0.8 for kdma in config["kdmas"]
+                                }
+                                if config["kdmas"]
+                                else {},
+                                "unstructured": f"Take action A in {config['scenario']} - apply treatment",
+                            },
+                            {
+                                "action_id": "action_b",
+                                "kdma_association": {
+                                    kdma["kdma"]: 0.2 for kdma in config["kdmas"]
+                                }
+                                if config["kdmas"]
+                                else {},
+                                "unstructured": f"Take action B in {config['scenario']} - tag and evacuate",
+                            },
+                        ],
+                    },
+                    "output": {
+                        "choice": "action_a",
+                        "justification": f"Test justification for {config['scenario']}: This action aligns with the specified KDMA values.",
+                    },
+                }
+            ]
 
             with open(experiment_dir / "input_output.json", "w") as f:
                 json.dump(input_output, f, indent=2)
 
-            # Create scores file as single object (what Pydantic expects)
-            scores = {
-                "test_score": 0.85 + (i * 0.05),
-                "scenario_id": config["scenario"],
-            }
+            # Create scores file as array (what the parser expects)
+            scores = [
+                {
+                    "test_score": 0.85 + (i * 0.05),
+                    "scenario_id": config["scenario"],
+                }
+            ]
 
             with open(experiment_dir / "scores.json", "w") as f:
                 json.dump(scores, f, indent=2)
 
-            # Create timing file as single object (what Pydantic expects)
+            # Create timing file with scenarios structure (what the parser expects)
             timing = {
-                "probe_time": 1234 + (i * 100),
-                "scenario_id": config["scenario"],
+                "scenarios": [
+                    {
+                        "scenario_id": config["scenario"],
+                        "n_actions_taken": 10 + i,
+                        "total_time_s": 1234.5 + (i * 100),
+                        "avg_time_s": 123.4 + (i * 10),
+                        "max_time_s": 200.0 + (i * 20),
+                        "raw_times_s": [100.0 + (i * 5), 150.0 + (i * 7)],
+                    }
+                ]
             }
 
             with open(experiment_dir / "timing.json", "w") as f:
@@ -209,30 +221,88 @@ class TestDataGenerator:
 
 
 @pytest.fixture(scope="session")
-def built_frontend():
-    """Use the existing built frontend for all tests."""
-    # Use the existing dist directory that's already built
+def frontend_with_test_data():
+    """Prepare frontend static directory with generated test data."""
     project_root = Path(__file__).parent.parent
-    dist_dir = project_root / "dist"
 
-    # Ensure the dist directory exists and has the required files
-    if not dist_dir.exists() or not (dist_dir / "manifest.json").exists():
-        # Build the frontend if it doesn't exist
-        cmd = ["uv", "run", "align-browser", "../experiments", "--dev", "--build-only"]
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, cwd=str(project_root)
-        )
+    # Use align_browser/static as the base directory (dev mode)
+    frontend_dir = project_root / "align_browser" / "static"
 
-        if result.returncode != 0:
-            pytest.fail(f"Frontend build failed: {result.stderr}")
+    # Use a file lock to prevent parallel test workers from conflicting
+    lock_file = project_root / ".test_data.lock"
+    lock = filelock.FileLock(lock_file, timeout=30)
 
-    yield dist_dir
+    with lock:
+        # Check if data already exists (from another worker)
+        data_dir = frontend_dir / "data"
+        if not data_dir.exists():
+            # Generate test experiment directory
+            test_experiments_root = TestDataGenerator.create_test_experiments()
+
+            # Use the build system to generate data
+            from .build import build_frontend
+
+            build_frontend(
+                experiments_root=test_experiments_root,
+                output_dir=frontend_dir,
+                dev_mode=True,
+                build_only=True,
+            )
+
+    yield frontend_dir
+
+    # Don't cleanup in parallel mode - let the last worker handle it
 
 
 @pytest.fixture(scope="session")
-def test_server(built_frontend):
-    """Provide a running test server."""
-    server = FrontendTestServer(built_frontend, port=0)  # Use any available port
+def frontend_with_real_data():
+    """Prepare frontend static directory with real experiment data."""
+    project_root = Path(__file__).parent.parent
+
+    # Use align_browser/static as the base directory (dev mode)
+    frontend_dir = project_root / "align_browser" / "static"
+
+    # Check if real experiment data exists
+    real_experiments_root = project_root / "experiment-data" / "phase2_june"
+    if not real_experiments_root.exists():
+        pytest.skip(f"Real experiment data not found at {real_experiments_root}")
+
+    # Use the build system to generate data with real experiments
+    from .build import build_frontend
+
+    build_frontend(
+        experiments_root=real_experiments_root,
+        output_dir=frontend_dir,
+        dev_mode=True,
+        build_only=True,
+    )
+
+    yield frontend_dir
+
+    # Cleanup: remove the data directory we created
+    import shutil
+
+    data_dir = frontend_dir / "data"
+    if data_dir.exists():
+        shutil.rmtree(data_dir)
+
+
+@pytest.fixture(scope="session")
+def test_server(frontend_with_test_data):
+    """Provide a running test server with generated test data."""
+    server = FrontendTestServer(
+        frontend_with_test_data, port=0
+    )  # Use any available port
+    with server.run() as base_url:
+        yield base_url
+
+
+@pytest.fixture(scope="session")
+def real_data_test_server(frontend_with_real_data):
+    """Provide a running test server with real experiment data."""
+    server = FrontendTestServer(
+        frontend_with_real_data, port=0
+    )  # Use any available port
     with server.run() as base_url:
         yield base_url
 
@@ -241,7 +311,7 @@ def test_server(built_frontend):
 def browser_context():
     """Provide a browser context."""
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(headless=True)  # Use headless mode for speed
         context = browser.new_context()
         yield context
         context.close()

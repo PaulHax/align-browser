@@ -53,7 +53,9 @@ def test_build_script():
 
             # Use the virtual environment python (relative to the test file location)
             venv_python = test_file_dir / "../../.venv/bin/python"
-            assert venv_python.exists(), f"Virtual environment python not found at: {venv_python}"
+            assert venv_python.exists(), (
+                f"Virtual environment python not found at: {venv_python}"
+            )
 
             # Run build script with output directed to temp directory
             result = subprocess.run(
@@ -69,7 +71,9 @@ def test_build_script():
                 timeout=60,  # 60 second timeout
             )
 
-            assert result.returncode == 0, f"Build script failed with return code {result.returncode}\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+            assert result.returncode == 0, (
+                f"Build script failed with return code {result.returncode}\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+            )
 
             print("✅ Build script completed successfully")
 
@@ -146,26 +150,36 @@ def test_build_output_location():
                 timeout=60,
             )
 
-            assert result.returncode == 0, f"Build script failed with return code {result.returncode}\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+            assert result.returncode == 0, (
+                f"Build script failed with return code {result.returncode}\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+            )
 
             print("✅ Build script completed successfully")
 
             # The key test: verify dist directory is in current working directory
             expected_dist_dir = current_working_dir / "dist"
             if not expected_dist_dir.exists():
-                available_dirs = [str(item) for item in current_working_dir.iterdir() if item.is_dir()]
-                assert False, f"dist directory not found in current working directory\nExpected: {expected_dist_dir}\nAvailable directories: {available_dirs}"
+                available_dirs = [
+                    str(item) for item in current_working_dir.iterdir() if item.is_dir()
+                ]
+                assert False, (
+                    f"dist directory not found in current working directory\nExpected: {expected_dist_dir}\nAvailable directories: {available_dirs}"
+                )
 
             print(f"✅ Found dist directory in correct location: {expected_dist_dir}")
 
             # Verify it's not created elsewhere (like in the script directory)
             script_dist = test_file_dir / "dist"
-            assert not script_dist.exists(), f"dist directory incorrectly created in script directory: {script_dist}"
+            assert not script_dist.exists(), (
+                f"dist directory incorrectly created in script directory: {script_dist}"
+            )
 
             print("✅ Confirmed dist directory not created in script directory")
 
             # Basic sanity check - make sure dist has expected content
-            assert (expected_dist_dir / "index.html").exists(), "index.html not found in dist directory"
+            assert (expected_dist_dir / "index.html").exists(), (
+                "index.html not found in dist directory"
+            )
             print("✅ Found expected content (index.html) in dist directory")
 
         except subprocess.TimeoutExpired:
