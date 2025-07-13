@@ -80,8 +80,16 @@ class TestDataGenerator:
     @staticmethod
     def create_test_experiments():
         """Create test experiment data."""
-        temp_dir = Path(tempfile.mkdtemp())
+        # Use deterministic temp directory for consistent test data
+        temp_dir = Path(tempfile.gettempdir()) / "align_browser_test_data"
+        temp_dir.mkdir(exist_ok=True)
+        # Clean any existing test data
         experiments_root = temp_dir / "experiments"
+        if experiments_root.exists():
+            import shutil
+
+            shutil.rmtree(experiments_root)
+        experiments_root.mkdir()
 
         # Create realistic test experiments that match manifest structure
         test_configs = [

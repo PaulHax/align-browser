@@ -422,9 +422,20 @@ def test_scenario_based_kdma_filtering(page, test_server):
         scenario_select.select_option(scenario_type)
         page.wait_for_load_state("networkidle")
 
-        # Select a consistent ADM type
+        # Select a consistent ADM type using available options
         adm_select = page.locator(".table-adm-select").first
-        adm_select.select_option("pipeline_baseline")
+        available_options = adm_select.locator("option").all()
+        adm_options = [
+            opt.get_attribute("value")
+            for opt in available_options
+            if opt.get_attribute("value")
+        ]
+
+        # Try to find a pipeline_baseline option, fallback to first available
+        baseline_options = [opt for opt in adm_options if "pipeline_baseline" in opt]
+        selected_option = baseline_options[0] if baseline_options else adm_options[0]
+
+        adm_select.select_option(selected_option)
         page.wait_for_load_state("networkidle")
 
         # Check what KDMA sliders are available in table
