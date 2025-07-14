@@ -110,7 +110,6 @@ def build_frontend(
 
     print(f"Data generated in {data_output_dir}")
 
-
     return output_dir
 
 
