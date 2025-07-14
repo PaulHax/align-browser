@@ -1458,11 +1458,12 @@ document.addEventListener("DOMContentLoaded", () => {
       appState.pinnedRuns.forEach((runData) => {
         const pinnedValue = getParameterValue(runData, paramName);
         const isDifferent = !isFirstColumn && !compareValues(previousValue, pinnedValue);
-        const borderStyle = isDifferent ? 'border-left: 3px solid #ffc107;' : '';
         
         const td = document.createElement('td');
         td.className = 'pinned-run-value';
-        td.style.cssText = borderStyle;
+        if (isDifferent) {
+          td.style.borderLeft = '3px solid #007bff';
+        }
         td.innerHTML = formatValue(pinnedValue, paramInfo.type, paramName, runData.id);
         
         row.appendChild(td);
@@ -2008,6 +2009,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Add KDMA associations if available
             if (choice.kdma_association) {
               choicesHtml += '<div class="kdma-bars">';
+              choicesHtml += '<div class="kdma-truth-header">KDMA Association Truth</div>';
               Object.entries(choice.kdma_association).forEach(([kdma, val]) => {
                 const percentage = Math.round(val * 100);
                 const color = val >= 0.7 ? '#28a745' : val >= 0.4 ? '#ffc107' : '#dc3545';
