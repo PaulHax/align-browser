@@ -500,6 +500,13 @@ footer {
   box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
 }
 
+.add-kdma-btn:disabled {
+  background-color: #6c757d;
+  border-color: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .table-kdma-remove-btn {
   background-color: #dc3545;
   color: white;

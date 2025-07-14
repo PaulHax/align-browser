@@ -828,8 +828,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const newKDMAs = { ...currentKDMAs, [kdmaType]: initialValue };
     run.kdmaValues = newKDMAs;
     
+    // Update the columnParameters to sync with the new KDMA values
+    const params = getParametersForRun(runId);
+    params.kdmas = newKDMAs;
+    
     // Refresh the comparison display to show new KDMA control
     updateComparisonDisplay();
+    
+    // Reload experiment data for the new KDMA combination
+    reloadPinnedRun(runId);
     
     // Update URL state
     urlState.updateURL();
@@ -846,8 +853,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // Update the run's KDMA values directly
     run.kdmaValues = currentKDMAs;
     
+    // Update the columnParameters to sync with the new KDMA values
+    const params = getParametersForRun(runId);
+    params.kdmas = currentKDMAs;
+    
     // Refresh the comparison display
     updateComparisonDisplay();
+    
+    // Reload experiment data for the new KDMA combination
+    reloadPinnedRun(runId);
     
     // Update URL state
     urlState.updateURL();
@@ -878,8 +892,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // Update the run's KDMA values directly
     run.kdmaValues = currentKDMAs;
     
+    // Update the columnParameters to sync with the new KDMA values
+    const params = getParametersForRun(runId);
+    params.kdmas = currentKDMAs;
+    
     // Refresh the comparison display
     updateComparisonDisplay();
+    
+    // Reload experiment data for the new KDMA combination
+    reloadPinnedRun(runId);
     
     // Update URL state
     urlState.updateURL();
@@ -929,7 +950,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Update the display value immediately
     const valueDisplay = document.getElementById(`kdma-value-${runId}-${kdmaType}`);
     if (valueDisplay) {
-      valueDisplay.textContent = newValue.toFixed(1);
+      valueDisplay.textContent = formatKDMAValue(newValue);
     }
     
     currentKDMAs[kdmaType] = newValue;
@@ -1106,7 +1127,7 @@ document.addEventListener("DOMContentLoaded", () => {
       
       // Add Overall Score (on top)
       if (scoreItem && scoreItem.score !== undefined) {
-        html += `<div style="margin: 8px 0;"><strong>Score:</strong> ${scoreItem.score.toFixed(3)}</div>`;
+        html += `<div style="margin: 8px 0;"><strong>Score:</strong> ${formatScoreValue(scoreItem.score)}</div>`;
       }
       
       // Add Average Decision Time
@@ -1132,14 +1153,8 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
-    // Generate experiment key from parameters
-    const kdmaParts = [];
-    Object.entries(kdmas || {}).forEach(([kdma, value]) => {
-      kdmaParts.push(`${kdma}-${value.toFixed(1)}`);
-    });
-    const kdmaString = kdmaParts.sort().join("_");
-    // If no KDMAs, don't append the trailing underscore
-    const experimentKey = kdmaString ? `${admType}_${llmBackbone}_${kdmaString}` : `${admType}_${llmBackbone}`;
+    // Generate experiment key from parameters using shared utility
+    const experimentKey = buildExperimentKey(admType, llmBackbone, kdmas);
 
     console.log("Loading experiment data:", experimentKey, "Scenario:", scenario);
 
@@ -1286,7 +1301,16 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     
+    // Prevent concurrent reloads for the same run
+    if (run.isReloading) {
+      console.log(`Skipping reload for run ${runId} - already in progress`);
+      return;
+    }
+    
     console.log(`Reloading data for run ${runId}`);
+    
+    // Mark as reloading to prevent concurrent requests
+    run.isReloading = true;
     
     // Show loading state
     run.loadStatus = 'loading';
@@ -1327,6 +1351,9 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (error) {
       console.error(`Failed to reload data for run ${runId}:`, error);
       run.loadStatus = 'error';
+    } finally {
+      // Clear the reloading flag
+      run.isReloading = false;
     }
     
     // Re-render the comparison table (current run data is unaffected)
@@ -1729,6 +1756,102 @@ document.addEventListener("DOMContentLoaded", () => {
            experiments[baseKey].scenarios[run.scenario];
   }
 
+  // Check if a specific KDMA can be removed from a run
+  function canRemoveSpecificKDMA(runId, kdmaType) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return false;
+    
+    const currentKDMAs = run.kdmaValues || {};
+    
+    // Create a copy of current KDMAs without the one we want to remove
+    const remainingKDMAs = { ...currentKDMAs };
+    delete remainingKDMAs[kdmaType];
+    
+    // If no KDMAs would remain, use the original canRemoveKDMAsForRun check
+    if (Object.keys(remainingKDMAs).length === 0) {
+      return canRemoveKDMAsForRun(runId);
+    }
+    
+    // Check if experiments exist with the remaining KDMAs for this specific scenario
+    // We need to directly check the manifest instead of using getValidOptionsForConstraints
+    // because that function might be too permissive
+    return checkExperimentExistsForScenario(run.scenario, run.admType, run.llmBackbone, remainingKDMAs);
+  }
+  
+  // Format KDMA value consistently across the application
+  function formatKDMAValue(value) {
+    return typeof value === 'number' ? value.toFixed(1) : value;
+  }
+
+  // Format score value consistently across the application
+  function formatScoreValue(value) {
+    return typeof value === 'number' ? value.toFixed(3) : value.toString();
+  }
+
+  // Generate experiment key from parameters (shared utility function)
+  function buildExperimentKey(admType, llmBackbone, kdmas) {
+    const kdmaParts = [];
+    Object.entries(kdmas || {}).forEach(([kdma, value]) => {
+      kdmaParts.push(`${kdma}-${formatKDMAValue(value)}`);
+    });
+    const kdmaString = kdmaParts.sort().join("_");
+    return kdmaString ? `${admType}_${llmBackbone}_${kdmaString}` : `${admType}_${llmBackbone}`;
+  }
+
+  // Check if experiments exist for a specific scenario with given parameters
+  function checkExperimentExistsForScenario(scenario, admType, llmBackbone, kdmas) {
+    const experiments = manifest.experiment_keys || manifest;
+    
+    // Build the experiment key using shared utility
+    const experimentKey = buildExperimentKey(admType, llmBackbone, kdmas);
+    
+    // Check if this experiment exists and has the target scenario
+    if (experiments[experimentKey] && 
+        experiments[experimentKey].scenarios && 
+        experiments[experimentKey].scenarios[scenario]) {
+      return true;
+    }
+    
+    // If direct key lookup fails, try all possible orderings of KDMAs
+    // since the experiment keys might have different KDMA ordering
+    const kdmaKeys = Object.keys(kdmas || {});
+    if (kdmaKeys.length > 1) {
+      const permutations = getKDMAPermutations(kdmaKeys);
+      for (const permutation of permutations) {
+        const reorderedKdmas = {};
+        permutation.forEach(kdmaName => {
+          if (kdmas[kdmaName] !== undefined) {
+            reorderedKdmas[kdmaName] = kdmas[kdmaName];
+          }
+        });
+        
+        const altKey = buildExperimentKey(admType, llmBackbone, reorderedKdmas);
+        if (experiments[altKey] && 
+            experiments[altKey].scenarios && 
+            experiments[altKey].scenarios[scenario]) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
+  }
+  
+  // Generate all permutations of KDMA keys for experiment key lookup
+  function getKDMAPermutations(kdmaKeys) {
+    if (kdmaKeys.length <= 1) return [kdmaKeys];
+    
+    const permutations = [];
+    for (let i = 0; i < kdmaKeys.length; i++) {
+      const rest = kdmaKeys.slice(0, i).concat(kdmaKeys.slice(i + 1));
+      const restPermutations = getKDMAPermutations(rest);
+      for (const perm of restPermutations) {
+        permutations.push([kdmaKeys[i]].concat(perm));
+      }
+    }
+    return permutations;
+  }
+
   // Create KDMA controls HTML for table cells
   function createKDMAControlsForRun(runId, currentKDMAs) {
     const run = appState.pinnedRuns.get(runId);
@@ -1745,24 +1868,30 @@ document.addEventListener("DOMContentLoaded", () => {
       html += createSingleKDMAControlForRun(runId, kdmaType, value, index);
     });
     
-    // Add button
-    if (canAddMore) {
-      const availableKDMAs = getValidKDMAsForRun(runId);
-      const availableTypes = Object.keys(availableKDMAs).filter(type => 
-        !currentKDMAs || currentKDMAs[type] === undefined
-      );
-      
-      if (availableTypes.length > 0) {
-        html += `<button class="add-kdma-btn" onclick="addKDMAToRun('${runId}')" 
-                   style="margin-top: 5px; font-size: 12px; padding: 2px 6px;">
-                   Add KDMA
-                 </button>`;
+    // Add button - always show but enable/disable based on availability
+    const availableKDMAs = getValidKDMAsForRun(runId);
+    const availableTypes = Object.keys(availableKDMAs).filter(type => 
+      !currentKDMAs || currentKDMAs[type] === undefined
+    );
+    
+    const canAdd = canAddMore && availableTypes.length > 0;
+    const disabledAttr = canAdd ? '' : 'disabled';
+    
+    // Determine tooltip text for disabled state
+    let tooltipText = '';
+    if (!canAdd) {
+      if (!canAddMore) {
+        tooltipText = `title="Maximum KDMAs reached (${maxKDMAs})"`;
       } else {
-        html += `<div style="font-size: 12px; color: #666; margin-top: 5px;">All KDMA types added</div>`;
+        tooltipText = 'title="All available KDMA types have been added"';
       }
-    } else {
-      html += `<div style="font-size: 12px; color: #666; margin-top: 5px;">Max KDMAs reached (${maxKDMAs})</div>`;
     }
+    
+    html += `<button class="add-kdma-btn" onclick="addKDMAToRun('${runId}')" 
+               ${disabledAttr} ${tooltipText}
+               style="margin-top: 5px; font-size: 12px; padding: 2px 6px;">
+               Add KDMA
+             </button>`;
     
     html += '</div>';
     return html;
@@ -1808,12 +1937,12 @@ document.addEventListener("DOMContentLoaded", () => {
                min="0" max="1" step="0.1" 
                value="${value}"
                oninput="handleRunKDMASliderInput('${runId}', '${kdmaType}', this)">
-        <span class="table-kdma-value-display" id="kdma-value-${runId}-${kdmaType}">${value.toFixed(1)}</span>
+        <span class="table-kdma-value-display" id="kdma-value-${runId}-${kdmaType}">${formatKDMAValue(value)}</span>
         
         <button class="table-kdma-remove-btn" 
                 onclick="removeKDMAFromRun('${runId}', '${kdmaType}')" 
-                ${!canRemoveKDMAsForRun(runId) ? 'disabled' : ''}
-                title="${!canRemoveKDMAsForRun(runId) ? 'No experiments available without KDMAs' : 'Remove KDMA'}">×</button>
+                ${!canRemoveSpecificKDMA(runId, kdmaType) ? 'disabled' : ''}
+                title="${!canRemoveSpecificKDMA(runId, kdmaType) ? 'No valid experiments exist without this KDMA' : 'Remove KDMA'}">×</button>
       </div>
     `;
   }
@@ -1845,7 +1974,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     switch (type) {
       case 'number':
-        return typeof value === 'number' ? value.toFixed(3) : value.toString();
+        return formatScoreValue(value);
       
       case 'longtext':
         if (typeof value === 'string' && value.length > 800) {
@@ -1910,7 +2039,7 @@ document.addEventListener("DOMContentLoaded", () => {
           kdmaEntries.forEach(([kdmaName, kdmaValue]) => {
             kdmaHtml += `<div class="kdma-value-item">
               <span class="kdma-name">${escapeHtml(kdmaName)}:</span>
-              <span class="kdma-number">${typeof kdmaValue === 'number' ? kdmaValue.toFixed(1) : kdmaValue}</span>
+              <span class="kdma-number">${formatKDMAValue(kdmaValue)}</span>
             </div>`;
           });
           kdmaHtml += '</div>';
