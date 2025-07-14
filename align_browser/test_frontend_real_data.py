@@ -47,7 +47,8 @@ def test_kdma_sliders_interaction(page, real_data_test_server):
     # Set ADM type to enable KDMA sliders
     adm_select = page.locator(".table-adm-select").first
     adm_select.select_option("pipeline_baseline")
-    page.wait_for_timeout(1000)
+    # Wait for UI to update after ADM selection
+    page.wait_for_load_state("networkidle")
 
     # Find KDMA sliders in table
     sliders = page.locator(".table-kdma-value-slider").all()
@@ -237,3 +238,87 @@ def test_real_data_comprehensive_loading(page, real_data_test_server):
     ]
 
     assert len(filtered_errors) == 0, f"Found JavaScript errors: {filtered_errors}"
+
+
+def test_kdma_combination_default_value_issue(page, real_data_test_server):
+    """Test the KDMA combination issue where adding a second KDMA defaults to 0.5 instead of valid value."""
+    page.goto(real_data_test_server)
+    
+    # Wait for table to load
+    page.wait_for_selector(".comparison-table", timeout=10000)
+    page.wait_for_function(
+        "document.querySelectorAll('.table-adm-select').length > 0", timeout=10000
+    )
+    
+    # Select pipeline_baseline ADM to enable KDMA functionality 
+    adm_select = page.locator(".table-adm-select").first
+    adm_select.select_option("pipeline_baseline")
+    # Wait for UI to update after ADM selection
+    page.wait_for_load_state("networkidle")
+    
+    # Select June2025-AF-train scenario to get multi-KDMA support
+    scenario_select = page.locator(".table-scenario-select").first
+    
+    # Check what scenarios are available
+    scenario_options = scenario_select.locator("option").all()
+    scenario_values = [opt.get_attribute("value") for opt in scenario_options if opt.get_attribute("value")]
+    print(f"Available scenarios: {scenario_values}")
+    
+    # Find a June2025-AF-train scenario
+    june_scenarios = [s for s in scenario_values if "June2025-AF-train" in s]
+
+    scenario_select.select_option(june_scenarios[0])
+    # Wait for scenario selection to take effect
+    page.wait_for_load_state("networkidle")
+
+    
+    # Check initial KDMA sliders - should have affiliation already
+    kdma_sliders = page.locator(".table-kdma-value-slider")
+    initial_count = kdma_sliders.count()
+    
+    # Should have at least one KDMA slider initially
+    assert initial_count > 0, "Should have initial KDMA slider"
+    
+    # Look for "Add KDMA" button
+    add_kdma_button = page.locator(".add-kdma-btn")
+    
+    # Click Add KDMA button
+    add_kdma_button.click()
+    
+    # Wait for new KDMA slider to be added by checking for count increase
+    page.wait_for_function(
+        f"document.querySelectorAll('.table-kdma-value-slider').length > {initial_count}",
+        timeout=5000
+    )
+    
+    # Check that a new KDMA slider was added
+    updated_kdma_sliders = page.locator(".table-kdma-value-slider")
+    updated_count = updated_kdma_sliders.count()
+    
+    assert updated_count > initial_count, "Should have added a new KDMA slider"
+    
+    # Check the value of the new slider
+    new_sliders = updated_kdma_sliders.all()
+    if len(new_sliders) > 1:
+        # Get the last slider (newly added)
+        new_slider = new_sliders[-1]
+        new_value = new_slider.input_value()
+        
+        # This is the bug: it defaults to 0.5 instead of a valid value
+        # For pipeline_baseline with affiliation+merit, valid combinations are only 0.0 and 1.0
+        # So 0.5 should not be the default - it should be 0.0 or 1.0
+        valid_values = ["0.0", "1.0"]
+        
+        # This assertion should fail with current code, proving the bug exists
+        # Accept both integer and decimal formats
+        valid_values = ["0.0", "1.0", "0", "1"]
+        assert new_value in valid_values, f"New KDMA slider should default to valid value (0.0 or 1.0), but got {new_value}"
+    
+    # Also check that the dropdowns don't go blank
+    adm_select_value = adm_select.input_value()
+    assert adm_select_value != "", "ADM select should not go blank after adding KDMA"
+    
+    scenario_select_value = scenario_select.input_value()
+    assert scenario_select_value != "", "Scenario select should not go blank after adding KDMA"
+    assert "June2025-AF-train" in scenario_select_value, "Should still have June2025-AF-train scenario selected"
+

@@ -820,8 +820,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     
     const kdmaType = availableTypes[0];
-    const validValues = availableKDMAs[kdmaType] || [];
-    const initialValue = validValues.length > 0 ? validValues[0] : 0.5;
+    const validValues = Array.from(availableKDMAs[kdmaType] || []);
+    const initialValue = validValues.length > 0 ? validValues[0] : 0.0;
+    console.log(`Adding KDMA ${kdmaType} with initial value ${initialValue} to run ${runId}`);
     
     // Update the run's KDMA values directly
     const newKDMAs = { ...currentKDMAs, [kdmaType]: initialValue };
