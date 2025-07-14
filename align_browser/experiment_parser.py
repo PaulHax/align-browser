@@ -9,6 +9,10 @@ def parse_experiments_directory(experiments_root: Path) -> List[ExperimentData]:
     """
     Parse the experiments directory structure and return a list of ExperimentData.
 
+    Recursively searches through the directory structure to find all directories
+    that contain the required experiment files (input_output.json, scores.json,
+    timing.json, and .hydra/config.yaml).
+
     Args:
         experiments_root: Path to the root experiments directory
 
@@ -17,26 +21,27 @@ def parse_experiments_directory(experiments_root: Path) -> List[ExperimentData]:
     """
     experiments = []
 
-    for pipeline_dir in experiments_root.iterdir():
-        if not pipeline_dir.is_dir():
+    # Recursively find all directories that have required experiment files
+    for experiment_dir in experiments_root.rglob("*"):
+        if not experiment_dir.is_dir():
             continue
 
-        for experiment_dir in pipeline_dir.glob("*"):
-            if not experiment_dir.is_dir():
-                continue
+        # Skip directories containing "OUTDATED" in their path
+        if "OUTDATED" in str(experiment_dir).upper():
+            continue
 
-            # Check if directory has all required files
-            if not ExperimentData.has_required_files(experiment_dir):
-                continue
+        # Check if directory has all required files
+        if not ExperimentData.has_required_files(experiment_dir):
+            continue
 
-            try:
-                # Load experiment data using Pydantic models
-                experiment = ExperimentData.from_directory(experiment_dir)
-                experiments.append(experiment)
+        try:
+            # Load experiment data using Pydantic models
+            experiment = ExperimentData.from_directory(experiment_dir)
+            experiments.append(experiment)
 
-            except Exception as e:
-                print(f"Error processing {experiment_dir}: {e}")
-                continue
+        except Exception as e:
+            print(f"Error processing {experiment_dir}: {e}")
+            continue
 
     return experiments
 
