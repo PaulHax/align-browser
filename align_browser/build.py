@@ -110,9 +110,6 @@ def build_frontend(
 
     print(f"Data generated in {data_output_dir}")
 
-    # Start HTTP server unless build-only is specified
-    if not build_only:
-        serve_directory(output_dir)
 
     return output_dir
 
@@ -160,14 +157,14 @@ def main():
 
     # Determine output directory based on mode
     if args.dev:
-        # Development mode: use align-browser-site/ directory
+        # Development mode: use static/ directory for live editing
         script_dir = Path(__file__).parent
-        output_dir = script_dir.parent / "align-browser-site"
+        output_dir = script_dir / "static"
 
         # Ensure development directory exists
         if not output_dir.exists():
             raise FileNotFoundError(
-                f"Development mode requires align-browser-site/ directory: {output_dir}"
+                f"Development mode requires static/ directory: {output_dir}"
             )
 
         build_frontend(
