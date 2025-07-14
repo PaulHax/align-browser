@@ -2,6 +2,7 @@
 
 :root {
   --run-column-min-width: 350px;
+  --accent-color: #007bff;
 }
 
 body {
@@ -174,8 +175,8 @@ footer {
 
 .show-more-btn {
   background: none;
-  border: 1px solid #007bff;
-  color: #007bff;
+  border: 1px solid var(--accent-color);
+  color: var(--accent-color);
   padding: 2px 6px;
   border-radius: 3px;
   font-size: 12px;
@@ -184,7 +185,7 @@ footer {
 }
 
 .show-more-btn:hover {
-  background: #007bff;
+  background: var(--accent-color);
   color: white;
 }
 
@@ -253,6 +254,18 @@ footer {
   text-align: right;
 }
 
+.kdma-truth-header {
+  font-size: 10px;
+  color: #6c757d;
+  font-style: italic;
+  margin-bottom: 2px;
+  font-weight: 500;
+}
+
+.different-value {
+  border-left: 3px solid #007bff;
+}
+
 .object-display {
   font-family: "Courier New", monospace;
   font-size: 12px;
@@ -319,7 +332,7 @@ footer {
 }
 
 .btn-primary {
-  background-color: #007bff;
+  background-color: var(--accent-color);
   color: white;
 }
 
@@ -421,14 +434,14 @@ footer {
 .table-llm-select:hover,
 .table-adm-select:hover,
 .table-scenario-select:hover {
-  border-color: #007bff;
+  border-color: var(--accent-color);
 }
 
 .table-llm-select:focus,
 .table-adm-select:focus,
 .table-scenario-select:focus {
   outline: none;
-  border-color: #007bff;
+  border-color: var(--accent-color);
   box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
 }
 
@@ -470,19 +483,19 @@ footer {
 }
 
 .table-kdma-type-select:hover {
-  border-color: #007bff;
+  border-color: var(--accent-color);
 }
 
 .table-kdma-type-select:focus {
   outline: none;
-  border-color: #007bff;
+  border-color: var(--accent-color);
   box-shadow: 0 0 0 1px rgba(0, 123, 255, 0.25);
 }
 
 .add-kdma-btn {
-  background-color: #007bff;
+  background-color: var(--accent-color);
   color: white;
-  border: 1px solid #007bff;
+  border: 1px solid var(--accent-color);
   border-radius: 3px;
   padding: 4px 10px;
   font-size: 12px;
@@ -560,7 +573,7 @@ footer {
   appearance: none;
   width: 16px;
   height: 16px;
-  background: #007bff;
+  background: var(--accent-color);
   cursor: pointer;
   border-radius: 50%;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
@@ -569,7 +582,7 @@ footer {
 .table-kdma-value-slider::-moz-range-thumb {
   width: 16px;
   height: 16px;
-  background: #007bff;
+  background: var(--accent-color);
   cursor: pointer;
   border-radius: 50%;
   border: none;
