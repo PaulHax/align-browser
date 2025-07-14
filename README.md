@@ -7,7 +7,7 @@ A static web application for visualizing [align-system](https://github.com/ITM-K
 Generate site from experiment data in align-browser-site directory and serves the website:
 
 ```bash
-uvx align-browser ../experiments
+uvx align-browser ./experiment-data
 ```
 
 Then visit http://localhost:8000/
@@ -16,16 +16,16 @@ Change the port, serve on all network interfaces, or just build the site and don
 
 ```bash
 # Specify custom output directory
-uvx align-browser ../experiments --output-dir ./demo-site
+uvx align-browser ./experiment-data --output-dir ./demo-site
 
 # Build and serve on custom port
-uvx align-browser ../experiments --port 3000
+uvx align-browser ./experiment-data --port 3000
 
 # Build and serve on all network interfaces
-uvx align-browser ../experiments --host 0.0.0.0
+uvx align-browser ./experiment-data --host 0.0.0.0
 
 # Build only without serving
-uvx align-browser ../experiments --build-only
+uvx align-browser ./experiment-data --build-only
 ```
 
 ### Expected Directory Structure
@@ -78,7 +78,7 @@ For active development of the HTML/CSS/JavaScript:
 
 ```bash
 # Development mode: edit files in align-browser-site/ directory directly
-uv run align-browser ../experiments --dev
+uv run align-browser ./experiment-data/phase2_june --dev
 ```
 
 Edit align-browser-site/index.html, align-browser-site/app.js, align-browser-site/style.css and refresh browser to see changes immediately.
