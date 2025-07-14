@@ -28,9 +28,20 @@ uvx align-browser ./experiment-data --host 0.0.0.0
 uvx align-browser ./experiment-data --build-only
 ```
 
-### Expected Directory Structure
+### Directory Structure
 
-The experiments directory should be the root containing pipeline directories (e.g., `pipeline_baseline`, `pipeline_random`), not an individual pipeline directory.
+The build system supports **flexible directory structures** and will recursively search for valid experiment directories at any depth. You can point it to any directory containing experiment data, regardless of how it's organized.
+
+#### Required Files Per Experiment
+
+Each experiment directory must contain:
+
+- `.hydra/config.yaml` - Hydra configuration file
+- `input_output.json` - Experiment input/output data
+- `scores.json` - Scoring results
+- `timing.json` - Timing information
+
+**Example Structure:**
 
 ```
 experiments/
@@ -49,15 +60,17 @@ experiments/
     └── ...
 ```
 
-The build.py script will search for:
+#### Automatic Filtering
 
-- Pipeline directories at the root level
-- KDMA experiment directories within each pipeline (identified by presence of `input_output.json`)
-- Required files: `.hydra/config.yaml`, `input_output.json`
+The build system will automatically:
+
+- **Recursively search** through all subdirectories
+- **Skip directories** containing `OUTDATED` in their path (case-insensitive)
+- **Only process directories** that contain all required files
 
 ### Sharing Results
 
-The browser application stores the current selection state in the URL, making it easy to share specific views:
+The browser application stores the current selection state in the URL so you can:
 
 - **Share a specific scenario**: URLs automatically update when you select different pipelines, KDMAs, or experiments
 - **Bookmark results**: Save URLs to return to specific experiment comparisons
@@ -78,7 +91,7 @@ For active development of the HTML/CSS/JavaScript:
 
 ```bash
 # Development mode: edit files in align-browser-site/ directory directly
-uv run align-browser ./experiment-data/phase2_june --dev
+uv run align-browser --dev ./experiment-data/phase2_june
 ```
 
 Edit align-browser-site/index.html, align-browser-site/app.js, align-browser-site/style.css and refresh browser to see changes immediately.

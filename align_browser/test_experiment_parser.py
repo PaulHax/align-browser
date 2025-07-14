@@ -266,6 +266,63 @@ def test_parse_experiments_directory():
         assert experiments[0].key == "pipeline_random_llama3.3-70b_affiliation-0.5"
 
 
+def test_parse_experiments_directory_excludes_outdated():
+    """Test that parse_experiments_directory correctly excludes OUTDATED directories."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Create experiments structure
+        experiments_root = temp_path / "experiments"
+        experiments_root.mkdir()
+
+        # Create a valid experiment directory
+        pipeline_dir = experiments_root / "pipeline_test"
+        pipeline_dir.mkdir()
+
+        valid_experiment = pipeline_dir / "affiliation-0.5"
+        valid_experiment.mkdir()
+        hydra_dir = valid_experiment / ".hydra"
+        hydra_dir.mkdir()
+
+        # Create required files for valid experiment
+        config_data = create_sample_config_data()
+        with open(hydra_dir / "config.yaml", "w") as f:
+            yaml.dump(config_data, f)
+        with open(valid_experiment / "input_output.json", "w") as f:
+            json.dump(create_sample_input_output_data(), f)
+        with open(valid_experiment / "scores.json", "w") as f:
+            json.dump(create_sample_scores_data(), f)
+        with open(valid_experiment / "timing.json", "w") as f:
+            json.dump(create_sample_timing_data(), f)
+
+        # Create OUTDATED experiment directory with all required files
+        outdated_experiment = pipeline_dir / "OUTDATED-affiliation-0.5"
+        outdated_experiment.mkdir()
+        outdated_hydra_dir = outdated_experiment / ".hydra"
+        outdated_hydra_dir.mkdir()
+
+        # Create required files for OUTDATED experiment (same structure)
+        with open(outdated_hydra_dir / "config.yaml", "w") as f:
+            yaml.dump(config_data, f)
+        with open(outdated_experiment / "input_output.json", "w") as f:
+            json.dump(create_sample_input_output_data(), f)
+        with open(outdated_experiment / "scores.json", "w") as f:
+            json.dump(create_sample_scores_data(), f)
+        with open(outdated_experiment / "timing.json", "w") as f:
+            json.dump(create_sample_timing_data(), f)
+
+        # Test parsing - should only find the valid experiment, not the OUTDATED one
+        experiments = parse_experiments_directory(experiments_root)
+        assert len(experiments) == 1, f"Expected 1 experiment, found {len(experiments)}"
+        assert experiments[0].key == "pipeline_random_llama3.3-70b_affiliation-0.5"
+
+        # Verify the OUTDATED experiment was actually excluded
+        experiment_paths = [str(exp.experiment_path) for exp in experiments]
+        assert not any("OUTDATED" in path for path in experiment_paths), (
+            f"OUTDATED experiment was not filtered out: {experiment_paths}"
+        )
+
+
 def test_build_manifest_from_experiments():
     """Test building manifest from experiments."""
     with tempfile.TemporaryDirectory() as temp_dir:
