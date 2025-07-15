@@ -43,6 +43,9 @@ def test_build_script():
         print("⏭️ Skipping build test - experiments directory not available")
         return
 
+    # Get project root for running the build script
+    project_root = test_file_dir.parent
+
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         print(f"🔍 Using temporary directory: {temp_path}")
@@ -57,11 +60,12 @@ def test_build_script():
                 f"Virtual environment python not found at: {venv_python}"
             )
 
-            # Run build script with output directed to temp directory
+            # Run build script as module with output directed to temp directory
             result = subprocess.run(
                 [
                     str(venv_python),
-                    str(build_script),
+                    "-m",
+                    "align_browser.build",
                     str(experiments_path),
                     "--output-dir",
                     str(temp_path / "dist"),
@@ -69,6 +73,7 @@ def test_build_script():
                 capture_output=True,
                 text=True,
                 timeout=60,  # 60 second timeout
+                cwd=project_root,  # Run from project root for proper imports
             )
 
             assert result.returncode == 0, (
@@ -112,6 +117,7 @@ def test_build_output_location():
     """Test that build script creates dist directory in current working directory."""
     # Get the directory where this test file is located
     test_file_dir = Path(__file__).parent
+    project_root = test_file_dir.parent
 
     # Assume build.py is in the same directory as this test file
     build_script = test_file_dir / "build.py"
@@ -144,10 +150,11 @@ def test_build_output_location():
             venv_python = test_file_dir / "../../.venv/bin/python"
 
             result = subprocess.run(
-                [str(venv_python), str(build_script), str(experiments_path)],
+                [str(venv_python), "-m", "align_browser.build", str(experiments_path)],
                 capture_output=True,
                 text=True,
                 timeout=60,
+                cwd=project_root,  # Run from project root for proper imports
             )
 
             assert result.returncode == 0, (

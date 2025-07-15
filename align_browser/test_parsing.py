@@ -48,10 +48,12 @@ def test_build_manifest():
     experiments = parse_experiments_directory(experiments_root)
     manifest = build_manifest_from_experiments(experiments, experiments_root)
 
-    print(f"✅ Built manifest with {len(manifest)} unique experiment configurations")
+    print(
+        f"✅ Built manifest with {len(manifest.experiment_keys)} unique experiment configurations"
+    )
 
     # Check manifest structure
-    for key, value in list(manifest.items())[:3]:  # Show first 3
+    for key, value in list(manifest.experiment_keys.items())[:3]:  # Show first 3
         scenarios = value.get("scenarios", {})
         print(f"📋 Config '{key}' has {len(scenarios)} scenarios")
 

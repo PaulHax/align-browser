@@ -664,7 +664,7 @@ def test_end_to_end_build_process():
         sys.path.insert(0, ".")
 
         try:
-            from build import main
+            from align_browser.build import main
             import json
 
             # Mock sys.argv for build script
