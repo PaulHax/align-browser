@@ -1082,7 +1082,6 @@ document.addEventListener("DOMContentLoaded", () => {
       appState = updateCurrentData(appState, {
         inputOutput: null,
         inputOutputArray: null,
-        scores: null,
         timing: null
       });
       updateComparisonDisplay(); // Update table with no scenario state
@@ -1106,7 +1105,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const dataPaths = experiments[selectedKey].scenarios[appState.selectedScenario];
       try {
         const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
-        const scoresArray = await (await fetch(dataPaths.scores)).json();
         const timingData = await (await fetch(dataPaths.timing)).json();
 
         // Extract the index from the scenario ID (e.g., "test_scenario_1-0" → 0)
@@ -1114,7 +1112,6 @@ document.addEventListener("DOMContentLoaded", () => {
         
         // Get the specific element from each array using the index
         const inputOutputItem = inputOutputArray[scenarioIndex];
-        const scoreItem = Array.isArray(scoresArray) ? scoresArray[0] : scoresArray;
 
         // Helper function to format complex data structures cleanly
         const formatValue = (value, depth = 0) => {
@@ -1180,12 +1177,9 @@ document.addEventListener("DOMContentLoaded", () => {
         appState = updateCurrentData(appState, {
           inputOutput: inputOutputItem,
           inputOutputArray: inputOutputArray,
-          scores: scoreItem,
           timing: timingData
         });
           
-        // Update scores and timing in parameters section
-        updateScoresTimingSection(scoreItem, timingData);
         
         // Update comparison display (always-on table mode)
         updateComparisonDisplay();
@@ -1197,8 +1191,7 @@ document.addEventListener("DOMContentLoaded", () => {
         appState = updateCurrentData(appState, {
           inputOutput: null,
           inputOutputArray: null,
-          scores: null,
-          timing: null
+            timing: null
         });
           updateComparisonDisplay(); // Update table with error state
       }
@@ -1231,22 +1224,18 @@ document.addEventListener("DOMContentLoaded", () => {
         const dataPaths = experiments[fallbackKey].scenarios[appState.selectedScenario];
         try {
           const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
-          const scoresArray = await (await fetch(dataPaths.scores)).json();
           const timingData = await (await fetch(dataPaths.timing)).json();
 
           const scenarioIndex = parseInt(appState.selectedScenario.split('-').pop());
           const inputOutputItem = inputOutputArray[scenarioIndex];
-          const scoreItem = Array.isArray(scoresArray) ? scoresArray[0] : scoresArray;
 
           appState = updateCurrentData(appState, {
             inputOutput: inputOutputItem,
             inputOutputArray: inputOutputArray,
-            scores: scoreItem,
-            timing: timingData
+              timing: timingData
           });
 
           updateComparisonDisplay();
-          updateScoresTimingSection(scoreItem, timingData);
           return;
         } catch (error) {
           console.error("Error fetching fallback experiment data:", error);
@@ -1258,39 +1247,11 @@ document.addEventListener("DOMContentLoaded", () => {
       
       // Clear current data when no data found
       appState.currentInputOutput = null;
-      appState.currentScores = null;
       appState.currentTiming = null;
       updateComparisonDisplay(); // Update table with no data state
     }
   }
 
-  // Function to update scores and timing in parameters section
-  function updateScoresTimingSection(scoreItem, timingData) {
-    const scoresTimingSection = document.getElementById('scores-timing-section');
-    if (!scoresTimingSection) return;
-    
-    let html = '';
-    
-    // Only show if we have data
-    if (scoreItem || timingData) {
-      html += '<div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #e9ecef;">';
-      html += '<h3 style="margin-bottom: 15px; color: #495057;">Results Summary</h3>';
-      
-      // Add Overall Score (on top)
-      if (scoreItem && scoreItem.score !== undefined) {
-        html += `<div style="margin: 8px 0;"><strong>Score:</strong> ${formatScoreValue(scoreItem.score)}</div>`;
-      }
-      
-      // Add Average Decision Time
-      if (timingData && timingData.avg_time_s !== undefined) {
-        html += `<div style="margin: 8px 0;"><strong>Average Decision Time:</strong> ${timingData.avg_time_s.toFixed(4)}s</div>`;
-      }
-      
-      html += '</div>';
-    }
-    
-    scoresTimingSection.innerHTML = html;
-  }
 
   // Pure function to load experiment data for any parameter combination
   async function loadExperimentData(scenario, admType, llmBackbone, kdmas, runVariant = null) {
@@ -1298,7 +1259,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return {
         inputOutput: null,
         inputOutputArray: null,
-        scores: null,
         timing: null,
         error: 'No scenario provided'
       };
@@ -1323,7 +1283,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const dataPaths = experiments[experimentKey].scenarios[scenario];
       try {
         const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
-        const scoresArray = await (await fetch(dataPaths.scores)).json();
         const timingData = await (await fetch(dataPaths.timing)).json();
 
         // Extract the index from the scenario ID (e.g., "test_scenario_1-0" → 0)
@@ -1331,12 +1290,10 @@ document.addEventListener("DOMContentLoaded", () => {
         
         // Get the specific element from each array using the index
         const inputOutputItem = inputOutputArray[scenarioIndex];
-        const scoreItem = Array.isArray(scoresArray) ? scoresArray[0] : scoresArray;
 
         return {
           inputOutput: inputOutputItem,
           inputOutputArray: inputOutputArray,
-          scores: scoreItem,
           timing: timingData,
           experimentKey: experimentKey,
           error: null
@@ -1346,8 +1303,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return {
           inputOutput: null,
           inputOutputArray: null,
-          scores: null,
-          timing: null,
+            timing: null,
           experimentKey: experimentKey,
           error: error.message
         };
@@ -1373,18 +1329,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const dataPaths = experiments[fallbackKey].scenarios[scenario];
         try {
           const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
-          const scoresArray = await (await fetch(dataPaths.scores)).json();
           const timingData = await (await fetch(dataPaths.timing)).json();
 
           const scenarioIndex = parseInt(scenario.split('-').pop());
           const inputOutputItem = inputOutputArray[scenarioIndex];
-          const scoreItem = Array.isArray(scoresArray) ? scoresArray[0] : scoresArray;
 
           return {
             inputOutput: inputOutputItem,
             inputOutputArray: inputOutputArray,
-            scores: scoreItem,
-            timing: timingData,
+              timing: timingData,
             experimentKey: fallbackKey, // Return the actual key used
             error: null
           };
@@ -1404,7 +1357,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return {
         inputOutput: null,
         inputOutputArray: null,
-        scores: null,
         timing: null,
         experimentKey: experimentKey,
         error: `No experiment data found for ${experimentKey} with scenario ${scenario}`
@@ -1436,7 +1388,6 @@ document.addEventListener("DOMContentLoaded", () => {
       ...runConfig,
       inputOutput: appState.currentInputOutput,
       inputOutputArray: appState.currentInputOutputArray,
-      scores: appState.currentScores,
       timing: appState.currentTiming,
       loadStatus: 'loaded'
     };
@@ -1468,8 +1419,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ...runConfig,
         inputOutput: appState.currentInputOutput,
         inputOutputArray: appState.currentInputOutputArray,
-        scores: appState.currentScores,
-        timing: appState.currentTiming,
+          timing: appState.currentTiming,
         loadStatus: 'loaded'
       };
       
@@ -1481,7 +1431,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const pinnedData = {
         ...runConfig,
         inputOutput: null,
-        scores: null,
         timing: null,
         loadStatus: 'error'
       };
@@ -1543,7 +1492,6 @@ document.addEventListener("DOMContentLoaded", () => {
         run.experimentKey = experimentData.experimentKey;
         run.inputOutput = experimentData.inputOutput;
         run.inputOutputArray = experimentData.inputOutputArray;
-        run.scores = experimentData.scores;
         run.timing = experimentData.timing;
         run.loadStatus = 'loaded';
         
@@ -2071,10 +2019,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return typeof value === 'number' ? value.toFixed(1) : value;
   }
 
-  // Format score value consistently across the application
-  function formatScoreValue(value) {
-    return typeof value === 'number' ? value.toFixed(3) : value.toString();
-  }
 
   // Generate experiment key from parameters (shared utility function)
   function buildExperimentKey(admType, llmBackbone, kdmas) {
@@ -2267,7 +2211,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     switch (type) {
       case 'number':
-        return formatScoreValue(value);
+        return typeof value === 'number' ? value.toFixed(3) : value.toString();
       
       case 'longtext':
         if (typeof value === 'string' && value.length > 800) {
@@ -2462,8 +2406,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ...runConfig,
         inputOutput: appState.currentInputOutput,
         inputOutputArray: appState.currentInputOutputArray,
-        scores: appState.currentScores,
-        timing: appState.currentTiming,
+          timing: appState.currentTiming,
         loadStatus: 'loaded'
       };
       
