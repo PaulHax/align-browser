@@ -154,6 +154,10 @@ def main():
 
     experiments_root = Path(args.experiments).resolve()
 
+    if not experiments_root.exists():
+        print(f"Error: Experiments directory does not exist: {experiments_root}")
+        exit(1)
+
     # Determine output directory based on mode
     if args.dev:
         # Development mode: use static/ directory for live editing
