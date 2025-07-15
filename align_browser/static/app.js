@@ -825,6 +825,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // Update base scenario with validation through central system
     updateParameterForRun(runId, 'baseScenario', newBaseScenario);
     
+    // After scenario change, validate and potentially reset KDMAs
+    await validateKDMAsForScenarioChange(runId);
+    
     // Reload data for this specific run
     await reloadPinnedRun(runId);
     
@@ -839,12 +842,67 @@ document.addEventListener("DOMContentLoaded", () => {
     // Update scenario with validation through central system
     updateParameterForRun(runId, 'scenario', newScenario);
     
+    // After scenario change, validate and potentially reset KDMAs
+    await validateKDMAsForScenarioChange(runId);
+    
     // Reload data for this specific run
     await reloadPinnedRun(runId);
     
     // Update URL state
     urlState.updateURL();
   };
+
+  // Validate KDMAs after scenario change and reset if necessary
+  async function validateKDMAsForScenarioChange(runId) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return;
+
+    // Check if current KDMA configuration is valid for the new scenario
+    const currentParams = getParametersForRun(runId);
+    const baseKey = buildExperimentKey(currentParams.admType, currentParams.llmBackbone, currentParams.kdmas);
+    
+    // Check if this combination exists for the current scenario
+    const experimentExists = Object.keys(manifest.experiment_keys || {}).some(key => {
+      if (key === baseKey || key.startsWith(baseKey + '_')) {
+        const experiment = manifest.experiment_keys[key];
+        return experiment && experiment.scenarios && experiment.scenarios[currentParams.scenario];
+      }
+      return false;
+    });
+
+    if (!experimentExists) {
+      console.log(`Current KDMA configuration not valid for scenario ${currentParams.scenario}, resetting KDMAs`);
+      
+      // Get first valid KDMA combination for this scenario+ADM+LLM
+      const constraints = {
+        scenario: currentParams.scenario,
+        admType: currentParams.admType,
+        llmBackbone: currentParams.llmBackbone
+      };
+      
+      const validOptions = getValidOptionsForConstraints(constraints);
+      
+      if (Object.keys(validOptions.kdmas).length > 0) {
+        // Build first valid KDMA combination
+        const newKDMAs = {};
+        for (const [kdmaName, kdmaValues] of Object.entries(validOptions.kdmas)) {
+          if (kdmaValues.size > 0) {
+            newKDMAs[kdmaName] = Array.from(kdmaValues)[0];
+          }
+        }
+        
+        console.log(`Resetting to valid KDMA configuration:`, newKDMAs);
+        
+        // Update both run state and column parameters
+        run.kdmaValues = newKDMAs;
+        currentParams.kdmas = newKDMAs;
+        columnParameters.set(runId, createParameterStructure(currentParams));
+        
+        // Update comparison display to show new KDMA controls
+        updateComparisonDisplay();
+      }
+    }
+  }
 
   // Handle adding KDMA to pinned run - global for onclick access
   window.addKDMAToRun = function(runId) {
