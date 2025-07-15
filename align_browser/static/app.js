@@ -1826,9 +1826,17 @@ document.addEventListener("DOMContentLoaded", () => {
         hasExactMatch = true;
         availableVariants.add('default');
       } else if (experimentKey.startsWith(baseKey + '_')) {
-        // Extract run variant from the key
+        // Extract potential run variant from the key
         const suffix = experimentKey.substring(baseKey.length + 1); // Remove base key and underscore
-        availableVariants.add(suffix);
+        
+        // Only consider as run variant if it's NOT a KDMA extension
+        // KDMA extensions follow pattern: kdma-value (e.g., merit-0.0, affiliation-1.0)
+        // Run variants are typically words/phrases (e.g., greedy_w_cache, rerun)
+        const isKDMAExtension = /^[a-z_]+-(0\.?\d*|1\.0?)$/.test(suffix);
+        
+        if (!isKDMAExtension) {
+          availableVariants.add(suffix);
+        }
       }
     }
     
