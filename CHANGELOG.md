@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0](https://github.com/PaulHax/align-browser/compare/v0.2.1...v0.3.0) (2025-07-15)
+
+
+### Features
+
+* add comprehensive CI workflow for lint and tests ([826dedf](https://github.com/PaulHax/align-browser/commit/826dedf037db5979b9e585d252669f387b4679f2))
+* add recursive experiment directory parsing with OUTDATED filtering ([0234a2b](https://github.com/PaulHax/align-browser/commit/0234a2bf7bbc6668c424c8ce91b38088553ef563))
+* improve UI styling and KDMA labeling ([ca149fc](https://github.com/PaulHax/align-browser/commit/ca149fcff272d09d3eded15b4b7bc0f6d90f3fdf))
+
+
+### Bug Fixes
+
+* add directory existence check in build.py ([06dba34](https://github.com/PaulHax/align-browser/commit/06dba3493d0fbd7cbb364240b15d83bb9e9fec9c))
+* **build:** free the network port faster ([a9f9f8f](https://github.com/PaulHax/align-browser/commit/a9f9f8fdf3902c943a73e968a05442ec1445584f))
+* **build:** in dev mode serve from static directory ([d1e69f6](https://github.com/PaulHax/align-browser/commit/d1e69f6ccb6ca9a5ce4024804b3444286f10204a))
+* KDMA default value issue for pipeline_baseline multi-KDMA combinations ([9d5e85d](https://github.com/PaulHax/align-browser/commit/9d5e85d409600581bf530811d9b30b42a586a13b))
+* KDMA delete button asymmetric behavior and slider race conditions ([d16ff56](https://github.com/PaulHax/align-browser/commit/d16ff56e8bf7979ea6342979434597276eeb2ed9))
+* make tests completely deterministic ([e72fff3](https://github.com/PaulHax/align-browser/commit/e72fff34af7d2040adf87e0bc7d95449328aa775))
+
 ## [0.2.1](https://github.com/PaulHax/align-browser/compare/v0.2.0...v0.2.1) (2025-07-11)
 
 
