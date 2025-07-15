@@ -140,7 +140,8 @@ document.addEventListener("DOMContentLoaded", () => {
       'admType': 'admType',
       'llmBackbone': 'llmBackbone',
       'llm': 'llmBackbone', // alias
-      'kdmas': 'kdmas'
+      'kdmas': 'kdmas',
+      'runVariant': 'runVariant'
     };
     
     const paramField = paramMap[paramType] || paramType;
@@ -439,7 +440,8 @@ document.addEventListener("DOMContentLoaded", () => {
           baseScenario: firstScenario.replace(/-\d+$/, ""),
           admType: Array.from(allValidOptions.admTypes)[0],
           llmBackbone: Array.from(allValidOptions.llmBackbones)[0],
-          kdmas: {}
+          kdmas: {},
+          runVariant: constraints.runVariant || null
         };
       }
     }
@@ -449,7 +451,8 @@ document.addEventListener("DOMContentLoaded", () => {
       baseScenario: constraints.baseScenario || appState.selectedBaseScenario,
       admType: constraints.admType || appState.selectedAdmType,
       llmBackbone: constraints.llmBackbone || appState.selectedLLM,
-      kdmas: constraints.kdmas || { ...appState.activeKDMAs }
+      kdmas: constraints.kdmas || { ...appState.activeKDMAs },
+      runVariant: constraints.runVariant || appState.selectedRunVariant || null
     };
     
     // If current combination is already valid, return it
@@ -520,7 +523,8 @@ document.addEventListener("DOMContentLoaded", () => {
               baseScenario: currentParams.scenario.replace(/-\d+$/, ""),
               admType: selectedADM,
               llmBackbone: selectedLLM,
-              kdmas: correctedKDMAs
+              kdmas: correctedKDMAs,
+              runVariant: currentParams.runVariant
             };
           }
         }
@@ -584,7 +588,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 baseScenario: scenario.replace(/-\d+$/, ""),
                 admType,
                 llmBackbone,
-                kdmas: currentParams.kdmas
+                kdmas: currentParams.kdmas,
+                runVariant: currentParams.runVariant
               };
             }
           }
@@ -645,7 +650,8 @@ document.addEventListener("DOMContentLoaded", () => {
             baseScenario: selectedScenario.replace(/-\d+$/, ""),
             admType: currentParams.admType,
             llmBackbone: selectedLLM,
-            kdmas: { [firstKDMA]: firstValue }
+            kdmas: { [firstKDMA]: firstValue },
+            runVariant: currentParams.runVariant
           };
         }
       }
@@ -673,7 +679,8 @@ document.addEventListener("DOMContentLoaded", () => {
           baseScenario: firstValidScenario.replace(/-\d+$/, ""),
           admType: firstValidADM,
           llmBackbone: firstValidLLM,
-          kdmas: {}
+          kdmas: {},
+          runVariant: currentParams.runVariant
         };
         
         if (Object.keys(kdmaOptions.kdmas).length > 0) {
@@ -753,6 +760,26 @@ document.addEventListener("DOMContentLoaded", () => {
         updateParameterForRun(runId, 'llmBackbone', run.llmPreferences[newADM]);
       }
     }
+    
+    // Reload data for this specific run
+    await reloadPinnedRun(runId);
+    
+    // Update URL state
+    urlState.updateURL();
+  };
+
+  // Handle run variant change for pinned runs - global for onclick access
+  window.handleRunVariantChange = async function(runId, newVariant) {
+    console.log(`Changing run variant for run ${runId} to ${newVariant}`);
+    
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) {
+      console.warn(`Run ${runId} not found`);
+      return;
+    }
+    
+    // Update run variant with validation
+    updateParameterForRun(runId, 'runVariant', newVariant === 'default' ? null : newVariant);
     
     // Reload data for this specific run
     await reloadPinnedRun(runId);
@@ -1102,8 +1129,58 @@ document.addEventListener("DOMContentLoaded", () => {
           updateComparisonDisplay(); // Update table with error state
       }
     } else {
+      // Try to find a fallback experiment key with run variant
+      let fallbackKey = null;
+      
+      // Look for keys that start with the base pattern
+      const availableKeys = Object.keys(experiments);
+      const basePattern = selectedKey;
+      
+      // First, try to find exact match with available variants
+      for (const key of availableKeys) {
+        if (key.startsWith(basePattern + '_') && experiments[key].scenarios[appState.selectedScenario]) {
+          fallbackKey = key;
+          break;
+        }
+      }
+      
+      if (fallbackKey) {
+        console.log(`Using fallback key: ${fallbackKey} for requested key: ${selectedKey}`);
+        
+        // Auto-update the app state to use the run variant found
+        const variantSuffix = fallbackKey.substring(basePattern.length + 1);
+        if (variantSuffix) {
+          appState.selectedRunVariant = variantSuffix;
+          console.log(`Auto-selected run variant: ${variantSuffix}`);
+        }
+        
+        const dataPaths = experiments[fallbackKey].scenarios[appState.selectedScenario];
+        try {
+          const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
+          const scoresArray = await (await fetch(dataPaths.scores)).json();
+          const timingData = await (await fetch(dataPaths.timing)).json();
+
+          const scenarioIndex = parseInt(appState.selectedScenario.split('-').pop());
+          const inputOutputItem = inputOutputArray[scenarioIndex];
+          const scoreItem = Array.isArray(scoresArray) ? scoresArray[0] : scoresArray;
+
+          appState = updateCurrentData(appState, {
+            inputOutput: inputOutputItem,
+            inputOutputArray: inputOutputArray,
+            scores: scoreItem,
+            timing: timingData
+          });
+
+          updateComparisonDisplay();
+          updateScoresTimingSection(scoreItem, timingData);
+          return;
+        } catch (error) {
+          console.error("Error fetching fallback experiment data:", error);
+        }
+      }
       
       // No data message will be displayed in the table
+      console.warn(`No data found for key: ${selectedKey}, scenario: ${appState.selectedScenario}`);
       
       // Clear current data when no data found
       appState.currentInputOutput = null;
@@ -1142,7 +1219,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Pure function to load experiment data for any parameter combination
-  async function loadExperimentData(scenario, admType, llmBackbone, kdmas) {
+  async function loadExperimentData(scenario, admType, llmBackbone, kdmas, runVariant = null) {
     if (!scenario) {
       return {
         inputOutput: null,
@@ -1154,7 +1231,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Generate experiment key from parameters using shared utility
-    const experimentKey = buildExperimentKey(admType, llmBackbone, kdmas);
+    let experimentKey = buildExperimentKey(admType, llmBackbone, kdmas);
+    
+    // Add run variant if provided
+    if (runVariant) {
+      experimentKey += `_${runVariant}`;
+    }
 
     console.log("Loading experiment data:", experimentKey, "Scenario:", scenario);
 
@@ -1197,13 +1279,53 @@ document.addEventListener("DOMContentLoaded", () => {
         };
       }
     } else {
+      // Try to find a fallback experiment key with run variant
+      let fallbackKey = null;
+      
+      // Look for keys that start with the base pattern
+      const availableKeys = Object.keys(experiments);
+      const basePattern = experimentKey;
+      
+      // First, try to find exact match with available variants
+      for (const key of availableKeys) {
+        if (key.startsWith(basePattern + '_') && experiments[key].scenarios[scenario]) {
+          fallbackKey = key;
+          break;
+        }
+      }
+      
+      if (fallbackKey) {
+        console.log(`Using fallback key: ${fallbackKey} for requested key: ${experimentKey}`);
+        const dataPaths = experiments[fallbackKey].scenarios[scenario];
+        try {
+          const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
+          const scoresArray = await (await fetch(dataPaths.scores)).json();
+          const timingData = await (await fetch(dataPaths.timing)).json();
+
+          const scenarioIndex = parseInt(scenario.split('-').pop());
+          const inputOutputItem = inputOutputArray[scenarioIndex];
+          const scoreItem = Array.isArray(scoresArray) ? scoresArray[0] : scoresArray;
+
+          return {
+            inputOutput: inputOutputItem,
+            inputOutputArray: inputOutputArray,
+            scores: scoreItem,
+            timing: timingData,
+            experimentKey: fallbackKey, // Return the actual key used
+            error: null
+          };
+        } catch (error) {
+          console.error("Error fetching fallback experiment data:", error);
+        }
+      }
+      
       // Generate debug information to help identify the issue
-      const availableKeys = Object.keys(experiments).filter(key => 
+      const similarKeys = Object.keys(experiments).filter(key => 
         key.startsWith(`${experimentKey.split('_')[0]}_${experimentKey.split('_')[1]}_`)
       );
       
       console.warn(`No data found for key: ${experimentKey}, scenario: ${scenario}`);
-      console.warn(`Available similar keys:`, availableKeys);
+      console.warn(`Available similar keys:`, similarKeys);
       
       return {
         inputOutput: null,
@@ -1325,19 +1447,25 @@ document.addEventListener("DOMContentLoaded", () => {
         params.scenario,
         params.admType,
         params.llmBackbone,
-        params.kdmas
+        params.kdmas,
+        params.runVariant
       );
+      
+      // Always update run parameters to reflect the intended state
+      run.scenario = params.scenario;
+      run.baseScenario = params.baseScenario;
+      run.admType = params.admType;
+      run.llmBackbone = params.llmBackbone;
+      run.runVariant = params.runVariant;
+      run.kdmaValues = { ...params.kdmas };
       
       if (experimentData.error) {
         console.error(`Failed to load data for run ${runId}:`, experimentData.error);
         run.loadStatus = 'error';
+        // Keep existing data but update parameters
+        run.experimentKey = experimentData.experimentKey || run.experimentKey;
       } else {
-        // Update pinned run data with new results
-        run.scenario = params.scenario;
-        run.baseScenario = params.baseScenario;
-        run.admType = params.admType;
-        run.llmBackbone = params.llmBackbone;
-        run.kdmaValues = { ...params.kdmas };
+        // Update with new results
         run.experimentKey = experimentData.experimentKey;
         run.inputOutput = experimentData.inputOutput;
         run.inputOutputArray = experimentData.inputOutputArray;
@@ -1350,6 +1478,14 @@ document.addEventListener("DOMContentLoaded", () => {
       
     } catch (error) {
       console.error(`Failed to reload data for run ${runId}:`, error);
+      
+      // Even on exception, update run parameters to reflect the intended state
+      run.scenario = params.scenario;
+      run.baseScenario = params.baseScenario;
+      run.admType = params.admType;
+      run.llmBackbone = params.llmBackbone;
+      run.runVariant = params.runVariant;
+      run.kdmaValues = { ...params.kdmas };
       run.loadStatus = 'error';
     } finally {
       // Clear the reloading flag
@@ -1486,6 +1622,7 @@ document.addEventListener("DOMContentLoaded", () => {
     parameters.set("kdma_values", { type: "kdma_values", required: false });
     parameters.set("adm_type", { type: "string", required: true });
     parameters.set("llm_backbone", { type: "string", required: true });
+    parameters.set("run_variant", { type: "string", required: false });
     
     // ADM Decision (using Pydantic model structure)
     parameters.set("adm_decision", { type: "text", required: false });
@@ -1509,6 +1646,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (paramName === 'scenario') return run.scenario || 'N/A';
     if (paramName === 'adm_type') return run.admType || 'N/A';
     if (paramName === 'llm_backbone') return run.llmBackbone || 'N/A';
+    if (paramName === 'run_variant') return run.runVariant || 'N/A';
     
     // KDMA Values - single row showing all KDMA values
     if (paramName === 'kdma_values') {
@@ -1659,6 +1797,73 @@ document.addEventListener("DOMContentLoaded", () => {
     matchingScenarios.forEach(scenario => {
       const selected = scenario === currentValue ? 'selected' : '';
       html += `<option value="${escapeHtml(scenario)}" ${selected}>${escapeHtml(scenario)}</option>`;
+    });
+    html += '</select>';
+    
+    return html;
+  }
+
+  // Create dropdown HTML for run variant selection in table cells
+  function createRunVariantDropdownForRun(runId, currentValue) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run) return escapeHtml(currentValue);
+    
+    // Use the run's actual runVariant instead of the passed currentValue
+    // This ensures we show the correct selection after parameter updates
+    const actualCurrentValue = run.runVariant;
+    
+    
+    // Get available run variants for the current ADM+LLM+KDMA combination
+    // Use the same buildExperimentKey function that's used throughout the app
+    const baseKey = buildExperimentKey(run.admType, run.llmBackbone, run.kdmaValues);
+    
+    // Find all experiment keys that match this base pattern
+    const availableVariants = new Set();
+    let hasExactMatch = false;
+    
+    for (const experimentKey of Object.keys(manifest.experiment_keys || {})) {
+      if (experimentKey === baseKey) {
+        hasExactMatch = true;
+        availableVariants.add('default');
+      } else if (experimentKey.startsWith(baseKey + '_')) {
+        // Extract run variant from the key
+        const suffix = experimentKey.substring(baseKey.length + 1); // Remove base key and underscore
+        availableVariants.add(suffix);
+      }
+    }
+    
+    // If no exact match for base key, don't add default option
+    // Just show available variants without auto-selection
+    
+    // Add default option only if base key exists without variant
+    if (hasExactMatch) {
+      availableVariants.add('default');
+    }
+    
+    // If no variants found, try to extract from the current run's experiment key
+    if (availableVariants.size === 0) {
+      // Try to extract run variant from the current experiment key being used
+      if (run.experimentKey && run.experimentKey.startsWith(baseKey + '_')) {
+        const extractedVariant = run.experimentKey.substring(baseKey.length + 1);
+        return escapeHtml(extractedVariant);
+      }
+      return escapeHtml(actualCurrentValue || 'N/A');
+    }
+    
+    // If only one variant, show it without dropdown
+    if (availableVariants.size === 1) {
+      const variant = Array.from(availableVariants)[0];
+      const displayValue = variant === 'default' ? '(default)' : variant;
+      return escapeHtml(displayValue);
+    }
+    
+    const sortedVariants = Array.from(availableVariants).sort();
+    
+    let html = `<select class="table-run-variant-select" onchange="handleRunVariantChange('${runId}', this.value)">`;
+    sortedVariants.forEach(variant => {
+      const selected = variant === actualCurrentValue ? 'selected' : '';
+      const displayValue = variant === 'default' ? '(default)' : variant;
+      html += `<option value="${escapeHtml(variant)}" ${selected}>${escapeHtml(displayValue)}</option>`;
     });
     html += '</select>';
     
@@ -1950,6 +2155,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Format values for display in table cells
   function formatValue(value, type, paramName = '', runId = '') {
+    // Special handling for run_variant - always try to show dropdown if possible
+    if (runId !== 'current' && runId !== '' && paramName === 'run_variant') {
+      return createRunVariantDropdownForRun(runId, value);
+    }
+    
     if (value === null || value === undefined || value === 'N/A') {
       return '<span class="na-value">N/A</span>';
     }

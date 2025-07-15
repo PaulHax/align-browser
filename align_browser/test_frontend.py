@@ -22,6 +22,22 @@ def test_page_load(page, test_server):
     expect(page.locator(".comparison-table")).to_be_visible()
 
 
+def test_run_variant_row_present(page, test_server):
+    """Test that the run variant row is present in the UI."""
+    page.goto(test_server)
+
+    # Wait for page to load
+    page.wait_for_selector(".comparison-table", timeout=10000)
+
+    # Check that the run_variant parameter row exists
+    run_variant_row = page.locator("tr.parameter-row[data-category='run_variant']")
+    expect(run_variant_row).to_have_count(1, timeout=5000)
+
+    # Check that it has the correct label
+    run_variant_label = run_variant_row.locator(".parameter-name")
+    expect(run_variant_label).to_have_text("Run Variant")
+
+
 def test_manifest_loading(page, test_server):
     """Test that manifest.json loads and populates UI elements."""
     page.goto(test_server)
@@ -529,3 +545,106 @@ def test_initial_load_results_path(page, test_server):
     assert table_content.strip() != "", (
         "Comparison table should have content after initial load"
     )
+
+
+def test_run_variant_dropdown_functionality(page, test_server):
+    """Test that run_variant dropdown shows available variants when multiple runs exist."""
+    page.goto(test_server)
+
+    # Wait for page to load and auto-pin to happen
+    page.wait_for_selector(".comparison-table", timeout=10000)
+    page.wait_for_function(
+        "document.querySelectorAll('.table-adm-select').length > 0", timeout=10000
+    )
+
+    # Wait for initial auto-pin to complete
+    page.wait_for_function(
+        "document.querySelectorAll('.comparison-table tr').length > 2", timeout=5000
+    )
+
+    # Look for run variant row
+    run_variant_row = page.locator(".parameter-row[data-category='run_variant']")
+    expect(run_variant_row).to_be_visible()
+
+    # Check if run variant dropdown exists
+    run_variant_dropdown = page.locator(".table-run-variant-select")
+
+    # If dropdown exists, verify it has options
+    if run_variant_dropdown.count() > 0:
+        options = run_variant_dropdown.locator("option").all()
+        option_values = [
+            opt.get_attribute("value") for opt in options if opt.get_attribute("value")
+        ]
+
+        # Should have at least one option
+        assert len(option_values) > 0, "Run variant dropdown should have options"
+
+        # Test that selecting different variants works
+        if len(option_values) > 1:
+            # Get initial selected value
+            _ = run_variant_dropdown.first.input_value()
+
+            # Select first option and verify it's selected
+            run_variant_dropdown.first.select_option(option_values[0])
+            page.wait_for_load_state("networkidle")
+
+            # Wait for dropdown to stabilize after selection
+            page.wait_for_timeout(500)
+
+            # Check if dropdown still exists after first selection
+            if run_variant_dropdown.count() > 0:
+                first_selection = run_variant_dropdown.first.input_value()
+                assert first_selection == option_values[0], (
+                    f"First option should be selected, got {first_selection}"
+                )
+            else:
+                print("Dropdown disappeared after first selection")
+
+            # Select second option and verify it's selected
+            run_variant_dropdown.first.select_option(option_values[1])
+            page.wait_for_load_state("networkidle")
+
+            # Wait for dropdown to stabilize after selection
+            page.wait_for_timeout(1000)
+
+            # Check that dropdown still exists after second selection
+            updated_dropdown = page.locator(".table-run-variant-select")
+            assert updated_dropdown.count() > 0, (
+                "Dropdown should still exist after selecting second option"
+            )
+
+            # Verify second option is selected and persists
+            second_selection = updated_dropdown.first.input_value()
+            assert second_selection == option_values[1], (
+                f"Second option should be selected and persist, got {second_selection}"
+            )
+
+            # Check that the run variant cell doesn't show "N/A"
+            run_variant_cell = page.locator(
+                ".parameter-row[data-category='run_variant'] td"
+            ).nth(1)
+            cell_text = run_variant_cell.text_content()
+            assert "N/A" not in cell_text, (
+                f"Run variant cell should not show N/A, got: {cell_text}"
+            )
+
+            # Wait a bit more and check it's still selected (test for reversion)
+            page.wait_for_timeout(1000)
+            final_selection = updated_dropdown.first.input_value()
+            assert final_selection == option_values[1], (
+                f"Selection should persist, but reverted to {final_selection}"
+            )
+
+        print(f"Run variant dropdown has options: {option_values}")
+    else:
+        # If no dropdown, should show a static value
+        run_variant_cell = page.locator(
+            ".parameter-row[data-category='run_variant'] td"
+        ).nth(1)
+        cell_text = run_variant_cell.text_content()
+        print(f"Run variant shows static value: {cell_text}")
+
+        # Should not be empty
+        assert cell_text and cell_text.strip() != "", (
+            "Run variant should show some value"
+        )
