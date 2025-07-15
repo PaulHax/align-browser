@@ -1,37 +1,92 @@
 """Parser for experiment directory structures using Pydantic models."""
 
+import re
 from pathlib import Path
 from typing import List, Dict
 from align_browser.experiment_models import ExperimentData, GlobalManifest
 
 
-def _extract_run_variant(experiment_dir: Path, experiments_root: Path) -> str:
-    """Extract run variant from directory structure for distinguishing conflicting experiments."""
+def _extract_run_variant(
+    experiment_dir: Path, experiments_root: Path, all_conflicting_dirs: List[Path]
+) -> str:
+    """
+    Extract run variant from directory structure for distinguishing conflicting experiments.
+
+    Args:
+        experiment_dir: Path to the specific experiment directory
+        experiments_root: Root path of all experiments
+        all_conflicting_dirs: List of all directories that have conflicts (same ADM+LLM+KDMA)
+
+    Returns:
+        String representing the run variant, or empty string for default
+    """
     try:
         # Get the relative path from experiments_root
         relative_path = experiment_dir.relative_to(experiments_root)
         path_parts = relative_path.parts
 
-        # Look for meaningful run identifiers in the directory structure
+        # Skip KDMA configuration directories (contain dashes with numbers)
+        # Examples: merit-0.4, affiliation-0.0, personal_safety-0.5
+        def is_kdma_dir(dirname):
+            return bool(re.match(r"^[a-z_]+-(0\.\d+|1\.0|0)$", dirname))
+
+        # Find the ADM-level directory (first non-KDMA directory)
+        adm_dir = None
         for part in path_parts:
-            # Extract run variant patterns like "_rerun", "_original", "_test", etc.
-            if "_rerun" in part:
-                return "rerun"
-            elif "_original" in part or "original" in part:
-                return "original"
-            elif "_test" in part:
-                return "test"
+            if not is_kdma_dir(part):
+                adm_dir = part
+                break
 
-        # If no special patterns found, use the immediate parent directory name
-        # This handles cases like: combined_rerun/dir1/exp vs combined_rerun/dir2/exp
-        if len(path_parts) >= 2:
-            parent_dir = path_parts[-2]  # Directory containing the experiment
-            # Clean up common suffixes and make it more readable
-            if parent_dir.endswith("_rerun"):
-                return parent_dir[:-6]  # Remove "_rerun" suffix
-            return parent_dir
+        if not adm_dir:
+            return ""
 
-        return ""
+        # Extract ADM directories from all conflicting paths
+        conflicting_adm_dirs = set()
+        for conflict_dir in all_conflicting_dirs:
+            try:
+                conflict_relative = conflict_dir.relative_to(experiments_root)
+                conflict_parts = conflict_relative.parts
+                for part in conflict_parts:
+                    if not is_kdma_dir(part):
+                        conflicting_adm_dirs.add(part)
+                        break
+            except (ValueError, AttributeError):
+                continue
+
+        # If there's only one unique ADM directory, no variant needed
+        if len(conflicting_adm_dirs) <= 1:
+            return ""
+
+        # Find the common prefix among all conflicting ADM directories
+        adm_dir_list = sorted(conflicting_adm_dirs)
+        common_prefix = ""
+
+        if len(adm_dir_list) >= 2:
+            # Find longest common prefix
+            first_dir = adm_dir_list[0]
+            for i, char in enumerate(first_dir):
+                if all(i < len(d) and d[i] == char for d in adm_dir_list):
+                    common_prefix += char
+                else:
+                    break
+
+            # Remove trailing underscores
+            common_prefix = common_prefix.rstrip("_")
+
+        # Extract variant as the unique suffix after common prefix
+        if common_prefix and adm_dir.startswith(common_prefix):
+            variant = adm_dir[len(common_prefix) :].lstrip("_")
+            # Use lexicographically first directory as "default" (empty string)
+            if adm_dir == min(adm_dir_list):
+                return ""
+            return variant if variant else ""
+
+        # Fallback: use the full ADM directory name if no common prefix found
+        # Choose the lexicographically first one as default
+        if adm_dir == min(conflicting_adm_dirs):
+            return ""
+        return adm_dir
+
     except (ValueError, AttributeError):
         return ""
 
@@ -93,7 +148,8 @@ def build_manifest_from_experiments(
     Returns:
         GlobalManifest object with experiment data
     """
-    # First pass: detect conflicts by grouping experiments by their base key (without run_variant)
+    # First pass: detect TRUE conflicts by grouping experiments by their complete key
+    # True conflicts are experiments with identical ADM+LLM+KDMA in different directories
     base_key_groups: Dict[str, List[ExperimentData]] = {}
 
     for experiment in experiments:
@@ -107,7 +163,7 @@ def build_manifest_from_experiments(
             base_key_groups[base_key] = []
         base_key_groups[base_key].append(experiment)
 
-    # Second pass: add run_variant for conflicting experiments
+    # Second pass: add run_variant only for TRUE conflicts
     enhanced_experiments = []
 
     for base_key, group_experiments in base_key_groups.items():
@@ -115,27 +171,50 @@ def build_manifest_from_experiments(
             # No conflict, use original experiment
             enhanced_experiments.append(group_experiments[0])
         else:
-            # Conflict detected - add run_variant from directory structure
-            for experiment in group_experiments:
-                run_variant = _extract_run_variant(
-                    experiment.experiment_path, experiments_root
+            # TRUE conflict detected - same ADM+LLM+KDMA in different directories
+            # Check if these are actually different KDMA configurations that got the same key
+            # This shouldn't happen if KDMA parsing is working correctly
+            all_have_same_kdmas = True
+            if len(group_experiments) > 1:
+                first_kdmas = set(
+                    (kv.kdma, kv.value)
+                    for kv in group_experiments[0].config.alignment_target.kdma_values
                 )
-                if run_variant:
-                    # Create a copy of the experiment with run_variant
-                    enhanced_config = experiment.config.model_copy(deep=True)
-                    enhanced_config.run_variant = run_variant
-
-                    enhanced_experiment = ExperimentData(
-                        config=enhanced_config,
-                        input_output=experiment.input_output,
-                        scores=experiment.scores,
-                        timing=experiment.timing,
-                        experiment_path=experiment.experiment_path,
+                for exp in group_experiments[1:]:
+                    exp_kdmas = set(
+                        (kv.kdma, kv.value)
+                        for kv in exp.config.alignment_target.kdma_values
                     )
-                    enhanced_experiments.append(enhanced_experiment)
-                else:
-                    # Fallback: use original if no run variant available
-                    enhanced_experiments.append(experiment)
+                    if exp_kdmas != first_kdmas:
+                        all_have_same_kdmas = False
+                        break
+
+            if not all_have_same_kdmas:
+                # Different KDMAs but same key - shouldn't happen, just use originals
+                enhanced_experiments.extend(group_experiments)
+            else:
+                # True conflicts - add run_variant from directory structure
+                conflicting_dirs = [exp.experiment_path for exp in group_experiments]
+                for experiment in group_experiments:
+                    run_variant = _extract_run_variant(
+                        experiment.experiment_path, experiments_root, conflicting_dirs
+                    )
+                    if run_variant:
+                        # Create a copy of the experiment with run_variant
+                        enhanced_config = experiment.config.model_copy(deep=True)
+                        enhanced_config.run_variant = run_variant
+
+                        enhanced_experiment = ExperimentData(
+                            config=enhanced_config,
+                            input_output=experiment.input_output,
+                            scores=experiment.scores,
+                            timing=experiment.timing,
+                            experiment_path=experiment.experiment_path,
+                        )
+                        enhanced_experiments.append(enhanced_experiment)
+                    else:
+                        # Fallback: use original if no run variant available
+                        enhanced_experiments.append(experiment)
 
     # Build manifest with enhanced experiments
     manifest = GlobalManifest()
