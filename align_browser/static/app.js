@@ -412,7 +412,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   
   // Convenience function to check if a specific parameter combination is valid
-  function isValidParameterCombination(scenario, admType, llmBackbone, kdmas, baseScenario = null) {
+  function isValidParameterCombination(scenario, admType, llmBackbone, kdmas, baseScenario = null, runVariant = null) {
     // Check baseScenario/scenario consistency if both are provided
     if (baseScenario && scenario) {
       const scenarioBase = scenario.replace(/-\d+$/, "");
@@ -423,7 +423,22 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const constraints = { scenario, admType, llmBackbone, kdmas };
     const validOptions = getValidOptionsForConstraints(constraints);
-    return validOptions.scenarios.has(scenario);
+    
+    // Check if the basic combination is valid
+    if (!validOptions.scenarios.has(scenario)) {
+      return false;
+    }
+    
+    // If no run variant specified, combination is valid
+    if (!runVariant) {
+      return true;
+    }
+    
+    // Check if run variant exists for this ADM+LLM+KDMA combination
+    const baseKey = buildExperimentKey(admType, llmBackbone, kdmas);
+    const runVariantKey = `${baseKey}_${runVariant}`;
+    
+    return Object.keys(manifest.experiment_keys || {}).includes(runVariantKey);
   }
   
   // Find a valid parameter combination given partial constraints and preferences
@@ -456,8 +471,17 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     
     // If current combination is already valid, return it
-    if (isValidParameterCombination(currentParams.scenario, currentParams.admType, currentParams.llmBackbone, currentParams.kdmas, currentParams.baseScenario)) {
+    if (isValidParameterCombination(currentParams.scenario, currentParams.admType, currentParams.llmBackbone, currentParams.kdmas, currentParams.baseScenario, currentParams.runVariant)) {
       return currentParams;
+    }
+    
+    // Check if just the run variant is invalid while base parameters are valid
+    if (currentParams.runVariant && isValidParameterCombination(currentParams.scenario, currentParams.admType, currentParams.llmBackbone, currentParams.kdmas, currentParams.baseScenario, null)) {
+      // Base parameters are valid, but run variant is not - reset run variant to null
+      return {
+        ...currentParams,
+        runVariant: null
+      };
     }
     
     // Priority 1: Preserve scenario, adjust other parameters to make it work
@@ -851,13 +875,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const initialValue = validValues.length > 0 ? validValues[0] : 0.0;
     console.log(`Adding KDMA ${kdmaType} with initial value ${initialValue} to run ${runId}`);
     
-    // Update the run's KDMA values directly
+    // Update KDMAs through the parameter validation system
     const newKDMAs = { ...currentKDMAs, [kdmaType]: initialValue };
-    run.kdmaValues = newKDMAs;
     
-    // Update the columnParameters to sync with the new KDMA values
-    const params = getParametersForRun(runId);
-    params.kdmas = newKDMAs;
+    // Use the parameter update system to ensure validation
+    updateParameterForRun(runId, 'kdmas', newKDMAs);
     
     // Refresh the comparison display to show new KDMA control
     updateComparisonDisplay();
@@ -877,12 +899,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const currentKDMAs = { ...(run.kdmaValues || {}) };
     delete currentKDMAs[kdmaType];
     
-    // Update the run's KDMA values directly
-    run.kdmaValues = currentKDMAs;
-    
-    // Update the columnParameters to sync with the new KDMA values
-    const params = getParametersForRun(runId);
-    params.kdmas = currentKDMAs;
+    // Use the parameter update system to ensure validation
+    updateParameterForRun(runId, 'kdmas', currentKDMAs);
     
     // Refresh the comparison display
     updateComparisonDisplay();
@@ -916,12 +934,8 @@ document.addEventListener("DOMContentLoaded", () => {
     
     currentKDMAs[newKdmaType] = newValue;
     
-    // Update the run's KDMA values directly
-    run.kdmaValues = currentKDMAs;
-    
-    // Update the columnParameters to sync with the new KDMA values
-    const params = getParametersForRun(runId);
-    params.kdmas = currentKDMAs;
+    // Use the parameter update system to ensure validation
+    updateParameterForRun(runId, 'kdmas', currentKDMAs);
     
     // Refresh the comparison display
     updateComparisonDisplay();
@@ -982,12 +996,14 @@ document.addEventListener("DOMContentLoaded", () => {
     
     currentKDMAs[kdmaType] = newValue;
     
-    // Update the run's KDMA values directly
+    // Update the run state immediately to prevent bouncing
     run.kdmaValues = currentKDMAs;
     
-    // Update the columnParameters to sync with the new KDMA values
+    // Update column parameters directly without validation
+    // since slider values are already validated
     const params = getParametersForRun(runId);
     params.kdmas = currentKDMAs;
+    columnParameters.set(runId, createParameterStructure(params));
     
     // Debounce the reload to avoid too many requests while sliding
     if (window.kdmaReloadTimeout) {
