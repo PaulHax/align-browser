@@ -43,6 +43,7 @@ class ExperimentConfig(BaseModel):
     name: str = "unknown"
     adm: ADMConfig = Field(default_factory=ADMConfig)
     alignment_target: AlignmentTarget = Field(default_factory=AlignmentTarget)
+    run_variant: Optional[str] = None
 
     def generate_key(self) -> str:
         """Generate a unique key for this experiment configuration."""
@@ -50,7 +51,11 @@ class ExperimentConfig(BaseModel):
             f"{kv.kdma}-{kv.value}" for kv in self.alignment_target.kdma_values
         ]
         kdma_string = "_".join(sorted(kdma_parts))
-        return f"{self.adm.name}_{self.adm.llm_backbone}_{kdma_string}"
+        base_key = f"{self.adm.name}_{self.adm.llm_backbone}_{kdma_string}"
+
+        if self.run_variant:
+            return f"{base_key}_{self.run_variant}"
+        return base_key
 
 
 class InputData(BaseModel):

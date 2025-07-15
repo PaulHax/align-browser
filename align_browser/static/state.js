@@ -17,6 +17,7 @@ export function createInitialState() {
     selectedScenario: null,
     selectedAdmType: null,
     selectedLLM: null,
+    selectedRunVariant: null,
     activeKDMAs: {},
     
     // LLM preferences per ADM type for preservation
@@ -51,6 +52,9 @@ export function updateUserSelections(state, updates) {
   if (updates.llm !== undefined) {
     newState.selectedLLM = updates.llm;
   }
+  if (updates.runVariant !== undefined) {
+    newState.selectedRunVariant = updates.runVariant;
+  }
   if (updates.kdmas !== undefined) {
     newState.activeKDMAs = { ...updates.kdmas };
   }
@@ -73,6 +77,7 @@ export function updateCurrentData(state, updates) {
 export function getSelectedKey(state) {
   const admType = state.selectedAdmType;
   const llmBackbone = state.selectedLLM;
+  const runVariant = state.selectedRunVariant;
 
   const kdmaParts = [];
   Object.entries(state.activeKDMAs).forEach(([kdma, value]) => {
@@ -82,7 +87,14 @@ export function getSelectedKey(state) {
   // Sort KDMA parts to match the key generation in build.py
   const kdmaString = kdmaParts.sort().join("_");
 
-  return `${admType}_${llmBackbone}_${kdmaString}`;
+  const baseKey = `${admType}_${llmBackbone}_${kdmaString}`;
+  
+  // Add run variant if present
+  if (runVariant && runVariant !== 'default') {
+    return `${baseKey}_${runVariant}`;
+  }
+  
+  return baseKey;
 }
 
 // Generate a unique run ID
@@ -119,6 +131,7 @@ export function createRunConfig(state) {
     baseScenario: state.selectedBaseScenario,
     admType: state.selectedAdmType,
     llmBackbone: state.selectedLLM,
+    runVariant: state.selectedRunVariant || null,
     kdmaValues: { ...state.activeKDMAs },
     experimentKey: getSelectedKey(state),
     displayName: generateDisplayName(state),
@@ -133,6 +146,7 @@ export function createParameterStructure(params = {}) {
     baseScenario: params.baseScenario || null,
     admType: params.admType || null,
     llmBackbone: params.llmBackbone || null,
+    runVariant: params.runVariant || null,
     kdmas: params.kdmas || {}
   };
 }
@@ -144,12 +158,14 @@ export function encodeStateToURL(state) {
     scenario: state.selectedScenario,
     admType: state.selectedAdmType,
     llm: state.selectedLLM,
+    runVariant: state.selectedRunVariant,
     kdmas: state.activeKDMAs,
     pinnedRuns: Array.from(state.pinnedRuns.values()).map(run => ({
       scenario: run.scenario,
       baseScenario: run.baseScenario,
       admType: run.admType,
       llmBackbone: run.llmBackbone,
+      runVariant: run.runVariant,
       kdmaValues: run.kdmaValues,
       id: run.id
     }))

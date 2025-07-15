@@ -192,7 +192,7 @@ def test_experiment_data_from_directory():
         with open(experiment_dir / "timing.json", "w") as f:
             json.dump(timing_data, f)
 
-        # Test loading
+        # Test loading (no experiments_root, so no directory context)
         experiment = ExperimentData.from_directory(experiment_dir)
 
         assert experiment.key == "pipeline_random_llama3.3-70b_affiliation-0.5"
@@ -321,6 +321,103 @@ def test_parse_experiments_directory_excludes_outdated():
         assert not any("OUTDATED" in path for path in experiment_paths), (
             f"OUTDATED experiment was not filtered out: {experiment_paths}"
         )
+
+
+def test_run_variant_conflict_resolution():
+    """Test that run_variant is added to experiment keys when conflicts occur."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Create experiments structure with conflicts
+        experiments_root = temp_path / "experiments"
+        experiments_root.mkdir()
+
+        # Create two experiments with identical parameters but in different directories
+        # First experiment: experiments/pipeline_test/affiliation-0.5
+        pipeline1_dir = experiments_root / "pipeline_test"
+        pipeline1_dir.mkdir()
+        experiment1_dir = pipeline1_dir / "affiliation-0.5"
+        experiment1_dir.mkdir()
+        hydra1_dir = experiment1_dir / ".hydra"
+        hydra1_dir.mkdir()
+
+        # Second experiment: experiments/pipeline_test_rerun/affiliation-0.5
+        pipeline2_dir = experiments_root / "pipeline_test_rerun"
+        pipeline2_dir.mkdir()
+        experiment2_dir = pipeline2_dir / "affiliation-0.5"
+        experiment2_dir.mkdir()
+        hydra2_dir = experiment2_dir / ".hydra"
+        hydra2_dir.mkdir()
+
+        # Create identical config data for both experiments
+        config_data = create_sample_config_data()
+
+        # Setup first experiment
+        with open(hydra1_dir / "config.yaml", "w") as f:
+            yaml.dump(config_data, f)
+        with open(experiment1_dir / "input_output.json", "w") as f:
+            json.dump(create_sample_input_output_data(), f)
+        with open(experiment1_dir / "scores.json", "w") as f:
+            json.dump(create_sample_scores_data(), f)
+        with open(experiment1_dir / "timing.json", "w") as f:
+            json.dump(create_sample_timing_data(), f)
+
+        # Setup second experiment (identical config)
+        with open(hydra2_dir / "config.yaml", "w") as f:
+            yaml.dump(config_data, f)
+        with open(experiment2_dir / "input_output.json", "w") as f:
+            json.dump(create_sample_input_output_data(), f)
+        with open(experiment2_dir / "scores.json", "w") as f:
+            json.dump(create_sample_scores_data(), f)
+        with open(experiment2_dir / "timing.json", "w") as f:
+            json.dump(create_sample_timing_data(), f)
+
+        # Parse experiments and build manifest
+        experiments = parse_experiments_directory(experiments_root)
+        assert len(experiments) == 2, (
+            f"Expected 2 experiments, found {len(experiments)}"
+        )
+
+        # Build manifest with conflict resolution
+        manifest = build_manifest_from_experiments(experiments, experiments_root)
+
+        # Verify that conflicts were resolved with run_variant in experiment keys
+        experiment_keys = list(manifest.experiment_keys.keys())
+        assert len(experiment_keys) == 2, (
+            f"Expected 2 unique experiment keys, got {len(experiment_keys)}"
+        )
+
+        # Check that experiment keys include run variants
+        # At least one key should contain a run variant
+        has_run_variant = any(
+            "_pipeline_test" in key or "_rerun" in key for key in experiment_keys
+        )
+        assert has_run_variant, f"Expected run_variant in keys: {experiment_keys}"
+
+        # Check that run_variant is in the config
+        for exp_key in experiment_keys:
+            scenarios = manifest.experiment_keys[exp_key].scenarios
+            first_scenario = next(iter(scenarios.values()))
+            config = first_scenario.config
+
+            # If key contains run variant, config should have run_variant field
+            if "_pipeline_test" in exp_key or "_rerun" in exp_key:
+                assert "run_variant" in config, (
+                    f"Expected run_variant in config for key {exp_key}"
+                )
+                assert config["run_variant"] is not None, (
+                    f"run_variant should not be None for {exp_key}"
+                )
+
+        # Verify scenario IDs remain unchanged (no directory context in scenario IDs)
+        all_scenarios = []
+        for scenario_manifest in manifest.experiment_keys.values():
+            all_scenarios.extend(scenario_manifest.scenarios.keys())
+
+        for scenario_id in all_scenarios:
+            assert scenario_id.startswith("June2025-AF-train-"), (
+                f"Scenario ID should not have directory context: {scenario_id}"
+            )
 
 
 def test_build_manifest_from_experiments():
@@ -672,6 +769,8 @@ def run_all_tests():
         test_experiment_data_from_directory,
         test_has_required_files,
         test_parse_experiments_directory,
+        test_parse_experiments_directory_excludes_outdated,
+        test_run_variant_conflict_resolution,
         test_build_manifest_from_experiments,
         test_experiment_summary_model,
         test_scenario_manifest_model,
