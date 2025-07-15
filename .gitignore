@@ -51,6 +51,7 @@ Thumbs.db
 htmlcov/
 .tox/
 .test_data.lock
+temp/
 
 # Jupyter
 .ipynb_checkpoints/

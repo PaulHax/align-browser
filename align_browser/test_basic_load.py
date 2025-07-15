@@ -9,7 +9,7 @@ from playwright.sync_api import expect
 # Fixtures are automatically imported from conftest.py
 
 
-def test_app_loads_without_errors(page, test_server):
+def test_app_loads_without_errors(page, real_data_test_server):
     """Test that the app loads without JavaScript errors."""
     # Listen for console errors
     console_errors = []
@@ -18,7 +18,7 @@ def test_app_loads_without_errors(page, test_server):
         lambda msg: console_errors.append(msg) if msg.type == "error" else None,
     )
 
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait a bit for any initialization
     page.wait_for_timeout(2000)

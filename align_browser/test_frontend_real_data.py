@@ -9,6 +9,29 @@ and will be skipped if the data is not available.
 from playwright.sync_api import expect
 
 
+def get_experiment_data(page):
+    """Helper to get probe time, justification, and decision from current experiment."""
+    result = {}
+
+    # Get probe time
+    probe_time_cells = page.locator('tr[data-category="probe_time"] td').all()
+    if len(probe_time_cells) > 1:
+        result["probe_time"] = probe_time_cells[1].text_content().strip()
+
+    # Get justification (first 100 chars to avoid truncation differences)
+    justification_cells = page.locator('tr[data-category="justification"] td').all()
+    if len(justification_cells) > 1:
+        full_justification = justification_cells[1].text_content().strip()
+        result["justification"] = full_justification[:100] if full_justification else ""
+
+    # Get decision/action
+    action_cells = page.locator('tr[data-category="action"] td').all()
+    if len(action_cells) > 1:
+        result["action"] = action_cells[1].text_content().strip()
+
+    return result
+
+
 def test_adm_selection_updates_llm(page, real_data_test_server):
     """Test that selecting an ADM type updates the LLM dropdown."""
     page.goto(real_data_test_server)
@@ -454,9 +477,14 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
         "document.querySelectorAll('.table-adm-select').length > 0", timeout=10000
     )
 
-    # Select pipeline_baseline ADM to enable KDMA functionality
+    # Select pipeline_baseline ADM with Mistral LLM to enable multi-KDMA functionality
     adm_select = page.locator(".table-adm-select").first
     adm_select.select_option("pipeline_baseline")
+    page.wait_for_load_state("networkidle")
+
+    # Select the Mistral LLM to get multi-KDMA experiments
+    llm_select = page.locator(".table-llm-select").first
+    llm_select.select_option("mistralai/Mistral-7B-Instruct-v0.3")
     page.wait_for_load_state("networkidle")
 
     # Select June2025-AF-train scenario to get multi-KDMA support
@@ -468,8 +496,13 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
         if opt.get_attribute("value")
     ]
 
-    # Find a June2025-AF-train scenario (required for this test)
-    june_scenarios = [s for s in scenario_values if "June2025-AF-train" in s]
+    # Find June2025-AF-train-0 scenario (required for multi-KDMA test)
+    target_scenario = "June2025-AF-train-0"
+    june_scenarios = [s for s in scenario_values if target_scenario in s]
+    if not june_scenarios:
+        # Fallback to any June2025-AF-train scenario
+        june_scenarios = [s for s in scenario_values if "June2025-AF-train" in s]
+
     assert len(june_scenarios) > 0, (
         f"June2025-AF-train scenarios required for this test, but only found: {scenario_values}"
     )
@@ -477,26 +510,24 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
     scenario_select.select_option(june_scenarios[0])
     page.wait_for_load_state("networkidle")
 
-    # Get initial results content (should be single KDMA - affiliation)
-    def get_results_content():
-        """Helper to get the current experiment results content."""
-        # Look for ADM decision or justification content
-        justification_cells = page.locator('tr[data-category="justification"] td').all()
-        if len(justification_cells) > 1:
-            # Get the content of the first data cell (not the parameter name cell)
-            content = justification_cells[1].text_content()
-            return content.strip() if content else ""
-        return ""
-
     # Wait for initial results to load
     page.wait_for_timeout(2000)
-    initial_results = get_results_content()
-    print(f"Initial results (single KDMA): {initial_results[:100]}...")
+    initial_results = get_experiment_data(page)
+    print(f"Initial experiment data: {initial_results}")
+
+    # Debug: Check current KDMA values
+    kdma_sliders = page.locator(".table-kdma-value-slider")
+    print(f"Number of KDMA sliders: {kdma_sliders.count()}")
+    for i in range(kdma_sliders.count()):
+        slider = kdma_sliders.nth(i)
+        value = slider.input_value()
+        kdma_type = slider.get_attribute("data-kdma-type")
+        print(f"KDMA {kdma_type}: {value}")
 
     # Ensure we have some initial content
     assert initial_results, "Should have initial experiment results"
 
-    # Add a second KDMA
+    # Add a second KDMA - specifically merit to get affiliation + merit combination
     add_kdma_button = page.locator(".add-kdma-btn")
     assert add_kdma_button.count() > 0, (
         "Add KDMA button must be available for this test"
@@ -509,17 +540,34 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
         "document.querySelectorAll('.table-kdma-value-slider').length > 1", timeout=5000
     )
 
+    # Check if there's a KDMA type dropdown for the new KDMA and select merit
+    kdma_type_selects = page.locator(".table-kdma-type-select")
+    if kdma_type_selects.count() > 1:
+        # Select merit for the second KDMA to ensure we get affiliation + merit combination
+        second_kdma_select = kdma_type_selects.nth(1)
+        second_kdma_select.select_option("merit")
+        page.wait_for_load_state("networkidle")
+
     # Wait for results to reload (the reloadPinnedRun call should update results)
     page.wait_for_timeout(3000)  # Give time for async reload
 
+    # Debug: Check KDMA values after adding
+    kdma_sliders_after = page.locator(".table-kdma-value-slider")
+    print(f"Number of KDMA sliders after adding: {kdma_sliders_after.count()}")
+    for i in range(kdma_sliders_after.count()):
+        slider = kdma_sliders_after.nth(i)
+        value = slider.input_value()
+        kdma_type = slider.get_attribute("data-kdma-type")
+        print(f"KDMA {kdma_type}: {value}")
+
     # Get results after adding KDMA
-    multi_kdma_results = get_results_content()
-    print(f"Results after adding KDMA: {multi_kdma_results[:100]}...")
+    multi_kdma_results = get_experiment_data(page)
+    print(f"Results after adding KDMA: {multi_kdma_results}")
 
     # Results should be different after adding KDMA (different experiment data)
     assert multi_kdma_results != initial_results, (
         f"Experiment results should change after adding KDMA. "
-        f"Initial: '{initial_results[:50]}...' vs Multi-KDMA: '{multi_kdma_results[:50]}...'"
+        f"Initial: '{initial_results}' vs Multi-KDMA: '{multi_kdma_results}'"
     )
 
     # Now remove a KDMA (find an enabled delete button)
@@ -549,13 +597,13 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
     page.wait_for_timeout(3000)  # Give time for async reload
 
     # Get results after removing KDMA
-    final_results = get_results_content()
-    print(f"Results after removing KDMA: {final_results[:100]}...")
+    final_results = get_experiment_data(page)
+    print(f"Results after removing KDMA: {final_results}")
 
     # Results should be different from multi-KDMA results
     assert final_results != multi_kdma_results, (
         f"Experiment results should change after removing KDMA. "
-        f"Multi-KDMA: '{multi_kdma_results[:50]}...' vs Final: '{final_results[:50]}...'"
+        f"Multi-KDMA: '{multi_kdma_results}' vs Final: '{final_results}'"
     )
 
     # Final results might be same as initial (if we're back to single KDMA)
@@ -647,3 +695,106 @@ def test_add_kdma_button_always_visible(page, real_data_test_server):
     print(
         "✓ Add KDMA button correctly stays visible and shows appropriate enabled/disabled state"
     )
+
+
+def test_run_variant_dropdown_functionality(page, real_data_test_server):
+    """Test that run_variant dropdown shows available variants when multiple runs exist."""
+    page.goto(real_data_test_server)
+
+    # Wait for page to load and auto-pin to happen
+    page.wait_for_selector(".comparison-table", timeout=10000)
+    page.wait_for_function(
+        "document.querySelectorAll('.table-adm-select').length > 0", timeout=10000
+    )
+
+    # Wait for initial auto-pin to complete
+    page.wait_for_function(
+        "document.querySelectorAll('.comparison-table tr').length > 2", timeout=5000
+    )
+
+    # Look for run variant row
+    run_variant_row = page.locator(".parameter-row[data-category='run_variant']")
+    expect(run_variant_row).to_be_visible()
+
+    # Check if run variant dropdown exists
+    run_variant_dropdown = page.locator(".table-run-variant-select")
+
+    # If dropdown exists, verify it has options
+    if run_variant_dropdown.count() > 0:
+        options = run_variant_dropdown.locator("option").all()
+        option_values = [
+            opt.get_attribute("value") for opt in options if opt.get_attribute("value")
+        ]
+
+        # Should have at least one option
+        assert len(option_values) > 0, "Run variant dropdown should have options"
+
+        # Test that selecting different variants works
+        if len(option_values) > 1:
+            # Get initial selected value
+            _ = run_variant_dropdown.first.input_value()
+
+            # Select first option and verify it's selected
+            run_variant_dropdown.first.select_option(option_values[0])
+            page.wait_for_load_state("networkidle")
+
+            # Wait for dropdown to stabilize after selection
+            page.wait_for_timeout(500)
+
+            # Check if dropdown still exists after first selection
+            if run_variant_dropdown.count() > 0:
+                first_selection = run_variant_dropdown.first.input_value()
+                assert first_selection == option_values[0], (
+                    f"First option should be selected, got {first_selection}"
+                )
+            else:
+                print("Dropdown disappeared after first selection")
+
+            # Select second option and verify it's selected
+            run_variant_dropdown.first.select_option(option_values[1])
+            page.wait_for_load_state("networkidle")
+
+            # Wait for dropdown to stabilize after selection
+            page.wait_for_timeout(1000)
+
+            # Check that dropdown still exists after second selection
+            updated_dropdown = page.locator(".table-run-variant-select")
+            assert updated_dropdown.count() > 0, (
+                "Dropdown should still exist after selecting second option"
+            )
+
+            # Verify second option is selected and persists
+            second_selection = updated_dropdown.first.input_value()
+            assert second_selection == option_values[1], (
+                f"Second option should be selected and persist, got {second_selection}"
+            )
+
+            # Check that the run variant cell doesn't show "N/A"
+            run_variant_cell = page.locator(
+                ".parameter-row[data-category='run_variant'] td"
+            ).nth(1)
+            cell_text = run_variant_cell.text_content()
+            assert "N/A" not in cell_text, (
+                f"Run variant cell should not show N/A, got: {cell_text}"
+            )
+
+            # Wait a bit more and check it's still selected (test for reversion)
+            page.wait_for_timeout(1000)
+            final_selection = updated_dropdown.first.input_value()
+            assert final_selection == option_values[1], (
+                f"Selection should persist, but reverted to {final_selection}"
+            )
+
+        print(f"Run variant dropdown has options: {option_values}")
+    else:
+        # If no dropdown, should show a static value
+        run_variant_cell = page.locator(
+            ".parameter-row[data-category='run_variant'] td"
+        ).nth(1)
+        cell_text = run_variant_cell.text_content()
+        print(f"Run variant shows static value: {cell_text}")
+
+        # Should not be empty
+        assert cell_text and cell_text.strip() != "", (
+            "Run variant should show some value"
+        )

@@ -7,9 +7,9 @@ This script builds the frontend and runs automated browser tests.
 from playwright.sync_api import expect
 
 
-def test_page_load(page, test_server):
+def test_page_load(page, real_data_test_server):
     """Test that the page loads without errors."""
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Check page title
     expect(page).to_have_title("Align Browser")
@@ -22,9 +22,9 @@ def test_page_load(page, test_server):
     expect(page.locator(".comparison-table")).to_be_visible()
 
 
-def test_run_variant_row_present(page, test_server):
+def test_run_variant_row_present(page, real_data_test_server):
     """Test that the run variant row is present in the UI."""
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait for page to load
     page.wait_for_selector(".comparison-table", timeout=10000)
@@ -38,9 +38,9 @@ def test_run_variant_row_present(page, test_server):
     expect(run_variant_label).to_have_text("Run Variant")
 
 
-def test_manifest_loading(page, test_server):
+def test_manifest_loading(page, real_data_test_server):
     """Test that manifest.json loads and populates UI elements."""
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait for table to load
     page.wait_for_selector(".comparison-table", timeout=10000)
@@ -61,9 +61,9 @@ def test_manifest_loading(page, test_server):
     assert len(option_texts) > 0, "Should have at least one ADM option"
 
 
-def test_run_display_updates(page, test_server):
+def test_run_display_updates(page, real_data_test_server):
     """Test that results display updates when selections are made."""
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait for table to load
     page.wait_for_selector(".comparison-table", timeout=10000)
@@ -117,13 +117,13 @@ def test_run_display_updates(page, test_server):
     )
 
 
-def test_no_console_errors(page, test_server):
+def test_no_console_errors(page, real_data_test_server):
     """Test that there are no severe console errors on page load."""
     # Listen for console messages
     console_messages = []
     page.on("console", lambda msg: console_messages.append(msg))
 
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait for page to fully load
     page.wait_for_selector(".comparison-table", timeout=10000)
@@ -168,9 +168,9 @@ def test_no_console_errors(page, test_server):
     assert len(severe_errors) == 0, f"Found severe console errors: {severe_errors}"
 
 
-def test_kdma_type_filtering_prevents_duplicates(page, test_server):
+def test_kdma_type_filtering_prevents_duplicates(page, real_data_test_server):
     """Test that KDMA type dropdowns filter out already-used types."""
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait for page to load and select a scenario that supports multiple KDMAs
     page.wait_for_selector(".comparison-table", timeout=10000)
@@ -218,9 +218,9 @@ def test_kdma_type_filtering_prevents_duplicates(page, test_server):
         assert first_slider.input_value() == "0.5", "KDMA slider should be functional"
 
 
-def test_kdma_max_limit_enforcement(page, test_server):
+def test_kdma_max_limit_enforcement(page, real_data_test_server):
     """Test that KDMA addition respects experiment data limits."""
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait for page to load
     page.wait_for_selector(".comparison-table", timeout=10000)
@@ -267,9 +267,9 @@ def test_kdma_max_limit_enforcement(page, test_server):
     expect(page.locator(".comparison-table")).to_be_visible()
 
 
-def test_kdma_removal_updates_constraints(page, test_server):
+def test_kdma_removal_updates_constraints(page, real_data_test_server):
     """Test that KDMA sliders are functional in table-based UI."""
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait for page to load
     page.wait_for_selector(".comparison-table", timeout=10000)
@@ -313,9 +313,9 @@ def test_kdma_removal_updates_constraints(page, test_server):
         expect(page.locator(".comparison-table")).to_be_visible()
 
 
-def test_kdma_warning_system(page, test_server):
+def test_kdma_warning_system(page, real_data_test_server):
     """Test that KDMA warning system shows for invalid values."""
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait for page to load
     page.wait_for_selector(".comparison-table", timeout=10000)
@@ -354,9 +354,9 @@ def test_kdma_warning_system(page, test_server):
         pass
 
 
-def test_kdma_adm_change_resets_properly(page, test_server):
+def test_kdma_adm_change_resets_properly(page, real_data_test_server):
     """Test that changing ADM type properly updates available controls."""
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait for page to load
     page.wait_for_selector(".comparison-table", timeout=10000)
@@ -400,13 +400,13 @@ def test_kdma_adm_change_resets_properly(page, test_server):
         expect(adm_select).to_be_visible()
 
 
-def test_scenario_based_kdma_filtering(page, test_server):
+def test_scenario_based_kdma_filtering(page, real_data_test_server):
     """Test that KDMA filtering follows correct hierarchy: Scenario → ADM → KDMA values.
 
     This test specifically addresses the bug where only the first KDMA type would show
     results because the filtering was backwards (KDMA → Scenario instead of Scenario → KDMA).
     """
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait for page to load
     page.wait_for_selector(".comparison-table", timeout=10000)
@@ -487,7 +487,7 @@ def test_scenario_based_kdma_filtering(page, test_server):
     expect(page.locator(".comparison-table")).to_be_visible()
 
 
-def test_initial_load_results_path(page, test_server):
+def test_initial_load_results_path(page, real_data_test_server):
     """Test that initial page load and results loading works without errors."""
     # Listen for console errors
     console_errors = []
@@ -496,7 +496,7 @@ def test_initial_load_results_path(page, test_server):
         lambda msg: console_errors.append(msg) if msg.type == "error" else None,
     )
 
-    page.goto(test_server)
+    page.goto(real_data_test_server)
 
     # Wait for manifest to load and trigger initial results load
     page.wait_for_selector(".comparison-table", timeout=10000)
@@ -545,106 +545,3 @@ def test_initial_load_results_path(page, test_server):
     assert table_content.strip() != "", (
         "Comparison table should have content after initial load"
     )
-
-
-def test_run_variant_dropdown_functionality(page, test_server):
-    """Test that run_variant dropdown shows available variants when multiple runs exist."""
-    page.goto(test_server)
-
-    # Wait for page to load and auto-pin to happen
-    page.wait_for_selector(".comparison-table", timeout=10000)
-    page.wait_for_function(
-        "document.querySelectorAll('.table-adm-select').length > 0", timeout=10000
-    )
-
-    # Wait for initial auto-pin to complete
-    page.wait_for_function(
-        "document.querySelectorAll('.comparison-table tr').length > 2", timeout=5000
-    )
-
-    # Look for run variant row
-    run_variant_row = page.locator(".parameter-row[data-category='run_variant']")
-    expect(run_variant_row).to_be_visible()
-
-    # Check if run variant dropdown exists
-    run_variant_dropdown = page.locator(".table-run-variant-select")
-
-    # If dropdown exists, verify it has options
-    if run_variant_dropdown.count() > 0:
-        options = run_variant_dropdown.locator("option").all()
-        option_values = [
-            opt.get_attribute("value") for opt in options if opt.get_attribute("value")
-        ]
-
-        # Should have at least one option
-        assert len(option_values) > 0, "Run variant dropdown should have options"
-
-        # Test that selecting different variants works
-        if len(option_values) > 1:
-            # Get initial selected value
-            _ = run_variant_dropdown.first.input_value()
-
-            # Select first option and verify it's selected
-            run_variant_dropdown.first.select_option(option_values[0])
-            page.wait_for_load_state("networkidle")
-
-            # Wait for dropdown to stabilize after selection
-            page.wait_for_timeout(500)
-
-            # Check if dropdown still exists after first selection
-            if run_variant_dropdown.count() > 0:
-                first_selection = run_variant_dropdown.first.input_value()
-                assert first_selection == option_values[0], (
-                    f"First option should be selected, got {first_selection}"
-                )
-            else:
-                print("Dropdown disappeared after first selection")
-
-            # Select second option and verify it's selected
-            run_variant_dropdown.first.select_option(option_values[1])
-            page.wait_for_load_state("networkidle")
-
-            # Wait for dropdown to stabilize after selection
-            page.wait_for_timeout(1000)
-
-            # Check that dropdown still exists after second selection
-            updated_dropdown = page.locator(".table-run-variant-select")
-            assert updated_dropdown.count() > 0, (
-                "Dropdown should still exist after selecting second option"
-            )
-
-            # Verify second option is selected and persists
-            second_selection = updated_dropdown.first.input_value()
-            assert second_selection == option_values[1], (
-                f"Second option should be selected and persist, got {second_selection}"
-            )
-
-            # Check that the run variant cell doesn't show "N/A"
-            run_variant_cell = page.locator(
-                ".parameter-row[data-category='run_variant'] td"
-            ).nth(1)
-            cell_text = run_variant_cell.text_content()
-            assert "N/A" not in cell_text, (
-                f"Run variant cell should not show N/A, got: {cell_text}"
-            )
-
-            # Wait a bit more and check it's still selected (test for reversion)
-            page.wait_for_timeout(1000)
-            final_selection = updated_dropdown.first.input_value()
-            assert final_selection == option_values[1], (
-                f"Selection should persist, but reverted to {final_selection}"
-            )
-
-        print(f"Run variant dropdown has options: {option_values}")
-    else:
-        # If no dropdown, should show a static value
-        run_variant_cell = page.locator(
-            ".parameter-row[data-category='run_variant'] td"
-        ).nth(1)
-        cell_text = run_variant_cell.text_content()
-        print(f"Run variant shows static value: {cell_text}")
-
-        # Should not be empty
-        assert cell_text and cell_text.strip() != "", (
-            "Run variant should show some value"
-        )
