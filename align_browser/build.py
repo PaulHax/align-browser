@@ -196,6 +196,8 @@ def serve_directory(directory, host="localhost", port=8000):
         # Create HTTP server
         handler = http.server.SimpleHTTPRequestHandler
         with http.server.HTTPServer((host, actual_port), handler) as httpd:
+            # Enable socket reuse to prevent "Address already in use" errors
+            httpd.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             # Display appropriate URL based on host
             if host == "0.0.0.0":
                 url = f"http://localhost:{actual_port}"
