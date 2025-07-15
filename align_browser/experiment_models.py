@@ -140,7 +140,7 @@ class ExperimentData(BaseModel):
 
     config: ExperimentConfig
     input_output: InputOutputFile
-    scores: ScoresFile
+    scores: Optional[ScoresFile] = None
     timing: TimingData
     experiment_path: Path
 
@@ -157,7 +157,12 @@ class ExperimentData(BaseModel):
 
         # Load other files
         input_output = InputOutputFile.from_file(experiment_dir / "input_output.json")
-        scores = ScoresFile.from_file(experiment_dir / "scores.json")
+
+        # Load scores if available
+        scores = None
+        scores_path = experiment_dir / "scores.json"
+        if scores_path.exists():
+            scores = ScoresFile.from_file(scores_path)
 
         with open(experiment_dir / "timing.json") as f:
             timing_data = json.load(f)
@@ -186,7 +191,6 @@ class ExperimentData(BaseModel):
         """Check if directory has all required experiment files."""
         required_files = [
             "input_output.json",
-            "scores.json",
             "timing.json",
             ".hydra/config.yaml",
         ]
@@ -198,7 +202,7 @@ class ExperimentSummary(BaseModel):
     """Summary of experiment data for the manifest."""
 
     input_output: str  # Path to input_output.json
-    scores: str  # Path to scores.json
+    scores: Optional[str] = None  # Path to scores.json
     timing: str  # Path to timing.json
     config: Dict[str, Any]  # Full experiment configuration
 
@@ -231,11 +235,17 @@ class GlobalManifest(BaseModel):
         # Add all scenarios from the input_output data
         for item in experiment.input_output.data:
             scenario_id = item.input.scenario_id
+            scores_path = None
+            if experiment.scores is not None:
+                scores_path = str(
+                    Path("data") / relative_experiment_path / "scores.json"
+                )
+
             self.experiment_keys[key].scenarios[scenario_id] = ExperimentSummary(
                 input_output=str(
                     Path("data") / relative_experiment_path / "input_output.json"
                 ),
-                scores=str(Path("data") / relative_experiment_path / "scores.json"),
+                scores=scores_path,
                 timing=str(Path("data") / relative_experiment_path / "timing.json"),
                 config=experiment.config.model_dump(),
             )

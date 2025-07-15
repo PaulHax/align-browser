@@ -96,8 +96,8 @@ def parse_experiments_directory(experiments_root: Path) -> List[ExperimentData]:
     Parse the experiments directory structure and return a list of ExperimentData.
 
     Recursively searches through the directory structure to find all directories
-    that contain the required experiment files (input_output.json, scores.json,
-    timing.json, and .hydra/config.yaml).
+    that contain the required experiment files (input_output.json, timing.json,
+    and .hydra/config.yaml). scores.json is optional.
 
     Args:
         experiments_root: Path to the root experiments directory
@@ -260,10 +260,12 @@ def copy_experiment_files(
             experiment.experiment_path / "input_output.json",
             target_experiment_dir / "input_output.json",
         )
-        shutil.copy(
-            experiment.experiment_path / "scores.json",
-            target_experiment_dir / "scores.json",
-        )
+
+        # Copy scores.json if it exists
+        scores_path = experiment.experiment_path / "scores.json"
+        if scores_path.exists():
+            shutil.copy(scores_path, target_experiment_dir / "scores.json")
+
         shutil.copy(
             experiment.experiment_path / "timing.json",
             target_experiment_dir / "timing.json",
