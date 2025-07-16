@@ -24,6 +24,12 @@ def wait_for_run_results_loaded(page, timeout=3000):
     )
 
 
+def wait_for_add_kdma_button_enabled(page, timeout=5000):
+    """Wait for the 'Add KDMA' button to be enabled."""
+    add_kdma_button = page.locator(".add-kdma-btn")
+    expect(add_kdma_button).to_be_enabled(timeout=timeout)
+
+
 def get_experiment_data(page):
     """Helper to get probe time, justification, and decision from current experiment."""
     result = {}
@@ -303,6 +309,11 @@ def test_kdma_combination_default_value_issue(page, real_data_test_server):
     # Wait for UI to update after ADM selection
     page.wait_for_load_state("networkidle")
 
+    # Select a specific LLM known to have multi-KDMA experiments
+    llm_select = page.locator(".table-llm-select").first
+    llm_select.select_option("mistralai/Mistral-7B-Instruct-v0.3")
+    page.wait_for_load_state("networkidle")
+
     # Select June2025-AF-train scenario to get multi-KDMA support
     scenario_select = page.locator(".table-scenario-select").first
 
@@ -322,8 +333,16 @@ def test_kdma_combination_default_value_issue(page, real_data_test_server):
     )
 
     scenario_select.select_option(june_scenarios[0])
-    # Wait for scenario selection to take effect
+    # Wait for scenario selection to take effect and results to load
     page.wait_for_load_state("networkidle")
+    wait_for_run_results_loaded(page)
+
+    # Set initial KDMA slider to a valid value to enable adding another KDMA
+    initial_kdma_slider = page.locator(".table-kdma-value-slider").first
+    initial_kdma_slider.evaluate("slider => slider.value = '1'")
+    initial_kdma_slider.dispatch_event("input")
+    page.wait_for_load_state("networkidle")
+    wait_for_run_results_loaded(page)
 
     # Check initial KDMA sliders - should have affiliation already
     kdma_sliders = page.locator(".table-kdma-value-slider")
@@ -339,8 +358,7 @@ def test_kdma_combination_default_value_issue(page, real_data_test_server):
     assert add_kdma_button.count() > 0, (
         "Add KDMA button must be available for this test"
     )
-
-    # Click Add KDMA button
+    # Click Add KDMA button to add second KDMA
     add_kdma_button.click()
 
     # Wait for new KDMA slider to be added by checking for count increase
@@ -423,6 +441,14 @@ def test_kdma_delete_button_enabled_after_adding_second_kdma(
 
     scenario_select.select_option(june_scenarios[0])
     page.wait_for_load_state("networkidle")
+    wait_for_run_results_loaded(page)
+
+    # Set initial KDMA slider to a valid value to enable adding another KDMA
+    initial_kdma_slider = page.locator(".table-kdma-value-slider").first
+    initial_kdma_slider.evaluate("slider => slider.value = '1'")
+    initial_kdma_slider.dispatch_event("input")
+    page.wait_for_load_state("networkidle")
+    wait_for_run_results_loaded(page)
 
     # Check initial KDMA delete buttons - should be disabled with single KDMA
     initial_delete_buttons = page.locator(".table-kdma-remove-btn")
@@ -448,6 +474,9 @@ def test_kdma_delete_button_enabled_after_adding_second_kdma(
         "Add KDMA button must be available for this test"
     )
 
+    # Ensure the button is enabled before clicking
+    wait_for_add_kdma_button_enabled(page)
+
     # Click Add KDMA button to add second KDMA
     add_kdma_button.click()
 
@@ -466,7 +495,7 @@ def test_kdma_delete_button_enabled_after_adding_second_kdma(
     # With two KDMAs (affiliation + merit) for June2025-AF-train scenario:
     # - affiliation alone: experiments exist for this scenario ✅
     # - merit alone: experiments DON'T exist for this scenario (they exist for June2025-MF-train) ❌
-    # Therefore: only merit KDMA should be deletable (leaving affiliation alone)
+    # Therefore: only merit KDMA should be deletable (disabled=False, leaving affiliation alone)
     all_delete_buttons = updated_delete_buttons.all()
     assert len(all_delete_buttons) == 2, (
         f"Should have exactly 2 delete buttons for 2 KDMAs, got {len(all_delete_buttons)}"
@@ -556,6 +585,9 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
     assert add_kdma_button.count() > 0, (
         "Add KDMA button must be available for this test"
     )
+
+    # Ensure the button is enabled before clicking
+    wait_for_add_kdma_button_enabled(page)
 
     add_kdma_button.click()
 
@@ -668,9 +700,19 @@ def test_add_kdma_button_always_visible(page, real_data_test_server):
     scenario_select.select_option(june_scenarios[0])
     page.wait_for_load_state("networkidle")
 
+    # Set initial KDMA slider to a valid value to enable adding another KDMA
+    initial_kdma_slider = page.locator(".table-kdma-value-slider").first
+    initial_kdma_slider.evaluate("slider => slider.value = '1'")
+    initial_kdma_slider.dispatch_event("input")
+    page.wait_for_load_state("networkidle")
+    wait_for_run_results_loaded(page)
+
     # Check that Add KDMA button is visible and enabled initially
     add_kdma_button = page.locator(".add-kdma-btn")
     assert add_kdma_button.count() > 0, "Add KDMA button should always be visible"
+
+    # Wait for the button to be enabled
+    wait_for_add_kdma_button_enabled(page)
 
     initial_disabled = add_kdma_button.is_disabled()
     print(f"Initial Add KDMA button disabled: {initial_disabled}")
