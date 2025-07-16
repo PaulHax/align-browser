@@ -9,6 +9,21 @@ and will be skipped if the data is not available.
 from playwright.sync_api import expect
 
 
+def wait_for_run_results_loaded(page, timeout=3000):
+    """Wait for run results to be loaded by checking for actual experiment data."""
+    page.wait_for_function(
+        """() => {
+            const probeTimeCells = document.querySelectorAll('tr[data-category="probe_time"] td');
+            const justificationCells = document.querySelectorAll('tr[data-category="justification"] td');
+            // Should have at least 2 cells (parameter name + value) and value should not be empty
+            return probeTimeCells.length > 1 && justificationCells.length > 1 &&
+                   probeTimeCells[1].textContent.trim() !== '' &&
+                   justificationCells[1].textContent.trim() !== '';
+        }""",
+        timeout=timeout,
+    )
+
+
 def get_experiment_data(page):
     """Helper to get probe time, justification, and decision from current experiment."""
     result = {}
@@ -121,8 +136,11 @@ def test_scenario_selection_availability(page, real_data_test_server):
     adm_select = page.locator(".table-adm-select").first
     adm_select.select_option("pipeline_baseline")
 
-    # Wait a moment for updates
-    page.wait_for_timeout(1000)
+    # Wait for scenario dropdown to populate after ADM selection
+    page.wait_for_function(
+        "document.querySelector('.table-scenario-select option:not([value=\"\"])') !== null",
+        timeout=3000,
+    )
 
     # Check scenario dropdown in table
     scenario_select = page.locator(".table-scenario-select").first
@@ -153,7 +171,10 @@ def test_dynamic_kdma_management(page, real_data_test_server):
     # Select ADM and LLM to enable KDMA functionality
     adm_select = page.locator(".table-adm-select").first
     adm_select.select_option("pipeline_baseline")
-    page.wait_for_timeout(1000)
+    # Wait for KDMA controls to appear after ADM selection
+    page.wait_for_function(
+        "document.querySelectorAll('.table-kdma-value-slider').length > 0", timeout=3000
+    )
 
     # Check KDMA controls in table
     kdma_sliders = page.locator(".table-kdma-value-slider")
@@ -190,7 +211,10 @@ def test_kdma_selection_shows_results_regression(page, real_data_test_server):
 
     # Select pipeline_baseline to enable KDMA sliders
     adm_select.select_option("pipeline_baseline")
-    page.wait_for_timeout(1000)
+    # Wait for KDMA controls to appear after ADM selection
+    page.wait_for_function(
+        "document.querySelectorAll('.table-kdma-value-slider').length > 0", timeout=3000
+    )
 
     # Check for KDMA sliders in the table
     kdma_sliders = page.locator(".table-kdma-value-slider")
@@ -244,8 +268,8 @@ def test_real_data_comprehensive_loading(page, real_data_test_server):
     # Wait for table to load
     page.wait_for_selector(".comparison-table", timeout=10000)
 
-    # Give time for any async operations
-    page.wait_for_timeout(2000)
+    # Wait for async operations to complete
+    wait_for_run_results_loaded(page)
 
     # Check that we have minimal expected elements
     expect(page.locator(".comparison-table")).to_be_visible()
@@ -511,7 +535,7 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
     page.wait_for_load_state("networkidle")
 
     # Wait for initial results to load
-    page.wait_for_timeout(2000)
+    wait_for_run_results_loaded(page)
     initial_results = get_experiment_data(page)
     print(f"Initial experiment data: {initial_results}")
 
@@ -549,7 +573,7 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
         page.wait_for_load_state("networkidle")
 
     # Wait for results to reload (the reloadPinnedRun call should update results)
-    page.wait_for_timeout(3000)  # Give time for async reload
+    wait_for_run_results_loaded(page)
 
     # Debug: Check KDMA values after adding
     kdma_sliders_after = page.locator(".table-kdma-value-slider")
@@ -594,7 +618,7 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
     )
 
     # Wait for results to reload after removal
-    page.wait_for_timeout(3000)  # Give time for async reload
+    wait_for_run_results_loaded(page)
 
     # Get results after removing KDMA
     final_results = get_experiment_data(page)
@@ -754,8 +778,11 @@ def test_run_variant_dropdown_functionality(page, real_data_test_server):
             run_variant_dropdown.first.select_option(option_values[1])
             page.wait_for_load_state("networkidle")
 
-            # Wait for dropdown to stabilize after selection
-            page.wait_for_timeout(1000)
+            # Wait for dropdown value to be applied
+            page.wait_for_function(
+                f"document.querySelector('.table-run-variant-select').value === '{option_values[1]}'",
+                timeout=2000,
+            )
 
             # Check that dropdown still exists after second selection
             updated_dropdown = page.locator(".table-run-variant-select")
@@ -778,8 +805,11 @@ def test_run_variant_dropdown_functionality(page, real_data_test_server):
                 f"Run variant cell should not show N/A, got: {cell_text}"
             )
 
-            # Wait a bit more and check it's still selected (test for reversion)
-            page.wait_for_timeout(1000)
+            # Wait to ensure selection persists (test for reversion)
+            page.wait_for_function(
+                f"document.querySelector('.table-run-variant-select').value === '{option_values[1]}'",
+                timeout=2000,
+            )
             final_selection = updated_dropdown.first.input_value()
             assert final_selection == option_values[1], (
                 f"Selection should persist, but reverted to {final_selection}"

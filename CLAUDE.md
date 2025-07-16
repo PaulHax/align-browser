@@ -13,7 +13,7 @@
 - Tests include comprehensive browser automation with Playwright
 - The `built_frontend` fixture generates test data and builds the frontend before running tests
 - Tests verify UI loading, dropdowns, scenario selection (both base and specific), results display, console errors, and responsive layout
-
+- Never change test intentions just to make them pass in some cases
 
 ## Data Modeling
 
