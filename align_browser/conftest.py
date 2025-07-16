@@ -55,6 +55,67 @@ def wait_for_new_experiment_result(page, timeout=5000):
     )
 
 
+def ensure_select_value(page, selector, value):
+    """
+    Utility function to ensure a select element has a specific value.
+    Only changes the value if it's different from the current value.
+    Uses wait_for_new_experiment_result context manager when a change is made.
+
+    Args:
+        page: Playwright page object
+        selector: CSS selector for the select element
+        value: The value to ensure is selected
+
+    Returns:
+        bool: True if a change was made, False if value was already selected
+    """
+    select_element = page.locator(selector).first
+    current_value = select_element.input_value()
+
+    if current_value != value:
+        with wait_for_new_experiment_result(page):
+            select_element.select_option(value)
+        return True
+    else:
+        # Value already selected, just wait for UI to stabilize
+        page.wait_for_load_state("networkidle")
+        return False
+
+
+def ensure_kdma_slider_value(page, selector, value):
+    """
+    Utility function to ensure a KDMA slider has a specific value.
+    Only changes the value if it's different from the current value.
+    Uses wait_for_new_experiment_result context manager when a change is made.
+
+    Args:
+        page: Playwright page object
+        selector: CSS selector for the slider element (or use page.locator result)
+        value: The value to ensure is set (as string)
+
+    Returns:
+        bool: True if a change was made, False if value was already set
+    """
+    if hasattr(selector, "input_value"):
+        # selector is already a locator
+        slider_element = selector
+    else:
+        # selector is a CSS string
+        slider_element = page.locator(selector).first
+
+    current_value = slider_element.input_value()
+
+    if current_value != str(value):
+        with wait_for_new_experiment_result(page):
+            slider_element.evaluate(f"slider => slider.value = '{value}'")
+            slider_element.dispatch_event("input")
+        return True
+    else:
+        # Value already set, just wait for UI to stabilize
+        page.wait_for_load_state("networkidle")
+        return False
+
+
 class FrontendTestServer:
     """HTTP server for serving the built frontend during tests."""
 

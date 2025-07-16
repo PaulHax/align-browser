@@ -30,17 +30,18 @@ def check_experiments_path_exists():
     experiments_path = get_experiments_path()
 
     if experiments_path.exists():
+        message = f"✅ Experiments directory found at {experiments_path}"
         return (
             True,
             experiments_path,
-            f"✅ Experiments directory found at {experiments_path.resolve()}",
+            message,
         )
     else:
         env_var_set = "TEST_EXPERIMENTS_PATH" in os.environ
         if env_var_set:
-            message = f"❌ Experiments directory not found at {experiments_path.resolve()} (from TEST_EXPERIMENTS_PATH)"
+            message = f"❌ Experiments directory not found at {experiments_path} (from TEST_EXPERIMENTS_PATH)"
         else:
-            message = f"❌ Experiments directory not found at {experiments_path.resolve()} (default path)"
+            message = f"❌ Experiments directory not found at {experiments_path} (default path)"
         return False, experiments_path, message
 
 
