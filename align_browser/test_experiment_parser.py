@@ -442,11 +442,21 @@ def test_build_manifest_from_experiments():
         mock_input_output = Mock()
         mock_input_output.data = [mock_input_item]
 
-        mock_experiment = Mock()
+        mock_experiment = Mock(
+            spec_set=[
+                "key",
+                "scenario_id",
+                "experiment_path",
+                "input_output",
+                "scores",
+                "config",
+            ]
+        )
         mock_experiment.key = "test_key"
         mock_experiment.scenario_id = "test_scenario"
         mock_experiment.experiment_path = experiment_dir
         mock_experiment.input_output = mock_input_output
+        mock_experiment.scores = None
         mock_experiment.config.model_dump.return_value = {"test": "config"}
 
         experiments = [mock_experiment]

@@ -242,7 +242,9 @@ class ExperimentData(BaseModel):
             scores = ScoresFile.from_file(scores_path)
 
         # Use specific timing file if provided, otherwise fall back to default
-        timing_path = timing_file_path if timing_file_path else experiment_dir / "timing.json"
+        timing_path = (
+            timing_file_path if timing_file_path else experiment_dir / "timing.json"
+        )
         with open(timing_path) as f:
             timing_data = json.load(f)
         timing = TimingData(**timing_data)
@@ -255,11 +257,11 @@ class ExperimentData(BaseModel):
             timing=timing,
             experiment_path=experiment_dir,
         )
-        
+
         # Store the specific file paths as attributes for manifest generation
         experiment._input_output_file_path = input_output_file_path
         experiment._timing_file_path = timing_file_path
-        
+
         return experiment
 
     @property
@@ -335,10 +337,13 @@ class GlobalManifest(BaseModel):
         # Use specific file paths if available (for new format), otherwise default paths
         input_output_filename = "input_output.json"
         timing_filename = "timing.json"
-        
-        if hasattr(experiment, '_input_output_file_path') and experiment._input_output_file_path:
+
+        if (
+            hasattr(experiment, "_input_output_file_path")
+            and experiment._input_output_file_path
+        ):
             input_output_filename = experiment._input_output_file_path.name
-        if hasattr(experiment, '_timing_file_path') and experiment._timing_file_path:
+        if hasattr(experiment, "_timing_file_path") and experiment._timing_file_path:
             timing_filename = experiment._timing_file_path.name
 
         # Add all scenarios from the input_output data
@@ -382,7 +387,10 @@ class GlobalManifest(BaseModel):
             for scenario_summary in experiment_key.scenarios.values():
                 adm_config = scenario_summary.config.get("adm", {})
                 structured_engine = adm_config.get("structured_inference_engine", {})
-                model_name = structured_engine.get("model_name", "no_llm")
+                if structured_engine is not None:
+                    model_name = structured_engine.get("model_name", "no_llm")
+                else:
+                    model_name = "no_llm"
                 llm_backbones.add(model_name)
         return sorted(list(llm_backbones))
 
