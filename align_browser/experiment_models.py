@@ -2,6 +2,7 @@
 
 import json
 import yaml
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, ConfigDict
@@ -13,6 +14,36 @@ class KDMAValue(BaseModel):
     kdma: str
     value: float
     kdes: Optional[Any] = None
+
+
+def parse_alignment_target_id(alignment_target_id: str) -> List[KDMAValue]:
+    """
+    Parse alignment_target_id string to extract KDMA values.
+
+    Examples:
+        "ADEPT-June2025-merit-0.0" -> [KDMAValue(kdma="merit", value=0.0)]
+        "ADEPT-June2025-affiliation-0.5" -> [KDMAValue(kdma="affiliation", value=0.5)]
+
+    Args:
+        alignment_target_id: String like "ADEPT-June2025-merit-0.0"
+
+    Returns:
+        List of KDMAValue objects
+    """
+    if not alignment_target_id:
+        return []
+
+    # Pattern: {prefix}-{scenario}-{kdma}-{value}
+    pattern = r"^[^-]+-[^-]+-(.+)-(\d+(?:\.\d+)?)$"
+    match = re.match(pattern, alignment_target_id)
+
+    if not match:
+        return []
+
+    kdma_name = match.group(1)
+    value = float(match.group(2))
+
+    return [KDMAValue(kdma=kdma_name, value=value)]
 
 
 class AlignmentTarget(BaseModel):
@@ -176,6 +207,61 @@ class ExperimentData(BaseModel):
             experiment_path=experiment_dir,
         )
 
+    @classmethod
+    def from_directory_new_format(
+        cls,
+        experiment_dir: Path,
+        alignment_target_id: str,
+        filtered_data: List[Dict[str, Any]],
+        input_output_file_path: Path = None,
+        timing_file_path: Path = None,
+    ) -> "ExperimentData":
+        """Load experiment data from new format directory for a specific alignment target."""
+        # Load config
+        config_path = experiment_dir / ".hydra" / "config.yaml"
+        with open(config_path) as f:
+            config_data = yaml.safe_load(f)
+
+        # Create alignment_target from alignment_target_id
+        kdma_values = parse_alignment_target_id(alignment_target_id)
+        alignment_target = AlignmentTarget(
+            id=alignment_target_id, kdma_values=kdma_values
+        )
+
+        # Add alignment_target to config
+        config_data["alignment_target"] = alignment_target.model_dump()
+        config = ExperimentConfig(**config_data)
+
+        # Create input_output from filtered data
+        input_output = InputOutputFile(data=filtered_data)
+
+        # Load scores if available
+        scores = None
+        scores_path = experiment_dir / "scores.json"
+        if scores_path.exists():
+            scores = ScoresFile.from_file(scores_path)
+
+        # Use specific timing file if provided, otherwise fall back to default
+        timing_path = timing_file_path if timing_file_path else experiment_dir / "timing.json"
+        with open(timing_path) as f:
+            timing_data = json.load(f)
+        timing = TimingData(**timing_data)
+
+        # Store the specific file paths for the manifest
+        experiment = cls(
+            config=config,
+            input_output=input_output,
+            scores=scores,
+            timing=timing,
+            experiment_path=experiment_dir,
+        )
+        
+        # Store the specific file paths as attributes for manifest generation
+        experiment._input_output_file_path = input_output_file_path
+        experiment._timing_file_path = timing_file_path
+        
+        return experiment
+
     @property
     def key(self) -> str:
         """Get the unique key for this experiment."""
@@ -195,6 +281,20 @@ class ExperimentData(BaseModel):
             ".hydra/config.yaml",
         ]
         return all((experiment_dir / f).exists() for f in required_files)
+
+    @classmethod
+    def is_new_format(cls, experiment_dir: Path) -> bool:
+        """Check if directory uses new format (no alignment_target in config)."""
+        if not cls.has_required_files(experiment_dir):
+            return False
+
+        config_path = experiment_dir / ".hydra" / "config.yaml"
+        try:
+            with open(config_path) as f:
+                config_data = yaml.safe_load(f)
+            return "alignment_target" not in config_data
+        except Exception:
+            return False
 
 
 # Output Models for Frontend Consumption
@@ -232,6 +332,15 @@ class GlobalManifest(BaseModel):
         if key not in self.experiment_keys:
             self.experiment_keys[key] = ScenarioManifest()
 
+        # Use specific file paths if available (for new format), otherwise default paths
+        input_output_filename = "input_output.json"
+        timing_filename = "timing.json"
+        
+        if hasattr(experiment, '_input_output_file_path') and experiment._input_output_file_path:
+            input_output_filename = experiment._input_output_file_path.name
+        if hasattr(experiment, '_timing_file_path') and experiment._timing_file_path:
+            timing_filename = experiment._timing_file_path.name
+
         # Add all scenarios from the input_output data
         for item in experiment.input_output.data:
             scenario_id = item.input.scenario_id
@@ -243,10 +352,10 @@ class GlobalManifest(BaseModel):
 
             self.experiment_keys[key].scenarios[scenario_id] = ExperimentSummary(
                 input_output=str(
-                    Path("data") / relative_experiment_path / "input_output.json"
+                    Path("data") / relative_experiment_path / input_output_filename
                 ),
                 scores=scores_path,
-                timing=str(Path("data") / relative_experiment_path / "timing.json"),
+                timing=str(Path("data") / relative_experiment_path / timing_filename),
                 config=experiment.config.model_dump(),
             )
 
@@ -260,42 +369,36 @@ class GlobalManifest(BaseModel):
     def get_adm_types(self) -> List[str]:
         """Get unique ADM types from all experiments."""
         adm_types = set()
-        for key in self.experiment_keys.keys():
-            # Extract ADM type from key (format: adm_type_llm_kdma)
-            parts = key.split("_")
-            if len(parts) >= 2:
-                # Handle pipeline_* ADM types
-                if parts[0] == "pipeline":
-                    adm_types.add(f"{parts[0]}_{parts[1]}")
-                else:
-                    adm_types.add(parts[0])
+        for experiment_key in self.experiment_keys.values():
+            for scenario_summary in experiment_key.scenarios.values():
+                adm_name = scenario_summary.config.get("adm", {}).get("name", "unknown")
+                adm_types.add(adm_name)
         return sorted(list(adm_types))
 
     def get_llm_backbones(self) -> List[str]:
         """Get unique LLM backbones from all experiments."""
         llm_backbones = set()
-        for key in self.experiment_keys.keys():
-            parts = key.split("_")
-            if len(parts) >= 3:
-                # Extract LLM backbone (assuming it's after ADM type)
-                if parts[0] == "pipeline":
-                    llm_backbones.add(parts[2])
-                else:
-                    llm_backbones.add(parts[1])
+        for experiment_key in self.experiment_keys.values():
+            for scenario_summary in experiment_key.scenarios.values():
+                adm_config = scenario_summary.config.get("adm", {})
+                structured_engine = adm_config.get("structured_inference_engine", {})
+                model_name = structured_engine.get("model_name", "no_llm")
+                llm_backbones.add(model_name)
         return sorted(list(llm_backbones))
 
     def get_kdma_combinations(self) -> List[str]:
         """Get unique KDMA combinations from all experiments."""
         kdma_combinations = set()
-        for key in self.experiment_keys.keys():
-            parts = key.split("_")
-            if len(parts) >= 4:
-                # KDMA part is everything after ADM and LLM
-                if parts[0] == "pipeline":
-                    kdma_part = "_".join(parts[3:])
-                else:
-                    kdma_part = "_".join(parts[2:])
-                kdma_combinations.add(kdma_part)
+        for experiment_key in self.experiment_keys.values():
+            for scenario_summary in experiment_key.scenarios.values():
+                alignment_target = scenario_summary.config.get("alignment_target", {})
+                kdma_values = alignment_target.get("kdma_values", [])
+                kdma_parts = []
+                for kv in kdma_values:
+                    kdma_parts.append(f"{kv['kdma']}-{kv['value']}")
+                if kdma_parts:
+                    kdma_string = "_".join(sorted(kdma_parts))
+                    kdma_combinations.add(kdma_string)
         return sorted(list(kdma_combinations))
 
 

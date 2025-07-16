@@ -88,7 +88,7 @@ def build_frontend(
     data_output_dir.mkdir(exist_ok=True)
 
     # Parse experiments and build manifest
-    experiments = parse_experiments_directory(experiments_root)
+    experiments = parse_experiments_directory(experiments_root, data_output_dir)
     manifest = build_manifest_from_experiments(experiments, experiments_root)
 
     # Add generation timestamp (deterministic for tests)
