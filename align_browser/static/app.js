@@ -1586,9 +1586,11 @@ document.addEventListener("DOMContentLoaded", () => {
     headerCells.forEach(cell => cell.remove());
     
     // Add pinned run headers
-    Array.from(appState.pinnedRuns.entries()).forEach(([runId], index) => {
+    Array.from(appState.pinnedRuns.entries()).forEach(([runId, runData], index) => {
       const th = document.createElement('th');
       th.className = 'pinned-run-header';
+      th.setAttribute('data-run-id', runId);
+      th.setAttribute('data-experiment-key', runData.experimentKey || 'none');
       
       // Always render button but control visibility to prevent layout shifts
       const shouldShowButton = index > 0 || appState.pinnedRuns.size > 1;

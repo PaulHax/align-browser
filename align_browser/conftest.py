@@ -13,6 +13,48 @@ import pytest
 from playwright.sync_api import sync_playwright
 
 
+@contextmanager
+def wait_for_new_experiment_result(page, timeout=5000):
+    """
+    Context manager that waits for a new experiment result to load after a parameter change.
+
+    This monitors the data-experiment-key attribute which changes when a different
+    experiment is resolved and loaded.
+
+    Args:
+        page: Playwright page object
+        timeout: Timeout in milliseconds
+
+    Usage:
+        with wait_for_new_experiment_result(page):
+            # Make parameter change here
+            adm_select.select_option("pipeline_baseline")
+        # Context manager waits for new experiment result to load
+    """
+    # Get current experiment keys from all runs
+    current_keys = page.evaluate(
+        """() => {
+            const headers = document.querySelectorAll('th[data-experiment-key]');
+            return Array.from(headers).map(h => h.getAttribute('data-experiment-key'));
+        }"""
+    )
+
+    yield
+
+    # Wait for any experiment key to change
+    page.wait_for_function(
+        f"""() => {{
+            const headers = document.querySelectorAll('th[data-experiment-key]');
+            const newKeys = Array.from(headers).map(h => h.getAttribute('data-experiment-key'));
+            const currentKeys = {current_keys};
+            
+            if (newKeys.length !== currentKeys.length) return true;
+            return newKeys.some((key, index) => key !== currentKeys[index]);
+        }}""",
+        timeout=timeout,
+    )
+
+
 class FrontendTestServer:
     """HTTP server for serving the built frontend during tests."""
 
