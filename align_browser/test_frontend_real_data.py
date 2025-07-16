@@ -7,7 +7,7 @@ and will be skipped if the data is not available.
 """
 
 from playwright.sync_api import expect
-from .conftest import wait_for_new_experiment_result
+from .conftest import wait_for_new_experiment_result, ensure_select_value
 
 
 def wait_for_run_results_loaded(page, timeout=3000):
@@ -23,12 +23,6 @@ def wait_for_run_results_loaded(page, timeout=3000):
         }""",
         timeout=timeout,
     )
-
-
-def wait_for_add_kdma_button_enabled(page, timeout=5000):
-    """Wait for the 'Add KDMA' button to be enabled."""
-    add_kdma_button = page.locator(".add-kdma-btn")
-    expect(add_kdma_button).to_be_enabled(timeout=timeout)
 
 
 def get_experiment_data(page):
@@ -64,13 +58,10 @@ def test_adm_selection_updates_llm(page, real_data_test_server):
         "document.querySelectorAll('.table-adm-select').length > 0", timeout=10000
     )
 
-    adm_select = page.locator(".table-adm-select").first
     llm_select = page.locator(".table-llm-select").first
 
-    # Use context manager to wait for experiment to change when ADM is selected
-    with wait_for_new_experiment_result(page):
-        adm_select.select_option("pipeline_baseline")
-    # Context manager waits for experiment key to change
+    # Use utility function to ensure ADM selection and wait for experiment to change
+    ensure_select_value(page, ".table-adm-select", "pipeline_baseline")
 
     # Check that LLM dropdown has options
     expect(llm_select).to_be_visible()
@@ -478,7 +469,7 @@ def test_kdma_delete_button_enabled_after_adding_second_kdma(
     )
 
     # Ensure the button is enabled before clicking
-    wait_for_add_kdma_button_enabled(page)
+    expect(add_kdma_button).to_be_enabled()
 
     # Click Add KDMA button to add second KDMA
     with wait_for_new_experiment_result(page):
@@ -535,14 +526,10 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
     )
 
     # Select pipeline_baseline ADM with Mistral LLM to enable multi-KDMA functionality
-    adm_select = page.locator(".table-adm-select").first
-    adm_select.select_option("pipeline_baseline")
-    page.wait_for_load_state("networkidle")
+    ensure_select_value(page, ".table-adm-select", "pipeline_baseline")
 
     # Select the Mistral LLM to get multi-KDMA experiments
-    llm_select = page.locator(".table-llm-select").first
-    llm_select.select_option("mistralai/Mistral-7B-Instruct-v0.3")
-    page.wait_for_load_state("networkidle")
+    ensure_select_value(page, ".table-llm-select", "mistralai/Mistral-7B-Instruct-v0.3")
 
     # Select June2025-AF-train scenario to get multi-KDMA support
     scenario_select = page.locator(".table-scenario-select").first
@@ -564,8 +551,7 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
         f"June2025-AF-train scenarios required for this test, but only found: {scenario_values}"
     )
 
-    scenario_select.select_option(june_scenarios[0])
-    page.wait_for_load_state("networkidle")
+    ensure_select_value(page, ".table-scenario-select", june_scenarios[0])
 
     # Wait for initial results to load
     wait_for_run_results_loaded(page)
@@ -584,6 +570,18 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
     # Ensure we have some initial content
     assert initial_results, "Should have initial experiment results"
 
+    # Set the initial KDMA slider to a valid value (0 or 1) to enable Add KDMA button
+    initial_kdma_slider = page.locator(".table-kdma-value-slider").first
+    current_kdma_value = initial_kdma_slider.input_value()
+    print(f"Current KDMA value: {current_kdma_value}")
+
+    # Only change if not already a valid value (0 or 1)
+    if current_kdma_value not in ["0", "1", "0.0", "1.0"]:
+        with wait_for_new_experiment_result(page):
+            initial_kdma_slider.evaluate("slider => slider.value = '1'")
+            initial_kdma_slider.dispatch_event("input")
+        print("Set KDMA slider to 1 to enable Add KDMA button")
+
     # Add a second KDMA - specifically merit to get affiliation + merit combination
     add_kdma_button = page.locator(".add-kdma-btn")
     assert add_kdma_button.count() > 0, (
@@ -591,7 +589,7 @@ def test_kdma_add_remove_updates_experiment_results(page, real_data_test_server)
     )
 
     # Ensure the button is enabled before clicking
-    wait_for_add_kdma_button_enabled(page)
+    expect(add_kdma_button).to_be_enabled()
 
     # Use context manager to wait for experiment data to change when adding KDMA
     with wait_for_new_experiment_result(page):
@@ -732,7 +730,7 @@ def test_add_kdma_button_always_visible(page, real_data_test_server):
     assert add_kdma_button.count() > 0, "Add KDMA button should always be visible"
 
     # Wait for the button to be enabled
-    wait_for_add_kdma_button_enabled(page)
+    expect(add_kdma_button).to_be_enabled()
 
     initial_disabled = add_kdma_button.is_disabled()
     print(f"Initial Add KDMA button disabled: {initial_disabled}")
