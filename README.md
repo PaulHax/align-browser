@@ -134,39 +134,6 @@ uv run pre-commit run --all-files
 
 This uses the `.pre-commit-config.yaml` file which is tracked in version control, making it easy for all team members to use the same hooks.
 
-**Option 2: Manual Git hook**
-
-To manually set up a pre-commit hook:
-
-```bash
-# Create the pre-commit hook
-cat > .git/hooks/pre-commit << 'EOF'
-#!/bin/bash
-
-# Pre-commit hook to run ruff linting and formatting
-# This hook will automatically fix linting issues and format code before committing
-
-echo "Running ruff checks and formatting..."
-
-# Run ruff check with auto-fix and ruff format
-if ! uv run ruff check --fix && uv run ruff format; then
-    echo "❌ Ruff checks failed. Please fix the issues and try committing again."
-    echo "💡 To fix manually, run: uv run ruff check --fix && uv run ruff format"
-    exit 1
-fi
-
-echo "✅ Ruff checks and formatting completed successfully."
-
-# Add any files that were modified by ruff back to the staging area
-git add -u
-
-exit 0
-EOF
-
-# Make it executable
-chmod +x .git/hooks/pre-commit
-```
-
 ### Running Tests
 
 ```bash

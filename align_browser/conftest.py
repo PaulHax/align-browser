@@ -187,34 +187,53 @@ def frontend_with_real_data():
     # Ensure experiment data is downloaded
     experiment_data_dir = project_root / "experiment-data"
     combined_rerun_dir = experiment_data_dir / "combined_rerun"
+    lock_file = experiment_data_dir / ".download_lock"
 
     # Download experiments if combined_rerun directory doesn't exist
     if not combined_rerun_dir.exists():
-        print("Downloading experiment data for tests...")
-        import urllib.request
-        import zipfile
-
-        zip_path = experiment_data_dir / "experiments.zip"
-
-        # Create experiment-data directory if it doesn't exist
+        # Use file-based locking to prevent race conditions in parallel tests
         experiment_data_dir.mkdir(exist_ok=True)
 
-        # Download the zip file
-        url = "https://github.com/PaulHax/align-browser/releases/download/v0.2.1/experiments.zip"
-        print(f"Downloading {url}...")
+        # Simple file-based lock for cross-platform compatibility
+        max_wait = 60  # seconds
+        wait_time = 0
 
-        urllib.request.urlretrieve(url, zip_path)
-        print(f"Downloaded to {zip_path}")
+        while lock_file.exists() and wait_time < max_wait:
+            time.sleep(0.5)
+            wait_time += 0.5
 
-        # Extract the zip file
-        print(f"Extracting {zip_path}...")
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(experiment_data_dir)
+        if not combined_rerun_dir.exists():
+            try:
+                # Create lock file
+                lock_file.touch()
 
-        # Delete the zip file after extraction
-        zip_path.unlink()
-        print(f"Extracted to {experiment_data_dir}")
-        print("Experiment data ready for testing!")
+                print("Downloading experiment data for tests...")
+                import urllib.request
+                import zipfile
+
+                zip_path = experiment_data_dir / "experiments.zip"
+
+                # Download the zip file
+                url = "https://github.com/PaulHax/align-browser/releases/download/v0.2.1/experiments.zip"
+                print(f"Downloading {url}...")
+
+                urllib.request.urlretrieve(url, zip_path)
+                print(f"Downloaded to {zip_path}")
+
+                # Extract the zip file
+                print(f"Extracting {zip_path}...")
+                with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                    zip_ref.extractall(experiment_data_dir)
+
+                # Delete the zip file after extraction
+                zip_path.unlink()
+                print(f"Extracted to {experiment_data_dir}")
+                print("Experiment data ready for testing!")
+
+            finally:
+                # Always remove lock file
+                if lock_file.exists():
+                    lock_file.unlink()
 
     # Use the combined_rerun directory for real experiment data
     real_experiments_root = experiment_data_dir / "combined_rerun"
