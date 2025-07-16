@@ -97,7 +97,9 @@ def _extract_run_variant(
         return ""
 
 
-def _parse_new_format_directory(experiment_dir: Path, output_data_dir: Path = None) -> List[ExperimentData]:
+def _parse_new_format_directory(
+    experiment_dir: Path, output_data_dir: Path = None
+) -> List[ExperimentData]:
     """Parse a directory with new format (mixed alignment_target_ids)."""
     experiments = []
 
@@ -118,24 +120,27 @@ def _parse_new_format_directory(experiment_dir: Path, output_data_dir: Path = No
         alignment_target_id = item["input"].get("alignment_target_id", "unknown")
         grouped_data[alignment_target_id].append(item)
         grouped_indices[alignment_target_id].append(i)
-    
 
     # Create separate experiments for each alignment_target_id
     for alignment_target_id, items in grouped_data.items():
         try:
             # Create a safe filename from alignment_target_id
             safe_filename = alignment_target_id.replace("/", "_").replace(":", "_")
-            
+
             # Determine where to write filtered files
             if output_data_dir:
                 # Write to output directory (production build)
                 experiment_output_dir = output_data_dir / experiment_dir.name
                 experiment_output_dir.mkdir(exist_ok=True)
-                filtered_input_output_path = experiment_output_dir / f"input_output_{safe_filename}.json"
+                filtered_input_output_path = (
+                    experiment_output_dir / f"input_output_{safe_filename}.json"
+                )
             else:
                 # Write to source directory (dev mode - should be avoided)
-                filtered_input_output_path = experiment_dir / f"input_output_{safe_filename}.json"
-            
+                filtered_input_output_path = (
+                    experiment_dir / f"input_output_{safe_filename}.json"
+                )
+
             # Convert to InputOutputItem format and prepare data for writing
             input_output_items = []
             filtered_data_for_json = []
@@ -146,26 +151,31 @@ def _parse_new_format_directory(experiment_dir: Path, output_data_dir: Path = No
                 item_copy["input"]["scenario_id"] = f"{original_scenario_id}-{i}"
                 input_output_items.append(InputOutputItem(**item_copy))
                 filtered_data_for_json.append(item_copy)
-            
+
             # Write the filtered JSON file
-            with open(filtered_input_output_path, 'w') as f:
+            with open(filtered_input_output_path, "w") as f:
                 json.dump(filtered_data_for_json, f, indent=2)
-            
+
             # For now, just use the original timing data structure
             # TODO: Implement proper timing data filtering if needed
             filtered_timing = full_timing_data
-            
-            # Write filtered timing file  
+
+            # Write filtered timing file
             if output_data_dir:
-                filtered_timing_path = experiment_output_dir / f"timing_{safe_filename}.json"
+                filtered_timing_path = (
+                    experiment_output_dir / f"timing_{safe_filename}.json"
+                )
             else:
                 filtered_timing_path = experiment_dir / f"timing_{safe_filename}.json"
-            with open(filtered_timing_path, 'w') as f:
+            with open(filtered_timing_path, "w") as f:
                 json.dump(filtered_timing, f, indent=2)
 
             experiment = ExperimentData.from_directory_new_format(
-                experiment_dir, alignment_target_id, input_output_items, 
-                filtered_input_output_path, filtered_timing_path
+                experiment_dir,
+                alignment_target_id,
+                input_output_items,
+                filtered_input_output_path,
+                filtered_timing_path,
             )
             experiments.append(experiment)
 
@@ -178,7 +188,9 @@ def _parse_new_format_directory(experiment_dir: Path, output_data_dir: Path = No
     return experiments
 
 
-def parse_experiments_directory(experiments_root: Path, output_data_dir: Path = None) -> List[ExperimentData]:
+def parse_experiments_directory(
+    experiments_root: Path, output_data_dir: Path = None
+) -> List[ExperimentData]:
     """
     Parse the experiments directory structure and return a list of ExperimentData.
 
@@ -211,7 +223,9 @@ def parse_experiments_directory(experiments_root: Path, output_data_dir: Path = 
             # Check if this is the new format
             if ExperimentData.is_new_format(experiment_dir):
                 # Parse new format - may return multiple experiments
-                new_experiments = _parse_new_format_directory(experiment_dir, output_data_dir)
+                new_experiments = _parse_new_format_directory(
+                    experiment_dir, output_data_dir
+                )
                 experiments.extend(new_experiments)
             else:
                 # Load experiment data using existing method

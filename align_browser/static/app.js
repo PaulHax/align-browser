@@ -1309,18 +1309,29 @@ document.addEventListener("DOMContentLoaded", () => {
         };
       }
     } else {
-      // Try to find a fallback experiment key with run variant
+      // Try to find a fallback experiment key
       let fallbackKey = null;
       
-      // Look for keys that start with the base pattern
-      const availableKeys = Object.keys(experiments);
-      const basePattern = experimentKey;
+      // If a run variant was requested, try falling back to the base key (without run variant)
+      if (runVariant) {
+        const baseKey = buildExperimentKey(admType, llmBackbone, kdmas);
+        if (experiments[baseKey] && experiments[baseKey].scenarios[scenario]) {
+          fallbackKey = baseKey;
+          console.log(`Fallback: Using base key without run variant: ${fallbackKey} for requested key: ${experimentKey}`);
+        }
+      }
       
-      // First, try to find exact match with available variants
-      for (const key of availableKeys) {
-        if (key.startsWith(basePattern + '_') && experiments[key].scenarios[scenario]) {
-          fallbackKey = key;
-          break;
+      // If no fallback found yet, try to find any other variant for the same base
+      if (!fallbackKey) {
+        const availableKeys = Object.keys(experiments);
+        const baseKey = runVariant ? buildExperimentKey(admType, llmBackbone, kdmas) : experimentKey;
+        
+        // Look for keys that match the base pattern (either exact or with variants)
+        for (const key of availableKeys) {
+          if ((key === baseKey || key.startsWith(baseKey + '_')) && experiments[key].scenarios[scenario]) {
+            fallbackKey = key;
+            break;
+          }
         }
       }
       
@@ -1841,11 +1852,18 @@ document.addEventListener("DOMContentLoaded", () => {
     // Use the same buildExperimentKey function that's used throughout the app
     const baseKey = buildExperimentKey(run.admType, run.llmBackbone, run.kdmaValues);
     
-    // Find all experiment keys that match this base pattern
+    // Find all experiment keys that match this base pattern AND have data for the current scenario
     const availableVariants = new Set();
     let hasExactMatch = false;
     
     for (const experimentKey of Object.keys(manifest.experiment_keys || {})) {
+      const experiment = manifest.experiment_keys[experimentKey];
+      
+      // Only consider variants that have data for the current scenario
+      if (!experiment.scenarios[run.scenario]) {
+        continue;
+      }
+      
       if (experimentKey === baseKey) {
         hasExactMatch = true;
         availableVariants.add('default');
@@ -1867,7 +1885,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // If no exact match for base key, don't add default option
     // Just show available variants without auto-selection
     
-    // Add default option only if base key exists without variant
+    // Add default option only if base key exists without variant AND has data for current scenario
     if (hasExactMatch) {
       availableVariants.add('default');
     }
