@@ -1,9 +1,15 @@
 """Parser for experiment directory structures using Pydantic models."""
 
 import re
+import json
 from pathlib import Path
 from typing import List, Dict
-from align_browser.experiment_models import ExperimentData, GlobalManifest
+from collections import defaultdict
+from align_browser.experiment_models import (
+    ExperimentData,
+    GlobalManifest,
+    InputOutputItem,
+)
 
 
 def _extract_run_variant(
@@ -91,7 +97,88 @@ def _extract_run_variant(
         return ""
 
 
-def parse_experiments_directory(experiments_root: Path) -> List[ExperimentData]:
+def _parse_new_format_directory(experiment_dir: Path, output_data_dir: Path = None) -> List[ExperimentData]:
+    """Parse a directory with new format (mixed alignment_target_ids)."""
+    experiments = []
+
+    # Load input_output.json
+    input_output_path = experiment_dir / "input_output.json"
+    with open(input_output_path) as f:
+        input_output_data = json.load(f)
+
+    # Load timing.json once
+    timing_path = experiment_dir / "timing.json"
+    with open(timing_path) as f:
+        full_timing_data = json.load(f)
+
+    # Group by alignment_target_id and track indices for timing filtering
+    grouped_data = defaultdict(list)
+    grouped_indices = defaultdict(list)  # Track original indices for timing data
+    for i, item in enumerate(input_output_data):
+        alignment_target_id = item["input"].get("alignment_target_id", "unknown")
+        grouped_data[alignment_target_id].append(item)
+        grouped_indices[alignment_target_id].append(i)
+    
+
+    # Create separate experiments for each alignment_target_id
+    for alignment_target_id, items in grouped_data.items():
+        try:
+            # Create a safe filename from alignment_target_id
+            safe_filename = alignment_target_id.replace("/", "_").replace(":", "_")
+            
+            # Determine where to write filtered files
+            if output_data_dir:
+                # Write to output directory (production build)
+                experiment_output_dir = output_data_dir / experiment_dir.name
+                experiment_output_dir.mkdir(exist_ok=True)
+                filtered_input_output_path = experiment_output_dir / f"input_output_{safe_filename}.json"
+            else:
+                # Write to source directory (dev mode - should be avoided)
+                filtered_input_output_path = experiment_dir / f"input_output_{safe_filename}.json"
+            
+            # Convert to InputOutputItem format and prepare data for writing
+            input_output_items = []
+            filtered_data_for_json = []
+            for i, item in enumerate(items):
+                item_copy = item.copy()
+                # Append index to scenario_id to make it unique
+                original_scenario_id = item_copy["input"]["scenario_id"]
+                item_copy["input"]["scenario_id"] = f"{original_scenario_id}-{i}"
+                input_output_items.append(InputOutputItem(**item_copy))
+                filtered_data_for_json.append(item_copy)
+            
+            # Write the filtered JSON file
+            with open(filtered_input_output_path, 'w') as f:
+                json.dump(filtered_data_for_json, f, indent=2)
+            
+            # For now, just use the original timing data structure
+            # TODO: Implement proper timing data filtering if needed
+            filtered_timing = full_timing_data
+            
+            # Write filtered timing file  
+            if output_data_dir:
+                filtered_timing_path = experiment_output_dir / f"timing_{safe_filename}.json"
+            else:
+                filtered_timing_path = experiment_dir / f"timing_{safe_filename}.json"
+            with open(filtered_timing_path, 'w') as f:
+                json.dump(filtered_timing, f, indent=2)
+
+            experiment = ExperimentData.from_directory_new_format(
+                experiment_dir, alignment_target_id, input_output_items, 
+                filtered_input_output_path, filtered_timing_path
+            )
+            experiments.append(experiment)
+
+        except Exception as e:
+            print(
+                f"Error processing alignment_target_id {alignment_target_id} in {experiment_dir}: {e}"
+            )
+            continue
+
+    return experiments
+
+
+def parse_experiments_directory(experiments_root: Path, output_data_dir: Path = None) -> List[ExperimentData]:
     """
     Parse the experiments directory structure and return a list of ExperimentData.
 
@@ -121,9 +208,15 @@ def parse_experiments_directory(experiments_root: Path) -> List[ExperimentData]:
             continue
 
         try:
-            # Load experiment data using Pydantic models
-            experiment = ExperimentData.from_directory(experiment_dir)
-            experiments.append(experiment)
+            # Check if this is the new format
+            if ExperimentData.is_new_format(experiment_dir):
+                # Parse new format - may return multiple experiments
+                new_experiments = _parse_new_format_directory(experiment_dir, output_data_dir)
+                experiments.extend(new_experiments)
+            else:
+                # Load experiment data using existing method
+                experiment = ExperimentData.from_directory(experiment_dir)
+                experiments.append(experiment)
 
         except Exception as e:
             print(f"Error processing {experiment_dir}: {e}")
