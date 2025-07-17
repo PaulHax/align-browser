@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.0](https://github.com/PaulHax/align-browser/compare/v0.3.0...v0.4.0) (2025-07-17)
+
+
+### Features
+
+* make scores.json optional in experiment processing ([c45b0fa](https://github.com/PaulHax/align-browser/commit/c45b0faef796d4afea05177065461b4a95a9e78e))
+* support eval files ([37ba5e8](https://github.com/PaulHax/align-browser/commit/37ba5e80595061b04dcb6827c978342e88cf79e2))
+
+
+### Bug Fixes
+
+* avoid KDMAs in run variants ([3b2bf0b](https://github.com/PaulHax/align-browser/commit/3b2bf0b615e792417b78bb18366aa6387a69ea85))
+* avoid run variants messing up chaning ADMs ([17c838f](https://github.com/PaulHax/align-browser/commit/17c838fd4f5444f0e0e1c8b38874f4dff31b708d))
+* improve run variant handling and scenario-based filtering ([f081001](https://github.com/PaulHax/align-browser/commit/f08100190b7526753d2f797267128bf23d5000b4))
+* run variant dropdown persistence and parameter validation ([1765988](https://github.com/PaulHax/align-browser/commit/176598852f6a297b57f98a2106e7c5dc576ac349))
+* validate KDMA configuration after scenario changes ([4c6677c](https://github.com/PaulHax/align-browser/commit/4c6677cc1f53939adc349d90ce304f64abf1cada))
+
 ## [0.3.0](https://github.com/PaulHax/align-browser/compare/v0.2.1...v0.3.0) (2025-07-15)
 
 
