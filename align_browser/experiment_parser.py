@@ -117,7 +117,9 @@ def _parse_new_format_directory(
     grouped_data = defaultdict(list)
     grouped_indices = defaultdict(list)  # Track original indices for timing data
     for i, item in enumerate(input_output_data):
-        alignment_target_id = item["input"].get("alignment_target_id", "unknown")
+        alignment_target_id = item["input"].get("alignment_target_id")
+        if alignment_target_id is None:
+            alignment_target_id = "unknown"
         grouped_data[alignment_target_id].append(item)
         grouped_indices[alignment_target_id].append(i)
 
