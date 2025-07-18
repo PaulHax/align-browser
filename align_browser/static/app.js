@@ -442,7 +442,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   
   // Find a valid parameter combination given partial constraints and preferences
-  // Priority order: 1) Scenario (highest), 2) KDMA values, 3) ADM type, 4) LLM backbone (lowest)
+  // Priority order: 1) Scenario (highest), 2) No KDMAs when user wants none, 3) KDMA values, 4) ADM type, 5) LLM backbone (lowest)
   function findValidParameterCombination(constraints = {}, preferences = {}, depth = 0) {
     // Prevent infinite recursion
     if (depth > 2) {
@@ -471,7 +471,15 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     
     // If current combination is already valid, return it
-    if (isValidParameterCombination(currentParams.scenario, currentParams.admType, currentParams.llmBackbone, currentParams.kdmas, currentParams.baseScenario, currentParams.runVariant)) {
+    // Special check: if KDMAs are empty, ensure the ADM+LLM actually supports no KDMAs
+    if (Object.keys(currentParams.kdmas).length === 0) {
+      const noVariantKey = `${currentParams.admType}_${currentParams.llmBackbone}_`;
+      if (manifest.experiment_keys[noVariantKey] && 
+          manifest.experiment_keys[noVariantKey].scenarios[currentParams.scenario]) {
+        return currentParams;
+      }
+      // Fall through to Priority 2 logic if this ADM doesn't support empty KDMAs
+    } else if (isValidParameterCombination(currentParams.scenario, currentParams.admType, currentParams.llmBackbone, currentParams.kdmas, currentParams.baseScenario, currentParams.runVariant)) {
       return currentParams;
     }
     
@@ -521,7 +529,28 @@ document.addEventListener("DOMContentLoaded", () => {
             llmBackbone: selectedLLM
           });
           
-          if (Object.keys(kdmaOptions.kdmas).length > 0) {
+          // Check if current ADM+LLM supports no KDMAs when user wants no KDMAs
+          const userWantsNoKDMAs = Object.keys(currentParams.kdmas).length === 0;
+          const admSupportsNoKDMAs = isValidParameterCombination(
+            currentParams.scenario, 
+            selectedADM, 
+            selectedLLM, 
+            {}, 
+            currentParams.baseScenario, 
+            currentParams.runVariant
+          );
+          
+          if (userWantsNoKDMAs && admSupportsNoKDMAs) {
+            // User wants no KDMAs and current ADM supports it - keep no KDMAs
+            return {
+              scenario: currentParams.scenario,
+              baseScenario: currentParams.scenario.replace(/-\d+$/, ""),
+              admType: selectedADM,
+              llmBackbone: selectedLLM,
+              kdmas: {},
+              runVariant: currentParams.runVariant
+            };
+          } else if (Object.keys(kdmaOptions.kdmas).length > 0) {
             // Try to preserve current KDMA values, adjust if needed
             const correctedKDMAs = {};
             
@@ -535,8 +564,8 @@ document.addEventListener("DOMContentLoaded", () => {
               }
             }
             
-            // If no KDMAs preserved, use first available
-            if (Object.keys(correctedKDMAs).length === 0) {
+            // If no KDMAs preserved and user didn't explicitly want no KDMAs, use first available
+            if (Object.keys(correctedKDMAs).length === 0 && !userWantsNoKDMAs) {
               const firstKDMA = Object.keys(kdmaOptions.kdmas)[0];
               const firstValue = Array.from(kdmaOptions.kdmas[firstKDMA])[0];
               correctedKDMAs[firstKDMA] = firstValue;
@@ -571,7 +600,36 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
     
-    // Priority 2: Preserve KDMA values, find scenario+ADM+LLM that supports them
+    // Priority 2: Handle case where user wants no KDMAs but current ADM doesn't support it
+    if (Object.keys(currentParams.kdmas).length === 0) {
+      // User wants no KDMAs - find ADM+LLM that supports this for current scenario
+      const scenarioOptions = getValidOptionsForConstraints({ scenario: currentParams.scenario });
+      
+      for (const admType of scenarioOptions.admTypes) {
+        const admOptions = getValidOptionsForConstraints({ 
+          scenario: currentParams.scenario, 
+          admType 
+        });
+        
+        for (const llmBackbone of admOptions.llmBackbones) {
+          // Check if this ADM+LLM combination has an experiment with no run variant (ends with underscore)
+          const noVariantKey = `${admType}_${llmBackbone}_`;
+          if (manifest.experiment_keys[noVariantKey] && 
+              manifest.experiment_keys[noVariantKey].scenarios[currentParams.scenario]) {
+            return {
+              scenario: currentParams.scenario,
+              baseScenario: currentParams.scenario.replace(/-\d+$/, ""),
+              admType: admType,
+              llmBackbone: llmBackbone,
+              kdmas: {},
+              runVariant: null
+            };
+          }
+        }
+      }
+    }
+    
+    // Priority 3: Preserve KDMA values, find scenario+ADM+LLM that supports them
     if (Object.keys(currentParams.kdmas).length > 0) {
       const allValidOptions = getValidOptionsForConstraints({});
       
@@ -621,7 +679,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
     
-    // Priority 3: Preserve ADM type, adjust LLM and scenario
+    // Priority 4: Preserve ADM type, adjust LLM and scenario
     if (currentParams.admType) {
       const validOptions = getValidOptionsForConstraints({ admType: currentParams.admType });
       
@@ -681,7 +739,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
     
-    // Priority 4 (Fallback): Find any valid combination
+    // Priority 5 (Fallback): Find any valid combination
     const allValidOptions = getValidOptionsForConstraints({});
     
     if (allValidOptions.admTypes.size > 0) {
@@ -1980,14 +2038,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return {};
     
-    // Include current KDMAs as constraints to ensure we only get valid combinations
+    // KDMA prioritization: Find all possible KDMAs for this scenario regardless of current ADM selection
+    // This allows users to add KDMAs even when current ADM has no KDMAs
     const constraints = {
-      scenario: run.scenario,
-      admType: run.admType,
-      llmBackbone: run.llmBackbone
+      scenario: run.scenario
+      // Note: NOT including admType here to allow all ADMs for the scenario
     };
     
-    // If there are existing KDMAs, include them as constraints
+    // If there are existing KDMAs, include them as constraints to ensure consistency
     if (run.kdmaValues && Object.keys(run.kdmaValues).length > 0) {
       constraints.kdmas = { ...run.kdmaValues };
     }
@@ -2002,14 +2060,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return false;
     
-    // Check if there are any experiments for this ADM/LLM combination without KDMAs
+    // KDMA prioritization: Check if ANY ADM for this scenario has no KDMAs
+    // This allows users to remove KDMAs even when current ADM requires them
     const experiments = manifest.experiment_keys || manifest;
-    const baseKey = `${run.admType}_${run.llmBackbone}`;
     
-    // Look for experiments that match the base key exactly (no KDMAs)
-    return experiments.hasOwnProperty(baseKey) && 
-           experiments[baseKey].scenarios && 
-           experiments[baseKey].scenarios[run.scenario];
+    // Look for any experiment key that has this scenario but no KDMAs
+    for (const experimentKey in experiments) {
+      const experiment = experiments[experimentKey];
+      
+      // Check if this experiment includes our scenario
+      if (experiment.scenarios && experiment.scenarios[run.scenario]) {
+        // Check if this experiment key has no KDMAs
+        // Keys without KDMAs end with underscore (indicating no KDMA suffix)
+        if (experimentKey.endsWith('_')) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
   }
 
   // Check if a specific KDMA can be removed from a run
