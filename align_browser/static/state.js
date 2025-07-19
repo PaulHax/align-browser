@@ -251,7 +251,7 @@ export function getManifest() {
   return manifest;
 }
 
-export function resolveParametersToRun(params) {
+function resolveParametersToRun(params) {
   if (!parameterRunMap || parameterRunMap.size === 0) {
     return undefined;
   }
