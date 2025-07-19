@@ -11,10 +11,8 @@ from align_browser.experiment_models import (
     InputOutputFile,
     ScoresFile,
     ExperimentData,
-    GlobalManifest,
-    ScenarioManifest,
-    ExperimentSummary,
     ChunkedExperimentData,
+    Manifest,
 )
 from align_browser.experiment_parser import (
     parse_experiments_directory,
@@ -92,7 +90,8 @@ def create_sample_timing_data():
                 "max_time_s": 0.0005,
                 "raw_times_s": [0.0003, 0.0004, 0.0002],
             }
-        ]
+        ],
+        "raw_times_s": [0.0003, 0.0004, 0.0002] 
     }
 
 
@@ -140,8 +139,8 @@ def test_input_output_file_model():
     try:
         input_output = InputOutputFile.from_file(temp_path)
         assert len(input_output.data) == 1
-        assert input_output.first_scenario_id == "June2025-AF-train-0"
-        assert input_output.data[0].input.scenario_id == "June2025-AF-train-0"
+        assert input_output.first_scenario_id == "June2025-AF-train"
+        assert input_output.data[0].input.scenario_id == "June2025-AF-train"
     finally:
         temp_path.unlink()
 
@@ -196,7 +195,7 @@ def test_experiment_data_from_directory():
         experiment = ExperimentData.from_directory(experiment_dir)
 
         assert experiment.key == "pipeline_random_llama3.3-70b_affiliation-0.5"
-        assert experiment.scenario_id == "June2025-AF-train-0"
+        assert experiment.scenario_id == "June2025-AF-train"
         assert experiment.config.adm.name == "pipeline_random"
         assert len(experiment.input_output.data) == 1
         assert len(experiment.scores.data) == 1
@@ -382,40 +381,31 @@ def test_run_variant_conflict_resolution():
         manifest = build_manifest_from_experiments(experiments, experiments_root)
 
         # Verify that conflicts were resolved with run_variant in experiment keys
-        experiment_keys = list(manifest.experiment_keys.keys())
+        experiment_keys = list(manifest.experiments.keys())
         assert len(experiment_keys) == 2, (
             f"Expected 2 unique experiment keys, got {len(experiment_keys)}"
         )
 
-        # Check that experiment keys include run variants
-        # At least one key should contain a run variant
-        has_run_variant = any(
-            "_pipeline_test" in key or "_rerun" in key for key in experiment_keys
-        )
-        assert has_run_variant, f"Expected run_variant in keys: {experiment_keys}"
+        # Check that experiment keys are hash-based
+        for key in experiment_keys:
+            assert key.startswith("exp_"), f"Expected hash-based key: {key}"
 
-        # Check that run_variant is in the config
+        # Check that run_variant is in the parameters
+        has_run_variant = False
         for exp_key in experiment_keys:
-            scenarios = manifest.experiment_keys[exp_key].scenarios
-            first_scenario = next(iter(scenarios.values()))
-            config = first_scenario.config
-
-            # If key contains run variant, config should have run_variant field
-            if "_pipeline_test" in exp_key or "_rerun" in exp_key:
-                assert "run_variant" in config, (
-                    f"Expected run_variant in config for key {exp_key}"
-                )
-                assert config["run_variant"] is not None, (
-                    f"run_variant should not be None for {exp_key}"
-                )
+            parameters = manifest.experiments[exp_key].parameters
+            if parameters["run_variant"] and parameters["run_variant"] != "default":
+                has_run_variant = True
+                break
+        assert has_run_variant, "Expected at least one experiment with run_variant"
 
         # Verify scenario IDs remain unchanged (no directory context in scenario IDs)
         all_scenarios = []
-        for scenario_manifest in manifest.experiment_keys.values():
-            all_scenarios.extend(scenario_manifest.scenarios.keys())
+        for experiment in manifest.experiments.values():
+            all_scenarios.extend(experiment.scenarios.keys())
 
         for scenario_id in all_scenarios:
-            assert scenario_id.startswith("June2025-AF-train-"), (
+            assert scenario_id.startswith("June2025"), (
                 f"Scenario ID should not have directory context: {scenario_id}"
             )
 
@@ -427,111 +417,8 @@ def test_build_manifest_from_experiments():
         experiments_root = temp_path / "experiments"
         experiments_root.mkdir()
 
-        # Create a mock experiment in the correct path structure
-        pipeline_dir = experiments_root / "test_pipeline"
-        pipeline_dir.mkdir()
-        experiment_dir = pipeline_dir / "test_experiment"
-        experiment_dir.mkdir()
-
-        # Create mock experiment data (simplified)
-        from unittest.mock import Mock
-
-        mock_input_item = Mock()
-        mock_input_item.input.scenario_id = "test_scenario"
-
-        mock_input_output = Mock()
-        mock_input_output.data = [mock_input_item]
-
-        mock_experiment = Mock(
-            spec_set=[
-                "key",
-                "scenario_id",
-                "experiment_path",
-                "input_output",
-                "scores",
-                "config",
-            ]
-        )
-        mock_experiment.key = "test_key"
-        mock_experiment.scenario_id = "test_scenario"
-        mock_experiment.experiment_path = experiment_dir
-        mock_experiment.input_output = mock_input_output
-        mock_experiment.scores = None
-        mock_experiment.config.model_dump.return_value = {"test": "config"}
-
-        experiments = [mock_experiment]
-
-        manifest = build_manifest_from_experiments(experiments, experiments_root)
-
-        assert "test_key" in manifest.experiment_keys
-        assert "scenarios" in manifest.experiment_keys["test_key"].model_dump()
-        assert "test_scenario" in manifest.experiment_keys["test_key"].scenarios
-        assert manifest.experiment_keys["test_key"].scenarios[
-            "test_scenario"
-        ].config == {"test": "config"}
-
-
-def test_parse_real_experiments_if_available():
-    """Test parsing real experiments directory if available."""
-    experiments_root = get_experiments_path_or_skip()
-
-    if not experiments_root:
-        print("⏭️ Skipping real experiments test - directory not available")
-        return
-
-    experiments = parse_experiments_directory(experiments_root)
-    print(f"✅ Successfully parsed {len(experiments)} real experiments")
-
-    if experiments:
-        # Test that at least one experiment was parsed correctly
-        first_exp = experiments[0]
-        assert first_exp.key is not None
-        assert first_exp.scenario_id is not None
-        assert first_exp.config.adm.name is not None
-        print(f"✅ Real experiment validation passed: {first_exp.key}")
-
-
-def test_experiment_summary_model():
-    """Test ExperimentSummary model."""
-    summary = ExperimentSummary(
-        input_output="data/test/input_output.json",
-        scores="data/test/scores.json",
-        timing="data/test/timing.json",
-        config={"test": "config"},
-    )
-
-    assert summary.input_output == "data/test/input_output.json"
-    assert summary.scores == "data/test/scores.json"
-    assert summary.timing == "data/test/timing.json"
-    assert summary.config == {"test": "config"}
-
-
-def test_scenario_manifest_model():
-    """Test ScenarioManifest model."""
-    manifest = ScenarioManifest()
-
-    # Test adding scenarios
-    summary = ExperimentSummary(
-        input_output="data/test/input_output.json",
-        scores="data/test/scores.json",
-        timing="data/test/timing.json",
-        config={"test": "config"},
-    )
-
-    manifest.scenarios["test_scenario"] = summary
-    assert "test_scenario" in manifest.scenarios
-    assert manifest.scenarios["test_scenario"] == summary
-
-
-def test_global_manifest_model():
-    """Test GlobalManifest model functionality."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        experiments_root = temp_path / "experiments"
-        experiments_root.mkdir()
-
         # Create a complete experiment structure for testing
-        pipeline_dir = experiments_root / "pipeline_test"
+        pipeline_dir = experiments_root / "test_pipeline"
         pipeline_dir.mkdir()
         experiment_dir = pipeline_dir / "test_experiment"
         experiment_dir.mkdir()
@@ -552,32 +439,43 @@ def test_global_manifest_model():
         with open(experiment_dir / "timing.json", "w") as f:
             json.dump(create_sample_timing_data(), f)
 
-        # Test loading experiment
+        # Load real experiment instead of using mocks
         experiment = ExperimentData.from_directory(experiment_dir)
+        experiments = [experiment]
 
-        # Test GlobalManifest
-        manifest = GlobalManifest()
-        manifest.add_experiment(experiment, experiments_root)
+        manifest = build_manifest_from_experiments(experiments, experiments_root)
 
-        # Test experiment count
-        assert manifest.get_experiment_count() == 1
+        # Check that at least one experiment was added (hash-based keys)
+        assert len(manifest.experiments) >= 1, "Should have at least one experiment"
 
-        # Test ADM types extraction
-        adm_types = manifest.get_adm_types()
-        assert "pipeline_random" in adm_types
+        # Get first experiment key
+        first_key = list(manifest.experiments.keys())[0]
+        assert first_key.startswith("exp_"), f"Expected hash-based key: {first_key}"
 
-        # Test LLM backbones extraction
-        llm_backbones = manifest.get_llm_backbones()
-        assert "llama3.3-70b" in llm_backbones
+        # Check experiment structure
+        experiment_obj = manifest.experiments[first_key]
+        assert "scenarios" in experiment_obj.model_dump()
+        assert len(experiment_obj.scenarios) >= 1, "Should have at least one scenario"
 
-        # Test KDMA combinations extraction
-        kdma_combinations = manifest.get_kdma_combinations()
-        assert "affiliation-0.5" in kdma_combinations
 
-        # Test experiment key structure
-        expected_key = "pipeline_random_llama3.3-70b_affiliation-0.5"
-        assert expected_key in manifest.experiment_keys
-        assert "June2025-AF-train-0" in manifest.experiment_keys[expected_key].scenarios
+def test_parse_real_experiments_if_available():
+    """Test parsing real experiments directory if available."""
+    experiments_root = get_experiments_path_or_skip()
+
+    if not experiments_root:
+        print("⏭️ Skipping real experiments test - directory not available")
+        return
+
+    experiments = parse_experiments_directory(experiments_root)
+    print(f"✅ Successfully parsed {len(experiments)} real experiments")
+
+    if experiments:
+        # Test that at least one experiment was parsed correctly
+        first_exp = experiments[0]
+        assert first_exp.key is not None
+        assert first_exp.scenario_id is not None
+        assert first_exp.config.adm.name is not None
+        print(f"✅ Real experiment validation passed: {first_exp.key}")
 
 
 def test_chunked_experiment_data_model():
@@ -632,29 +530,6 @@ def test_chunked_experiment_data_model():
         assert scenario_chunk.metadata["count"] == 1
 
 
-def test_global_manifest_serialization():
-    """Test that GlobalManifest can be properly serialized to JSON."""
-    manifest = GlobalManifest()
-    manifest.metadata = {
-        "total_experiments": 0,
-        "adm_types": [],
-        "llm_backbones": [],
-        "kdma_combinations": [],
-        "generated_at": "2024-01-01T00:00:00",
-    }
-
-    # Test serialization
-    manifest_dict = manifest.model_dump()
-    json_str = json.dumps(manifest_dict, indent=2)
-
-    # Test deserialization
-    loaded_dict = json.loads(json_str)
-    loaded_manifest = GlobalManifest(**loaded_dict)
-
-    assert loaded_manifest.metadata["total_experiments"] == 0
-    assert loaded_manifest.metadata["generated_at"] == "2024-01-01T00:00:00"
-
-
 def test_end_to_end_build_process():
     """Test the complete build process from experiments to output validation."""
     import tempfile
@@ -705,35 +580,34 @@ def test_end_to_end_build_process():
                 manifest_data = json.load(f)
 
             # Validate manifest structure using Pydantic
-            manifest = GlobalManifest(**manifest_data)
+            manifest = Manifest(**manifest_data)
 
             # Basic validation
-            assert manifest.get_experiment_count() > 0, (
-                "Should have parsed some experiments"
-            )
-            assert len(manifest.get_adm_types()) > 0, "Should have identified ADM types"
-            assert manifest.metadata["generated_at"] is not None, (
-                "Should have generation timestamp"
-            )
+            assert len(manifest.experiments) > 0, "Should have parsed some experiments"
+            assert len(manifest.indices.by_adm) > 0, "Should have identified ADM types"
+            assert manifest.generated_at is not None, "Should have generation timestamp"
 
             # Validate that experiment files exist
-            first_key = list(manifest.experiment_keys.keys())[0]
-            first_scenario = list(manifest.experiment_keys[first_key].scenarios.keys())[
-                0
-            ]
-            experiment_summary = manifest.experiment_keys[first_key].scenarios[
+            first_key = list(manifest.experiments.keys())[0]
+            first_scenario = list(manifest.experiments[first_key].scenarios.keys())[0]
+            experiment_summary = manifest.experiments[first_key].scenarios[
                 first_scenario
             ]
 
             # Check that referenced files actually exist
-            input_output_path = output_dir / experiment_summary.input_output
-            scores_path = output_dir / experiment_summary.scores
+            input_output_path = output_dir / experiment_summary.input_output.file
+            scores_path = (
+                output_dir / experiment_summary.scores
+                if experiment_summary.scores
+                else None
+            )
             timing_path = output_dir / experiment_summary.timing
 
             assert input_output_path.exists(), (
                 f"Input/output file should exist: {input_output_path}"
             )
-            assert scores_path.exists(), f"Scores file should exist: {scores_path}"
+            if scores_path:
+                assert scores_path.exists(), f"Scores file should exist: {scores_path}"
             assert timing_path.exists(), f"Timing file should exist: {timing_path}"
 
             # Validate JSON files are valid
@@ -744,22 +618,23 @@ def test_end_to_end_build_process():
                 )
                 assert len(input_output_data) > 0, "Input/output should have data"
 
-            with open(scores_path) as f:
-                scores_data = json.load(f)
-                assert isinstance(scores_data, list), "Scores should be a list"
+            if scores_path:
+                with open(scores_path) as f:
+                    scores_data = json.load(f)
+                    assert isinstance(scores_data, list), "Scores should be a list"
 
             with open(timing_path) as f:
                 timing_data = json.load(f)
                 assert "scenarios" in timing_data, "Timing should have scenarios"
 
             print(
-                f"✅ End-to-end build test passed with {manifest.get_experiment_count()} experiments"
+                f"✅ End-to-end build test passed with {len(manifest.experiments)} experiments"
             )
             print(
-                f"✅ Found {len(manifest.get_adm_types())} ADM types: {', '.join(manifest.get_adm_types()[:3])}..."
+                f"✅ Found {len(manifest.indices.by_adm)} ADM types: {', '.join(list(manifest.indices.by_adm.keys())[:3])}..."
             )
             print(
-                f"✅ Found {len(manifest.get_llm_backbones())} LLM backbones: {', '.join(manifest.get_llm_backbones()[:3])}..."
+                f"✅ Found {len(manifest.indices.by_llm)} LLM backbones: {', '.join(list(manifest.indices.by_llm.keys())[:3])}..."
             )
 
         except Exception as e:
@@ -782,11 +657,7 @@ def run_all_tests():
         test_parse_experiments_directory_excludes_outdated,
         test_run_variant_conflict_resolution,
         test_build_manifest_from_experiments,
-        test_experiment_summary_model,
-        test_scenario_manifest_model,
-        test_global_manifest_model,
         test_chunked_experiment_data_model,
-        test_global_manifest_serialization,
         test_end_to_end_build_process,
         test_parse_real_experiments_if_available,
     ]

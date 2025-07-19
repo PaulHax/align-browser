@@ -88,18 +88,10 @@ def build_frontend(
     data_output_dir.mkdir(exist_ok=True)
 
     # Parse experiments and build manifest
-    experiments = parse_experiments_directory(experiments_root, data_output_dir)
+    experiments = parse_experiments_directory(experiments_root)
     manifest = build_manifest_from_experiments(experiments, experiments_root)
 
-    # Add generation timestamp (deterministic for tests)
-    import os
-
-    if os.getenv("PYTEST_CURRENT_TEST"):
-        # Use deterministic timestamp during tests
-        manifest.metadata["generated_at"] = "2024-01-01T00:00:00"
-    else:
-        # Use actual timestamp in production
-        manifest.metadata["generated_at"] = datetime.now().isoformat()
+    manifest.generated_at = datetime.now().isoformat()
 
     # Copy experiment data files
     copy_experiment_files(experiments, experiments_root, data_output_dir)

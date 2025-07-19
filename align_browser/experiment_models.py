@@ -3,9 +3,33 @@
 import json
 import yaml
 import re
+import hashlib
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, ConfigDict
+
+
+def calculate_file_checksum(file_path: Path) -> str:
+    """Calculate SHA256 checksum of a file."""
+    if not file_path.exists():
+        return ""
+
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        # Read in chunks to handle large files efficiently
+        for chunk in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(chunk)
+
+    return f"sha256:{sha256_hash.hexdigest()}"
+
+
+def calculate_file_checksums(file_paths: List[Path]) -> Dict[str, str]:
+    """Calculate checksums for multiple files."""
+    checksums = {}
+    for file_path in file_paths:
+        checksums[str(file_path)] = calculate_file_checksum(file_path)
+    return checksums
 
 
 class KDMAValue(BaseModel):
@@ -23,14 +47,15 @@ def parse_alignment_target_id(alignment_target_id: str) -> List[KDMAValue]:
     Examples:
         "ADEPT-June2025-merit-0.0" -> [KDMAValue(kdma="merit", value=0.0)]
         "ADEPT-June2025-affiliation-0.5" -> [KDMAValue(kdma="affiliation", value=0.5)]
+        "unaligned" -> [] (no KDMAs)
 
     Args:
-        alignment_target_id: String like "ADEPT-June2025-merit-0.0"
+        alignment_target_id: String like "ADEPT-June2025-merit-0.0" or "unaligned"
 
     Returns:
         List of KDMAValue objects
     """
-    if not alignment_target_id:
+    if not alignment_target_id or alignment_target_id == "unaligned":
         return []
 
     # Pattern: {prefix}-{scenario}-{kdma}-{value}
@@ -88,6 +113,32 @@ class ExperimentConfig(BaseModel):
             return f"{base_key}_{self.run_variant}"
         return base_key
 
+    def generate_experiment_key(self) -> str:
+        """Generate hash-based experiment key for new manifest structure."""
+        key_data = {
+            "adm": self.adm.name,
+            "llm": self.adm.llm_backbone if self.adm.llm_backbone != "no_llm" else None,
+            "kdma": self._get_kdma_key(),
+            "run_variant": self.run_variant or "default",
+        }
+
+        # Create deterministic hash from sorted key data
+        key_string = json.dumps(key_data, sort_keys=True)
+        hash_obj = hashlib.sha256(key_string.encode("utf-8"))
+        hash_hex = hash_obj.hexdigest()
+
+        return f"exp_{hash_hex[:8]}"
+
+    def _get_kdma_key(self) -> str:
+        """Generate KDMA key component for experiment identification."""
+        if not self.alignment_target.kdma_values:
+            return "unaligned"
+
+        kdma_parts = [
+            f"{kv.kdma}-{kv.value}" for kv in self.alignment_target.kdma_values
+        ]
+        return "_".join(sorted(kdma_parts))
+
 
 class InputData(BaseModel):
     """Represents input data for an experiment."""
@@ -120,6 +171,7 @@ class TimingData(BaseModel):
     """Represents timing data from timing.json."""
 
     scenarios: List[ScenarioTiming]
+    raw_times_s: List[float]  # Indicies map to list in input_output.json
 
 
 class InputOutputFile(BaseModel):
@@ -133,17 +185,8 @@ class InputOutputFile(BaseModel):
         with open(path) as f:
             raw_data = json.load(f)
 
-        # Process data to append index to duplicate scenario_ids
-        processed_data = []
-        for i, item in enumerate(raw_data):
-            # Create a copy of the item
-            item_copy = item.copy()
-            # Append index to scenario_id to make it unique
-            original_scenario_id = item_copy["input"]["scenario_id"]
-            item_copy["input"]["scenario_id"] = f"{original_scenario_id}-{i}"
-            processed_data.append(item_copy)
-
-        return cls(data=processed_data)
+        # Use raw data as-is since scenes provide unique identification
+        return cls(data=raw_data)
 
     @property
     def first_scenario_id(self) -> str:
@@ -208,15 +251,19 @@ class ExperimentData(BaseModel):
         )
 
     @classmethod
-    def from_directory_new_format(
+    def from_directory_mixed_kdma(
         cls,
         experiment_dir: Path,
         alignment_target_id: str,
-        filtered_data: List[Dict[str, Any]],
-        input_output_file_path: Path = None,
-        timing_file_path: Path = None,
+        filtered_data: List[InputOutputItem],
     ) -> "ExperimentData":
-        """Load experiment data from new format directory for a specific alignment target."""
+        """Load experiment data from mixed KDMA directory for a specific alignment target.
+
+        Mixed KDMA format: Handles experiments where different scenes have different KDMA
+        configurations, with KDMAs defined per scene in alignment_target_id rather than config.yaml.
+
+        This method works with logical filtering - the original files remain intact.
+        """
         # Load config
         config_path = experiment_dir / ".hydra" / "config.yaml"
         with open(config_path) as f:
@@ -232,7 +279,7 @@ class ExperimentData(BaseModel):
         config_data["alignment_target"] = alignment_target.model_dump()
         config = ExperimentConfig(**config_data)
 
-        # Create input_output from filtered data
+        # Create input_output from the logically filtered data (already InputOutputItems)
         input_output = InputOutputFile(data=filtered_data)
 
         # Load scores if available
@@ -241,15 +288,13 @@ class ExperimentData(BaseModel):
         if scores_path.exists():
             scores = ScoresFile.from_file(scores_path)
 
-        # Use specific timing file if provided, otherwise fall back to default
-        timing_path = (
-            timing_file_path if timing_file_path else experiment_dir / "timing.json"
-        )
+        # Load timing data from default location
+        timing_path = experiment_dir / "timing.json"
         with open(timing_path) as f:
             timing_data = json.load(f)
         timing = TimingData(**timing_data)
 
-        # Store the specific file paths for the manifest
+        # Create experiment instance
         experiment = cls(
             config=config,
             input_output=input_output,
@@ -257,10 +302,6 @@ class ExperimentData(BaseModel):
             timing=timing,
             experiment_path=experiment_dir,
         )
-
-        # Store the specific file paths as attributes for manifest generation
-        experiment._input_output_file_path = input_output_file_path
-        experiment._timing_file_path = timing_file_path
 
         return experiment
 
@@ -284,130 +325,217 @@ class ExperimentData(BaseModel):
         ]
         return all((experiment_dir / f).exists() for f in required_files)
 
-    @classmethod
-    def is_new_format(cls, experiment_dir: Path) -> bool:
-        """Check if directory uses new format (no alignment_target in config)."""
-        if not cls.has_required_files(experiment_dir):
-            return False
 
-        config_path = experiment_dir / ".hydra" / "config.yaml"
-        try:
-            with open(config_path) as f:
-                config_data = yaml.safe_load(f)
-            return "alignment_target" not in config_data
-        except Exception:
-            return False
+# Enhanced Manifest Models for New Structure
+class SceneInfo(BaseModel):
+    """Information about a scene within a scenario."""
+
+    source_index: int  # Index in the source input_output.json file
+    scene_id: str  # Scene ID from meta_info.scene_id
+    timing_s: float  # Timing from timing.json raw_times_s[source_index]
 
 
-# Output Models for Frontend Consumption
-class ExperimentSummary(BaseModel):
-    """Summary of experiment data for the manifest."""
+class InputOutputFileInfo(BaseModel):
+    """File information for input_output data."""
 
-    input_output: str  # Path to input_output.json
+    file: str  # Path to the file
+    checksum: str  # SHA256 checksum for integrity
+    alignment_target_filter: Optional[str] = None  # Filter for multi-experiment files
+
+
+class Scenario(BaseModel):
+    """Enhanced scenario structure with scene mapping."""
+
+    input_output: InputOutputFileInfo
     scores: Optional[str] = None  # Path to scores.json
     timing: str  # Path to timing.json
-    config: Dict[str, Any]  # Full experiment configuration
+    scenes: Dict[str, SceneInfo] = Field(default_factory=dict)  # scene_id -> SceneInfo
 
 
-class ScenarioManifest(BaseModel):
-    """Manifest entry for scenarios within an experiment key."""
+class Experiment(BaseModel):
+    """Enhanced experiment structure with flexible parameters."""
 
-    scenarios: Dict[str, ExperimentSummary] = Field(default_factory=dict)
+    parameters: Dict[str, Any]  # Flexible parameter structure
+    scenarios: Dict[str, Scenario] = Field(
+        default_factory=dict
+    )  # scenario_id -> scenario
 
 
-class GlobalManifest(BaseModel):
-    """Top-level manifest for all experiments."""
+class FileInfo(BaseModel):
+    """Metadata about a source file."""
 
-    experiment_keys: Dict[str, ScenarioManifest] = Field(default_factory=dict)
+    checksum: str  # SHA256 checksum
+    size: int  # File size in bytes
+    experiments: List[str] = Field(
+        default_factory=list
+    )  # Experiment keys using this file
+
+
+class ManifestIndices(BaseModel):
+    """Indices for fast experiment lookups."""
+
+    by_adm: Dict[str, List[str]] = Field(default_factory=dict)
+    by_llm: Dict[str, List[str]] = Field(default_factory=dict)
+    by_kdma: Dict[str, List[str]] = Field(default_factory=dict)
+    by_scenario: Dict[str, List[str]] = Field(default_factory=dict)
+
+
+class Manifest(BaseModel):
+    """Global manifest with hierarchical structure and integrity validation."""
+
+    manifest_version: str = "1.0"
+    generated_at: str
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    experiments: Dict[str, Experiment] = Field(default_factory=dict)
+    indices: ManifestIndices = Field(default_factory=ManifestIndices)
+    files: Dict[str, FileInfo] = Field(default_factory=dict)
 
-    def add_experiment(self, experiment: "ExperimentData", experiments_root: Path):
-        """Add an experiment to the manifest."""
-        key = experiment.key
+    def add_experiment(
+        self,
+        experiment: "ExperimentData",
+        experiments_root: Path,
+        source_file_checksums: Dict[str, str],
+    ):
+        """Add an experiment to the enhanced manifest."""
+        # Generate experiment key
+        exp_key = experiment.config.generate_experiment_key()
 
-        # Calculate relative path
+        # Create parameter structure
+        parameters = {
+            "adm": {
+                "name": experiment.config.adm.name,
+                "instance": experiment.config.adm.instance,
+            },
+            "llm": None
+            if experiment.config.adm.llm_backbone == "no_llm"
+            else {
+                "model_name": experiment.config.adm.llm_backbone,
+                # Add other LLM config from structured_inference_engine if available
+                **(experiment.config.adm.structured_inference_engine or {}),
+            },
+            "kdma_values": [
+                kv.model_dump() for kv in experiment.config.alignment_target.kdma_values
+            ],
+            "alignment_target_id": experiment.config.alignment_target.id,
+            "run_variant": experiment.config.run_variant,
+        }
+
+        # Calculate relative paths
         relative_experiment_path = experiment.experiment_path.relative_to(
             experiments_root
         )
 
-        # Ensure key exists
-        if key not in self.experiment_keys:
-            self.experiment_keys[key] = ScenarioManifest()
+        # Use standard file paths
+        input_output_path = str(
+            Path("data") / relative_experiment_path / "input_output.json"
+        )
+        timing_path = str(Path("data") / relative_experiment_path / "timing.json")
 
-        # Use specific file paths if available (for new format), otherwise default paths
-        input_output_filename = "input_output.json"
-        timing_filename = "timing.json"
+        # Get checksum for input_output file
+        full_input_output_path = str(experiment.experiment_path / "input_output.json")
+        input_output_checksum = source_file_checksums.get(full_input_output_path, "")
 
-        if (
-            hasattr(experiment, "_input_output_file_path")
-            and experiment._input_output_file_path
-        ):
-            input_output_filename = experiment._input_output_file_path.name
-        if hasattr(experiment, "_timing_file_path") and experiment._timing_file_path:
-            timing_filename = experiment._timing_file_path.name
-
-        # Add all scenarios from the input_output data
-        for item in experiment.input_output.data:
+        # Create scenario mapping - group by actual scenario_id
+        scenarios_dict = {}
+        for i, item in enumerate(experiment.input_output.data):
+            # Use the scenario_id as-is since we no longer add numeric suffixes
             scenario_id = item.input.scenario_id
-            scores_path = None
-            if experiment.scores is not None:
-                scores_path = str(
-                    Path("data") / relative_experiment_path / "scores.json"
+            scene_id = "unknown"
+
+            # Extract scene_id from full_state.meta_info.scene_id if available
+            if item.input.full_state and isinstance(item.input.full_state, dict):
+                meta_info = item.input.full_state.get("meta_info", {})
+                if isinstance(meta_info, dict):
+                    scene_id = meta_info.get("scene_id", f"scene_{i}")
+
+            if scenario_id not in scenarios_dict:
+                scores_path = None
+                if experiment.scores is not None:
+                    scores_path = str(
+                        Path("data") / relative_experiment_path / "scores.json"
+                    )
+
+                scenarios_dict[scenario_id] = Scenario(
+                    input_output=InputOutputFileInfo(
+                        file=input_output_path,
+                        checksum=input_output_checksum,
+                        alignment_target_filter=experiment.config.alignment_target.id,
+                    ),
+                    scores=scores_path,
+                    timing=timing_path,
+                    scenes={},
                 )
 
-            self.experiment_keys[key].scenarios[scenario_id] = ExperimentSummary(
-                input_output=str(
-                    Path("data") / relative_experiment_path / input_output_filename
-                ),
-                scores=scores_path,
-                timing=str(Path("data") / relative_experiment_path / timing_filename),
-                config=experiment.config.model_dump(),
+            scenarios_dict[scenario_id].scenes[scene_id] = SceneInfo(
+                source_index=i, scene_id=scene_id, timing_s=experiment.timing.raw_times_s[i]
             )
 
-    def get_experiment_count(self) -> int:
-        """Get total number of experiments in the manifest."""
-        return sum(
-            len(scenario_manifest.scenarios)
-            for scenario_manifest in self.experiment_keys.values()
-        )
+        # Create enhanced experiment
+        enhanced_exp = Experiment(parameters=parameters, scenarios=scenarios_dict)
 
-    def get_adm_types(self) -> List[str]:
-        """Get unique ADM types from all experiments."""
-        adm_types = set()
-        for experiment_key in self.experiment_keys.values():
-            for scenario_summary in experiment_key.scenarios.values():
-                adm_name = scenario_summary.config.get("adm", {}).get("name", "unknown")
-                adm_types.add(adm_name)
-        return sorted(list(adm_types))
+        self.experiments[exp_key] = enhanced_exp
 
-    def get_llm_backbones(self) -> List[str]:
-        """Get unique LLM backbones from all experiments."""
-        llm_backbones = set()
-        for experiment_key in self.experiment_keys.values():
-            for scenario_summary in experiment_key.scenarios.values():
-                adm_config = scenario_summary.config.get("adm", {})
-                structured_engine = adm_config.get("structured_inference_engine", {})
-                if structured_engine is not None:
-                    model_name = structured_engine.get("model_name", "no_llm")
-                else:
-                    model_name = "no_llm"
-                llm_backbones.add(model_name)
-        return sorted(list(llm_backbones))
+        # Update indices
+        self._update_indices(exp_key, parameters, scenarios_dict.keys())
 
-    def get_kdma_combinations(self) -> List[str]:
-        """Get unique KDMA combinations from all experiments."""
-        kdma_combinations = set()
-        for experiment_key in self.experiment_keys.values():
-            for scenario_summary in experiment_key.scenarios.values():
-                alignment_target = scenario_summary.config.get("alignment_target", {})
-                kdma_values = alignment_target.get("kdma_values", [])
-                kdma_parts = []
-                for kv in kdma_values:
-                    kdma_parts.append(f"{kv['kdma']}-{kv['value']}")
-                if kdma_parts:
-                    kdma_string = "_".join(sorted(kdma_parts))
-                    kdma_combinations.add(kdma_string)
-        return sorted(list(kdma_combinations))
+        # Update file tracking
+        self._update_file_info(input_output_path, input_output_checksum, exp_key)
+
+    def _update_indices(
+        self, exp_key: str, parameters: Dict[str, Any], scenario_ids: List[str]
+    ):
+        """Update lookup indices for the experiment."""
+        adm_name = parameters["adm"]["name"]
+        llm_name = parameters["llm"]["model_name"] if parameters["llm"] else "no-llm"
+        kdma_key = parameters.get("kdma_key", "unaligned")  # Will be computed properly
+
+        # Compute KDMA key from kdma_values
+        if not parameters["kdma_values"]:
+            kdma_key = "unaligned"
+        else:
+            kdma_parts = [
+                f"{kv['kdma']}-{kv['value']}" for kv in parameters["kdma_values"]
+            ]
+            kdma_key = "_".join(sorted(kdma_parts))
+
+        # Update indices
+        if adm_name not in self.indices.by_adm:
+            self.indices.by_adm[adm_name] = []
+        self.indices.by_adm[adm_name].append(exp_key)
+
+        if llm_name not in self.indices.by_llm:
+            self.indices.by_llm[llm_name] = []
+        self.indices.by_llm[llm_name].append(exp_key)
+
+        if kdma_key not in self.indices.by_kdma:
+            self.indices.by_kdma[kdma_key] = []
+        self.indices.by_kdma[kdma_key].append(exp_key)
+
+        for scenario_id in scenario_ids:
+            if scenario_id not in self.indices.by_scenario:
+                self.indices.by_scenario[scenario_id] = []
+            self.indices.by_scenario[scenario_id].append(exp_key)
+
+    def _update_file_info(self, file_path: str, checksum: str, exp_key: str):
+        """Update file tracking information."""
+        if file_path not in self.files:
+            # Calculate file size if checksum is available (file exists)
+            file_size = 0
+            if checksum:
+                try:
+                    # Convert relative path to absolute for size calculation
+                    # Remove "data/" prefix if present to get actual path
+                    actual_path = file_path.replace("data/", "", 1)
+                    file_size = os.path.getsize(actual_path)
+                except (OSError, FileNotFoundError):
+                    file_size = 0
+
+            self.files[file_path] = FileInfo(
+                checksum=checksum, size=file_size, experiments=[]
+            )
+
+        if exp_key not in self.files[file_path].experiments:
+            self.files[file_path].experiments.append(exp_key)
 
 
 class ChunkedExperimentData(BaseModel):

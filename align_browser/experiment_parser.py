@@ -2,13 +2,15 @@
 
 import re
 import json
+import yaml
 from pathlib import Path
 from typing import List, Dict
 from collections import defaultdict
 from align_browser.experiment_models import (
     ExperimentData,
-    GlobalManifest,
+    Manifest,
     InputOutputItem,
+    calculate_file_checksums,
 )
 
 
@@ -97,10 +99,15 @@ def _extract_run_variant(
         return ""
 
 
-def _parse_new_format_directory(
-    experiment_dir: Path, output_data_dir: Path = None
-) -> List[ExperimentData]:
-    """Parse a directory with new format (mixed alignment_target_ids)."""
+def _create_experiments_from_directory(experiment_dir: Path) -> List[ExperimentData]:
+    """Create experiments from a directory, handling both uniform and mixed KDMA alignment.
+
+    This unified function handles both cases:
+    - Uniform KDMA: All scenes use same alignment target (defined in config.yaml)
+    - Mixed KDMA: Different scenes have different alignment targets (defined per input item)
+
+    Returns a list of experiments (one per unique alignment target).
+    """
     experiments = []
 
     # Load input_output.json
@@ -108,76 +115,51 @@ def _parse_new_format_directory(
     with open(input_output_path) as f:
         input_output_data = json.load(f)
 
-    # Load timing.json once
-    timing_path = experiment_dir / "timing.json"
-    with open(timing_path) as f:
-        full_timing_data = json.load(f)
+    # Load config to check for uniform alignment target
+    config_path = experiment_dir / ".hydra" / "config.yaml"
+    with open(config_path) as f:
+        config_data = yaml.safe_load(f)
 
-    # Group by alignment_target_id and track indices for timing filtering
+    has_config_alignment = "alignment_target" in config_data
+
+    # Group by alignment_target_id
     grouped_data = defaultdict(list)
-    grouped_indices = defaultdict(list)  # Track original indices for timing data
-    for i, item in enumerate(input_output_data):
-        alignment_target_id = item["input"].get("alignment_target_id", "unknown")
-        grouped_data[alignment_target_id].append(item)
-        grouped_indices[alignment_target_id].append(i)
 
-    # Create separate experiments for each alignment_target_id
+    for item in input_output_data:
+        # Determine alignment target for this item
+        if has_config_alignment:
+            # Uniform KDMA: Use alignment target from config for all items
+            alignment_target_id = config_data["alignment_target"]["id"]
+        else:
+            # Mixed KDMA: Use alignment target from input item
+            alignment_target_id = item["input"].get("alignment_target_id")
+            if alignment_target_id is None:
+                alignment_target_id = "unaligned"  # Handle null alignment targets
+
+        grouped_data[alignment_target_id].append(item)
+
+    # Create experiments for each alignment target group
     for alignment_target_id, items in grouped_data.items():
         try:
-            # Create a safe filename from alignment_target_id
-            safe_filename = alignment_target_id.replace("/", "_").replace(":", "_")
-
-            # Determine where to write filtered files
-            if output_data_dir:
-                # Write to output directory (production build)
-                experiment_output_dir = output_data_dir / experiment_dir.name
-                experiment_output_dir.mkdir(exist_ok=True)
-                filtered_input_output_path = (
-                    experiment_output_dir / f"input_output_{safe_filename}.json"
-                )
+            if has_config_alignment:
+                # Uniform KDMA: Use standard from_directory method
+                experiment = ExperimentData.from_directory(experiment_dir)
+                experiments.append(experiment)
+                break  # Only one experiment for uniform KDMA
             else:
-                # Write to source directory (dev mode - should be avoided)
-                filtered_input_output_path = (
-                    experiment_dir / f"input_output_{safe_filename}.json"
+                # Mixed KDMA: Create experiment for this specific alignment target (logical grouping only)
+                # Convert to InputOutputItem format keeping original scenario IDs
+                input_output_items = []
+                for item in items:
+                    input_output_items.append(InputOutputItem(**item))
+
+                # Create experiment using logical grouping (no file duplication)
+                experiment = ExperimentData.from_directory_mixed_kdma(
+                    experiment_dir,
+                    alignment_target_id,
+                    input_output_items,
                 )
-
-            # Convert to InputOutputItem format and prepare data for writing
-            input_output_items = []
-            filtered_data_for_json = []
-            for i, item in enumerate(items):
-                item_copy = item.copy()
-                # Append index to scenario_id to make it unique
-                original_scenario_id = item_copy["input"]["scenario_id"]
-                item_copy["input"]["scenario_id"] = f"{original_scenario_id}-{i}"
-                input_output_items.append(InputOutputItem(**item_copy))
-                filtered_data_for_json.append(item_copy)
-
-            # Write the filtered JSON file
-            with open(filtered_input_output_path, "w") as f:
-                json.dump(filtered_data_for_json, f, indent=2)
-
-            # For now, just use the original timing data structure
-            # TODO: Implement proper timing data filtering if needed
-            filtered_timing = full_timing_data
-
-            # Write filtered timing file
-            if output_data_dir:
-                filtered_timing_path = (
-                    experiment_output_dir / f"timing_{safe_filename}.json"
-                )
-            else:
-                filtered_timing_path = experiment_dir / f"timing_{safe_filename}.json"
-            with open(filtered_timing_path, "w") as f:
-                json.dump(filtered_timing, f, indent=2)
-
-            experiment = ExperimentData.from_directory_new_format(
-                experiment_dir,
-                alignment_target_id,
-                input_output_items,
-                filtered_input_output_path,
-                filtered_timing_path,
-            )
-            experiments.append(experiment)
+                experiments.append(experiment)
 
         except Exception as e:
             print(
@@ -188,9 +170,7 @@ def _parse_new_format_directory(
     return experiments
 
 
-def parse_experiments_directory(
-    experiments_root: Path, output_data_dir: Path = None
-) -> List[ExperimentData]:
+def parse_experiments_directory(experiments_root: Path) -> List[ExperimentData]:
     """
     Parse the experiments directory structure and return a list of ExperimentData.
 
@@ -220,17 +200,8 @@ def parse_experiments_directory(
             continue
 
         try:
-            # Check if this is the new format
-            if ExperimentData.is_new_format(experiment_dir):
-                # Parse new format - may return multiple experiments
-                new_experiments = _parse_new_format_directory(
-                    experiment_dir, output_data_dir
-                )
-                experiments.extend(new_experiments)
-            else:
-                # Load experiment data using existing method
-                experiment = ExperimentData.from_directory(experiment_dir)
-                experiments.append(experiment)
+            directory_experiments = _create_experiments_from_directory(experiment_dir)
+            experiments.extend(directory_experiments)
 
         except Exception as e:
             print(f"Error processing {experiment_dir}: {e}")
@@ -241,22 +212,39 @@ def parse_experiments_directory(
 
 def build_manifest_from_experiments(
     experiments: List[ExperimentData], experiments_root: Path
-) -> GlobalManifest:
+) -> Manifest:
     """
-    Build the global manifest from a list of parsed experiments.
+    Build the enhanced global manifest from a list of parsed experiments.
 
-    Detects conflicts (same ADM+LLM+KDMA but different directories) and
-    adds run_variant parameter to resolve conflicts.
+    Uses the new flexible parameter-based structure with integrity validation
+    and fast lookup indices.
 
     Args:
         experiments: List of ExperimentData objects
         experiments_root: Path to experiments root (for calculating relative paths)
 
     Returns:
-        GlobalManifest object with experiment data
+        Manifest object with new structure
     """
-    # First pass: detect TRUE conflicts by grouping experiments by their complete key
-    # True conflicts are experiments with identical ADM+LLM+KDMA in different directories
+    from datetime import datetime, timezone
+
+    # Initialize manifest
+    manifest = Manifest(
+        manifest_version="2.0", generated_at=datetime.now(timezone.utc).isoformat()
+    )
+
+    # Collect all input_output files for checksum calculation
+    input_output_files = set()
+    for experiment in experiments:
+        # Add default input_output.json path
+        input_output_files.add(experiment.experiment_path / "input_output.json")
+
+    # Calculate checksums for all files
+    print(f"Calculating checksums for {len(input_output_files)} files...")
+    source_file_checksums = calculate_file_checksums(list(input_output_files))
+
+    # Process experiments with conflict detection similar to original
+    # First pass: detect conflicts by grouping experiments by their base parameters
     base_key_groups: Dict[str, List[ExperimentData]] = {}
 
     for experiment in experiments:
@@ -270,7 +258,7 @@ def build_manifest_from_experiments(
             base_key_groups[base_key] = []
         base_key_groups[base_key].append(experiment)
 
-    # Second pass: add run_variant only for TRUE conflicts
+    # Second pass: add run_variant for conflicts and process all experiments
     enhanced_experiments = []
 
     for base_key, group_experiments in base_key_groups.items():
@@ -278,64 +266,46 @@ def build_manifest_from_experiments(
             # No conflict, use original experiment
             enhanced_experiments.append(group_experiments[0])
         else:
-            # TRUE conflict detected - same ADM+LLM+KDMA in different directories
-            # Check if these are actually different KDMA configurations that got the same key
-            # This shouldn't happen if KDMA parsing is working correctly
-            all_have_same_kdmas = True
-            if len(group_experiments) > 1:
-                first_kdmas = set(
-                    (kv.kdma, kv.value)
-                    for kv in group_experiments[0].config.alignment_target.kdma_values
+            # Conflict detected - add run_variant from directory structure
+            conflicting_dirs = [exp.experiment_path for exp in group_experiments]
+            for experiment in group_experiments:
+                run_variant = _extract_run_variant(
+                    experiment.experiment_path, experiments_root, conflicting_dirs
                 )
-                for exp in group_experiments[1:]:
-                    exp_kdmas = set(
-                        (kv.kdma, kv.value)
-                        for kv in exp.config.alignment_target.kdma_values
+                if run_variant:
+                    # Create a copy of the experiment with run_variant
+                    enhanced_config = experiment.config.model_copy(deep=True)
+                    enhanced_config.run_variant = run_variant
+
+                    enhanced_experiment = ExperimentData(
+                        config=enhanced_config,
+                        input_output=experiment.input_output,
+                        scores=experiment.scores,
+                        timing=experiment.timing,
+                        experiment_path=experiment.experiment_path,
                     )
-                    if exp_kdmas != first_kdmas:
-                        all_have_same_kdmas = False
-                        break
 
-            if not all_have_same_kdmas:
-                # Different KDMAs but same key - shouldn't happen, just use originals
-                enhanced_experiments.extend(group_experiments)
-            else:
-                # True conflicts - add run_variant from directory structure
-                conflicting_dirs = [exp.experiment_path for exp in group_experiments]
-                for experiment in group_experiments:
-                    run_variant = _extract_run_variant(
-                        experiment.experiment_path, experiments_root, conflicting_dirs
-                    )
-                    if run_variant:
-                        # Create a copy of the experiment with run_variant
-                        enhanced_config = experiment.config.model_copy(deep=True)
-                        enhanced_config.run_variant = run_variant
+                    enhanced_experiments.append(enhanced_experiment)
+                else:
+                    # Fallback: use original if no run variant available
+                    enhanced_experiments.append(experiment)
 
-                        enhanced_experiment = ExperimentData(
-                            config=enhanced_config,
-                            input_output=experiment.input_output,
-                            scores=experiment.scores,
-                            timing=experiment.timing,
-                            experiment_path=experiment.experiment_path,
-                        )
-                        enhanced_experiments.append(enhanced_experiment)
-                    else:
-                        # Fallback: use original if no run variant available
-                        enhanced_experiments.append(experiment)
-
-    # Build manifest with enhanced experiments
-    manifest = GlobalManifest()
-
+    # Add experiments to enhanced manifest
     for experiment in enhanced_experiments:
-        manifest.add_experiment(experiment, experiments_root)
+        try:
+            manifest.add_experiment(experiment, experiments_root, source_file_checksums)
+        except Exception as e:
+            print(f"Error adding experiment {experiment.experiment_path}: {e}")
+            continue
 
     # Add metadata
     manifest.metadata = {
-        "total_experiments": manifest.get_experiment_count(),
-        "adm_types": manifest.get_adm_types(),
-        "llm_backbones": manifest.get_llm_backbones(),
-        "kdma_combinations": manifest.get_kdma_combinations(),
-        "generated_at": None,  # Will be set in build.py
+        "total_experiments": len(manifest.experiments),
+        "total_scenarios": len(manifest.indices.by_scenario),
+        "total_files": len(manifest.files),
+        "adm_types": list(manifest.indices.by_adm.keys()),
+        "llm_backbones": list(manifest.indices.by_llm.keys()),
+        "kdma_combinations": list(manifest.indices.by_kdma.keys()),
     }
 
     return manifest
