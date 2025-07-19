@@ -1,7 +1,7 @@
 """Simple tests for experiment parsing using real experiment data."""
 
 import sys
-from align_browser.experiment_models import ExperimentData
+from align_browser.experiment_models import ExperimentData, Manifest
 from align_browser.experiment_parser import (
     parse_experiments_directory,
     build_manifest_from_experiments,
@@ -49,28 +49,32 @@ def test_build_manifest():
     manifest = build_manifest_from_experiments(experiments, experiments_root)
 
     print(
-        f"✅ Built manifest with {len(manifest.experiment_keys)} unique experiment configurations"
+        f"✅ Built manifest with {len(manifest.experiments)} unique experiment configurations"
     )
 
     # Check manifest structure
-    for key, value in list(manifest.experiment_keys.items())[:3]:  # Show first 3
-        scenarios = value.get("scenarios", {})
+    for key, value in list(manifest.experiments.items())[:3]:  # Show first 3
+        scenarios = value.scenarios
         print(f"📋 Config '{key}' has {len(scenarios)} scenarios")
 
     # Verify manifest structure
     assert manifest, "Empty manifest generated"
+    assert isinstance(manifest, Manifest), "Should return Manifest instance"
 
-    first_key = list(manifest.keys())[0]
-    first_entry = manifest[first_key]
+    if manifest.experiments:
+        first_key = list(manifest.experiments.keys())[0]
+        first_experiment = manifest.experiments[first_key]
 
-    assert "scenarios" in first_entry, "Manifest missing scenarios key"
+        assert hasattr(first_experiment, "scenarios"), "Experiment missing scenarios"
+        assert hasattr(first_experiment, "parameters"), "Experiment missing parameters"
 
-    first_scenario = list(first_entry["scenarios"].values())[0]
-    required_fields = ["input_output", "scores", "timing", "config"]
+        if first_experiment.scenarios:
+            first_scenario = list(first_experiment.scenarios.values())[0]
+            required_fields = ["input_output", "timing"]  # scores is optional
 
-    assert all(field in first_scenario for field in required_fields), (
-        "Manifest missing required fields"
-    )
+            for field in required_fields:
+                assert hasattr(first_scenario, field), f"Scenario missing {field} field"
+
     print("✅ Manifest structure is correct")
 
 
