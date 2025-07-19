@@ -91,7 +91,7 @@ def create_sample_timing_data():
                 "raw_times_s": [0.0003, 0.0004, 0.0002],
             }
         ],
-        "raw_times_s": [0.0003, 0.0004, 0.0002] 
+        "raw_times_s": [0.0003, 0.0004, 0.0002],
     }
 
 
@@ -124,7 +124,7 @@ def test_experiment_config_key_generation():
     config = ExperimentConfig(**config_data)
 
     key = config.generate_key()
-    expected_key = "pipeline_random_llama3.3-70b_affiliation-0.5"
+    expected_key = "pipeline_random:llama3.3-70b:affiliation-0.5:default"
     assert key == expected_key
 
 
@@ -194,7 +194,7 @@ def test_experiment_data_from_directory():
         # Test loading (no experiments_root, so no directory context)
         experiment = ExperimentData.from_directory(experiment_dir)
 
-        assert experiment.key == "pipeline_random_llama3.3-70b_affiliation-0.5"
+        assert experiment.key == "pipeline_random:llama3.3-70b:affiliation-0.5:default"
         assert experiment.scenario_id == "June2025-AF-train"
         assert experiment.config.adm.name == "pipeline_random"
         assert len(experiment.input_output.data) == 1
@@ -262,7 +262,9 @@ def test_parse_experiments_directory():
         # Test parsing
         experiments = parse_experiments_directory(experiments_root)
         assert len(experiments) == 1
-        assert experiments[0].key == "pipeline_random_llama3.3-70b_affiliation-0.5"
+        assert (
+            experiments[0].key == "pipeline_random:llama3.3-70b:affiliation-0.5:default"
+        )
 
 
 def test_parse_experiments_directory_excludes_outdated():
@@ -313,7 +315,9 @@ def test_parse_experiments_directory_excludes_outdated():
         # Test parsing - should only find the valid experiment, not the OUTDATED one
         experiments = parse_experiments_directory(experiments_root)
         assert len(experiments) == 1, f"Expected 1 experiment, found {len(experiments)}"
-        assert experiments[0].key == "pipeline_random_llama3.3-70b_affiliation-0.5"
+        assert (
+            experiments[0].key == "pipeline_random:llama3.3-70b:affiliation-0.5:default"
+        )
 
         # Verify the OUTDATED experiment was actually excluded
         experiment_paths = [str(exp.experiment_path) for exp in experiments]

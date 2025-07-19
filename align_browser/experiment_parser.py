@@ -26,77 +26,74 @@ def _extract_run_variant(
         all_conflicting_dirs: List of all directories that have conflicts (same ADM+LLM+KDMA)
 
     Returns:
-        String representing the run variant, or empty string for default
+        String representing the run variant, or "default" for default variant
     """
-    try:
-        # Get the relative path from experiments_root
-        relative_path = experiment_dir.relative_to(experiments_root)
-        path_parts = relative_path.parts
+    # Get the relative path from experiments_root
+    relative_path = experiment_dir.relative_to(experiments_root)
+    path_parts = relative_path.parts
 
-        # Skip KDMA configuration directories (contain dashes with numbers)
-        # Examples: merit-0.4, affiliation-0.0, personal_safety-0.5
-        def is_kdma_dir(dirname):
-            return bool(re.match(r"^[a-z_]+-(0\.\d+|1\.0|0)$", dirname))
+    # Skip KDMA configuration directories (contain dashes with numbers)
+    # Examples: merit-0.4, affiliation-0.0, personal_safety-0.5
+    def is_kdma_dir(dirname):
+        return bool(re.match(r"^[a-z_]+-(0\.\d+|1\.0|0)$", dirname))
 
-        # Find the ADM-level directory (first non-KDMA directory)
-        adm_dir = None
-        for part in path_parts:
-            if not is_kdma_dir(part):
-                adm_dir = part
+    # Find the ADM-level directory (first non-KDMA directory)
+    adm_dir = None
+    for part in path_parts:
+        if not is_kdma_dir(part):
+            adm_dir = part
+            break
+
+    if not adm_dir:
+        return "default"
+
+    # Extract ADM directories from all conflicting paths
+    conflicting_adm_dirs = set()
+    for conflict_dir in all_conflicting_dirs:
+        try:
+            conflict_relative = conflict_dir.relative_to(experiments_root)
+            conflict_parts = conflict_relative.parts
+            for part in conflict_parts:
+                if not is_kdma_dir(part):
+                    conflicting_adm_dirs.add(part)
+                    break
+        except (ValueError, AttributeError):
+            continue
+
+    # If there's only one unique ADM directory, no variant needed
+    if len(conflicting_adm_dirs) <= 1:
+        return "default"
+
+    # Find the common prefix among all conflicting ADM directories
+    adm_dir_list = sorted(conflicting_adm_dirs)
+    common_prefix = ""
+
+    if len(adm_dir_list) >= 2:
+        # Find longest common prefix
+        first_dir = adm_dir_list[0]
+        for i, char in enumerate(first_dir):
+            if all(i < len(d) and d[i] == char for d in adm_dir_list):
+                common_prefix += char
+            else:
                 break
 
-        if not adm_dir:
-            return ""
+        # Remove trailing underscores
+        common_prefix = common_prefix.rstrip("_")
 
-        # Extract ADM directories from all conflicting paths
-        conflicting_adm_dirs = set()
-        for conflict_dir in all_conflicting_dirs:
-            try:
-                conflict_relative = conflict_dir.relative_to(experiments_root)
-                conflict_parts = conflict_relative.parts
-                for part in conflict_parts:
-                    if not is_kdma_dir(part):
-                        conflicting_adm_dirs.add(part)
-                        break
-            except (ValueError, AttributeError):
-                continue
+    # Extract variant as the unique suffix after common prefix
+    if common_prefix and adm_dir.startswith(common_prefix):
+        variant = adm_dir[len(common_prefix) :].lstrip("_")
+        # Use lexicographically first directory as "default"
+        if adm_dir == min(adm_dir_list):
+            return "default"
+        return variant if variant else "default"
 
-        # If there's only one unique ADM directory, no variant needed
-        if len(conflicting_adm_dirs) <= 1:
-            return ""
+    # Fallback: use the full ADM directory name if no common prefix found
+    # Choose the lexicographically first one as default
+    if adm_dir == min(conflicting_adm_dirs):
+        return "default"
+    return adm_dir
 
-        # Find the common prefix among all conflicting ADM directories
-        adm_dir_list = sorted(conflicting_adm_dirs)
-        common_prefix = ""
-
-        if len(adm_dir_list) >= 2:
-            # Find longest common prefix
-            first_dir = adm_dir_list[0]
-            for i, char in enumerate(first_dir):
-                if all(i < len(d) and d[i] == char for d in adm_dir_list):
-                    common_prefix += char
-                else:
-                    break
-
-            # Remove trailing underscores
-            common_prefix = common_prefix.rstrip("_")
-
-        # Extract variant as the unique suffix after common prefix
-        if common_prefix and adm_dir.startswith(common_prefix):
-            variant = adm_dir[len(common_prefix) :].lstrip("_")
-            # Use lexicographically first directory as "default" (empty string)
-            if adm_dir == min(adm_dir_list):
-                return ""
-            return variant if variant else ""
-
-        # Fallback: use the full ADM directory name if no common prefix found
-        # Choose the lexicographically first one as default
-        if adm_dir == min(conflicting_adm_dirs):
-            return ""
-        return adm_dir
-
-    except (ValueError, AttributeError):
-        return ""
 
 
 def _create_experiments_from_directory(experiment_dir: Path) -> List[ExperimentData]:
@@ -248,11 +245,8 @@ def build_manifest_from_experiments(
     base_key_groups: Dict[str, List[ExperimentData]] = {}
 
     for experiment in experiments:
-        # Generate base key without run_variant for conflict detection
-        original_run_variant = experiment.config.run_variant
-        experiment.config.run_variant = None
+        # Group experiments by their full key (including default run_variant)
         base_key = experiment.config.generate_key()
-        experiment.config.run_variant = original_run_variant  # Restore original
 
         if base_key not in base_key_groups:
             base_key_groups[base_key] = []
@@ -272,23 +266,19 @@ def build_manifest_from_experiments(
                 run_variant = _extract_run_variant(
                     experiment.experiment_path, experiments_root, conflicting_dirs
                 )
-                if run_variant:
-                    # Create a copy of the experiment with run_variant
-                    enhanced_config = experiment.config.model_copy(deep=True)
-                    enhanced_config.run_variant = run_variant
+                # Always create experiment with run_variant (will be "default" if not extracted)
+                enhanced_config = experiment.config.model_copy(deep=True)
+                enhanced_config.run_variant = run_variant
 
-                    enhanced_experiment = ExperimentData(
-                        config=enhanced_config,
-                        input_output=experiment.input_output,
-                        scores=experiment.scores,
-                        timing=experiment.timing,
-                        experiment_path=experiment.experiment_path,
-                    )
+                enhanced_experiment = ExperimentData(
+                    config=enhanced_config,
+                    input_output=experiment.input_output,
+                    scores=experiment.scores,
+                    timing=experiment.timing,
+                    experiment_path=experiment.experiment_path,
+                )
 
-                    enhanced_experiments.append(enhanced_experiment)
-                else:
-                    # Fallback: use original if no run variant available
-                    enhanced_experiments.append(experiment)
+                enhanced_experiments.append(enhanced_experiment)
 
     # Add experiments to enhanced manifest
     for experiment in enhanced_experiments:

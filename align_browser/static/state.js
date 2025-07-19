@@ -17,7 +17,7 @@ export function createInitialState() {
     selectedScenario: null,
     selectedAdmType: null,
     selectedLLM: null,
-    selectedRunVariant: null,
+    selectedRunVariant: 'default',
     activeKDMAs: {},
     
     // LLM preferences per ADM type for preservation
@@ -87,40 +87,16 @@ export function getSelectedKey(state) {
   // Sort KDMA parts to match the key generation in build.py
   const kdmaString = kdmaParts.sort().join("_");
 
-  const baseKey = `${admType}_${llmBackbone}_${kdmaString}`;
-  
-  // Add run variant if present
-  if (runVariant && runVariant !== 'default') {
-    return `${baseKey}_${runVariant}`;
-  }
-  
-  return baseKey;
+  return `${admType}:${llmBackbone}:${kdmaString}:${runVariant}`;
 }
 
 // Generate a unique run ID
 export function generateRunId() {
   const timestamp = new Date().getTime();
-  const random = Math.random().toString(36).substr(2, 9);
+  const random = Math.random().toString(36).substring(2, 11);
   return `run_${timestamp}_${random}`;
 }
 
-// Generate display name for a run based on current state
-export function generateDisplayName(state) {
-  const parts = [];
-  if (state.selectedAdmType) {
-    parts.push(state.selectedAdmType.replace(/_/g, ' '));
-  }
-  if (state.selectedLLM) {
-    parts.push(state.selectedLLM.replace(/_/g, ' '));
-  }
-  const kdmaKeys = Object.keys(state.activeKDMAs || {});
-  if (kdmaKeys.length > 0) {
-    const kdmaStr = kdmaKeys.map(k => `${k}=${state.activeKDMAs[k]}`).join(', ');
-    parts.push(`(${kdmaStr})`);
-  }
-  const result = parts.join(' - ') || 'Unnamed Run';
-  return result === '' ? 'Unnamed Run' : result;
-}
 
 // Create a run configuration factory function
 export function createRunConfig(state) {
@@ -131,10 +107,9 @@ export function createRunConfig(state) {
     baseScenario: state.selectedBaseScenario,
     admType: state.selectedAdmType,
     llmBackbone: state.selectedLLM,
-    runVariant: state.selectedRunVariant || null,
+    runVariant: state.selectedRunVariant,
     kdmaValues: { ...state.activeKDMAs },
     experimentKey: getSelectedKey(state),
-    displayName: generateDisplayName(state),
     loadStatus: 'pending'
   };
 }
@@ -146,7 +121,7 @@ export function createParameterStructure(params = {}) {
     baseScenario: params.baseScenario || null,
     admType: params.admType || null,
     llmBackbone: params.llmBackbone || null,
-    runVariant: params.runVariant || null,
+    runVariant: params.runVariant || 'default',
     kdmas: params.kdmas || {}
   };
 }
@@ -195,8 +170,11 @@ export function decodeStateFromURL() {
   return null;
 }
 
+// Priority order for parameter cascading
+const PARAMETER_PRIORITY_ORDER = ['scenario', 'scene', 'kdma_values', 'adm', 'llm', 'run_variant'];
+
 // Parameter update system with priority-based cascading
-export const updateParameters = (manifest) => (priorityOrder) => (currentParams, changes) => {
+const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, changes) => {
   const newParams = { ...currentParams, ...changes };
   
   // Helper to check if manifest entry matches current selection
@@ -247,3 +225,102 @@ export const updateParameters = (manifest) => (priorityOrder) => (currentParams,
     options: availableOptions
   };
 };
+
+// Export updateParameters with priority order already curried
+export const updateParameters = updateParametersBase(PARAMETER_PRIORITY_ORDER);
+
+// Global manifest storage
+let manifest = null;
+
+let parameterRunMap = new Map();
+
+// Load and initialize manifest
+export async function loadManifest() {
+    const response = await fetch("./data/manifest.json");
+    manifest = await response.json();
+    
+    // Initialize updateParameters with the transformed manifest
+    const transformedManifest = transformManifestForUpdateParameters(manifest);
+    const updateAppParameters = updateParameters(transformedManifest);
+    
+    return { manifest, updateAppParameters };
+}
+
+// Get the loaded manifest
+export function getManifest() {
+  return manifest;
+}
+
+export function resolveParametersToRun(params) {
+  if (!parameterRunMap || parameterRunMap.size === 0) {
+    return undefined;
+  }
+  
+  const { scenario, scene, kdmaValues, admType, llmBackbone, runVariant } = params;
+  
+  const kdmaArray = [];
+  if (kdmaValues) {
+    Object.entries(kdmaValues).forEach(([kdma, value]) => {
+      kdmaArray.push({ kdma, value });
+    });
+  }
+  kdmaArray.sort((a, b) => a.kdma.localeCompare(b.kdma));
+  
+  const kdmaString = JSON.stringify(kdmaArray);
+  
+  const mapKey = `${scenario}:${scene}:${kdmaString}:${admType}:${llmBackbone}:${runVariant}`;
+  
+  return parameterRunMap.get(mapKey);
+}
+
+export async function fetchRunData(params) {
+  const runInfo = resolveParametersToRun(params);
+  if (!runInfo) {
+    return undefined;
+  }
+  
+  const response = await fetch(runInfo.inputOutputPath);
+  const inputOutputArray = await response.json();
+  
+  return inputOutputArray[runInfo.sourceIndex];
+}
+
+// Transform hierarchical manifest to flat array for updateParameters
+export function transformManifestForUpdateParameters(manifest) {
+  const entries = [];
+  
+  if (!manifest.experiments) {
+    return entries;
+  }
+  
+  parameterRunMap.clear();
+  
+  for (const [experimentKey, experiment] of Object.entries(manifest.experiments)) {
+    const { adm, llm, kdma_values, run_variant } = experiment.parameters;
+    
+    for (const [scenarioId, scenario] of Object.entries(experiment.scenarios)) {
+      for (const [sceneId, sceneInfo] of Object.entries(scenario.scenes)) {
+        const kdmaString = JSON.stringify(kdma_values || []);
+        
+        entries.push({
+          scenario: scenarioId,
+          scene: sceneId,
+          kdma_values: kdmaString,
+          adm: adm.name,
+          llm: llm.model_name,
+          run_variant: run_variant
+        });
+        
+        const mapKey = `${scenarioId}:${sceneId}:${kdmaString}:${adm.name}:${llm.model_name}:${run_variant}`;
+        
+        parameterRunMap.set(mapKey, {
+          experimentKey,
+          sourceIndex: sceneInfo.source_index,
+          inputOutputPath: scenario.input_output.file
+        });
+      }
+    }
+  }
+  
+  return entries;
+}
