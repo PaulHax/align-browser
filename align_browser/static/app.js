@@ -7,7 +7,8 @@ import {
   createRunConfig,
   createParameterStructure,
   encodeStateToURL,
-  decodeStateFromURL
+  decodeStateFromURL,
+  loadManifest,
 } from './state.js';
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -213,9 +214,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // Function to fetch and parse manifest.json
   async function fetchManifest() {
     try {
-      const response = await fetch("./data/manifest.json");
-      manifest = await response.json();
-      console.log("Manifest loaded:", manifest);
+      const result = await loadManifest();
+      manifest = result.manifest;
+      window.updateAppParameters = result.updateAppParameters;
+      
       extractParametersFromManifest();
       populateUIControls();
       
