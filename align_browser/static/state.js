@@ -195,4 +195,55 @@ export function decodeStateFromURL() {
   return null;
 }
 
-
+// Parameter update system with priority-based cascading
+export const updateParameters = (manifest) => (priorityOrder) => (currentParams, changes) => {
+  const newParams = { ...currentParams, ...changes };
+  
+  // Helper to check if manifest entry matches current selection
+  const matchesCurrentSelection = (manifestEntry, excludeParam, currentSelection) => {
+    for (const param of priorityOrder) {
+      if (param === excludeParam) continue;
+      if (currentSelection[param] && manifestEntry[param] !== currentSelection[param]) {
+        return false;
+      }
+    }
+    return true;
+  };
+  
+  // Helper to get valid options for a parameter
+  const getValidOptionsFor = (parameterName, currentSelection) => {
+    const validEntries = manifest.filter(entry => 
+      matchesCurrentSelection(entry, parameterName, currentSelection)
+    );
+    return [...new Set(validEntries.map(entry => entry[parameterName]))];
+  };
+  
+  // Find the highest priority parameter that changed
+  const changedParams = Object.keys(changes);
+  const highestChangedIndex = Math.min(
+    ...changedParams.map(param => priorityOrder.indexOf(param))
+  );
+  
+  // Check and potentially update lower priority parameters
+  for (let i = highestChangedIndex + 1; i < priorityOrder.length; i++) {
+    const param = priorityOrder[i];
+    const currentValue = newParams[param];
+    const validOptions = getValidOptionsFor(param, newParams);
+    
+    // Only change if current value is invalid
+    if (!validOptions.includes(currentValue)) {
+      newParams[param] = validOptions.length > 0 ? validOptions[0] : null;
+    }
+  }
+  
+  // Calculate available options for all parameters
+  const availableOptions = {};
+  for (const param of priorityOrder) {
+    availableOptions[param] = getValidOptionsFor(param, newParams);
+  }
+  
+  return {
+    params: newParams,
+    options: availableOptions
+  };
+};
