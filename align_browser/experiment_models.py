@@ -99,7 +99,7 @@ class ExperimentConfig(BaseModel):
     name: str = "unknown"
     adm: ADMConfig = Field(default_factory=ADMConfig)
     alignment_target: AlignmentTarget = Field(default_factory=AlignmentTarget)
-    run_variant: Optional[str] = None
+    run_variant: str = "default"
 
     def generate_key(self) -> str:
         """Generate a unique key for this experiment configuration."""
@@ -107,11 +107,9 @@ class ExperimentConfig(BaseModel):
             f"{kv.kdma}-{kv.value}" for kv in self.alignment_target.kdma_values
         ]
         kdma_string = "_".join(sorted(kdma_parts))
-        base_key = f"{self.adm.name}_{self.adm.llm_backbone}_{kdma_string}"
-
-        if self.run_variant:
-            return f"{base_key}_{self.run_variant}"
-        return base_key
+        return (
+            f"{self.adm.name}:{self.adm.llm_backbone}:{kdma_string}:{self.run_variant}"
+        )
 
     def generate_experiment_key(self) -> str:
         """Generate hash-based experiment key for new manifest structure."""
@@ -119,7 +117,7 @@ class ExperimentConfig(BaseModel):
             "adm": self.adm.name,
             "llm": self.adm.llm_backbone if self.adm.llm_backbone != "no_llm" else None,
             "kdma": self._get_kdma_key(),
-            "run_variant": self.run_variant or "default",
+            "run_variant": self.run_variant,
         }
 
         # Create deterministic hash from sorted key data
@@ -467,7 +465,9 @@ class Manifest(BaseModel):
                 )
 
             scenarios_dict[scenario_id].scenes[scene_id] = SceneInfo(
-                source_index=i, scene_id=scene_id, timing_s=experiment.timing.raw_times_s[i]
+                source_index=i,
+                scene_id=scene_id,
+                timing_s=experiment.timing.raw_times_s[i],
             )
 
         # Create enhanced experiment

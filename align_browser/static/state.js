@@ -17,7 +17,7 @@ export function createInitialState() {
     selectedScenario: null,
     selectedAdmType: null,
     selectedLLM: null,
-    selectedRunVariant: null,
+    selectedRunVariant: 'default',
     activeKDMAs: {},
     
     // LLM preferences per ADM type for preservation
@@ -87,20 +87,13 @@ export function getSelectedKey(state) {
   // Sort KDMA parts to match the key generation in build.py
   const kdmaString = kdmaParts.sort().join("_");
 
-  const baseKey = `${admType}_${llmBackbone}_${kdmaString}`;
-  
-  // Add run variant if present
-  if (runVariant && runVariant !== 'default') {
-    return `${baseKey}_${runVariant}`;
-  }
-  
-  return baseKey;
+  return `${admType}:${llmBackbone}:${kdmaString}:${runVariant}`;
 }
 
 // Generate a unique run ID
 export function generateRunId() {
   const timestamp = new Date().getTime();
-  const random = Math.random().toString(36).substr(2, 9);
+  const random = Math.random().toString(36).substring(2, 11);
   return `run_${timestamp}_${random}`;
 }
 
@@ -131,7 +124,7 @@ export function createRunConfig(state) {
     baseScenario: state.selectedBaseScenario,
     admType: state.selectedAdmType,
     llmBackbone: state.selectedLLM,
-    runVariant: state.selectedRunVariant || null,
+    runVariant: state.selectedRunVariant,
     kdmaValues: { ...state.activeKDMAs },
     experimentKey: getSelectedKey(state),
     displayName: generateDisplayName(state),
@@ -146,7 +139,7 @@ export function createParameterStructure(params = {}) {
     baseScenario: params.baseScenario || null,
     admType: params.admType || null,
     llmBackbone: params.llmBackbone || null,
-    runVariant: params.runVariant || null,
+    runVariant: params.runVariant || 'default',
     kdmas: params.kdmas || {}
   };
 }
@@ -195,8 +188,11 @@ export function decodeStateFromURL() {
   return null;
 }
 
+// Priority order for parameter cascading
+const PARAMETER_PRIORITY_ORDER = ['scenario', 'scene', 'kdma_values', 'adm', 'llm', 'run_variant'];
+
 // Parameter update system with priority-based cascading
-export const updateParameters = (manifest) => (priorityOrder) => (currentParams, changes) => {
+const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, changes) => {
   const newParams = { ...currentParams, ...changes };
   
   // Helper to check if manifest entry matches current selection
@@ -247,3 +243,54 @@ export const updateParameters = (manifest) => (priorityOrder) => (currentParams,
     options: availableOptions
   };
 };
+
+// Export updateParameters with priority order already curried
+export const updateParameters = updateParametersBase(PARAMETER_PRIORITY_ORDER);
+
+// Global manifest storage
+let manifest = null;
+
+// Load and initialize manifest
+export async function loadManifest() {
+    const response = await fetch("./data/manifest.json");
+    manifest = await response.json();
+    
+    // Initialize updateParameters with the transformed manifest
+    const transformedManifest = transformManifestForUpdateParameters(manifest);
+    const updateAppParameters = updateParameters(transformedManifest);
+    
+    return { manifest, updateAppParameters };
+}
+
+// Get the loaded manifest
+export function getManifest() {
+  return manifest;
+}
+
+// Transform hierarchical manifest to flat array for updateParameters
+export function transformManifestForUpdateParameters(manifest) {
+  const entries = [];
+  
+  if (!manifest.experiments) {
+    return entries;
+  }
+  
+  for (const experiment of Object.values(manifest.experiments)) {
+    const { adm, llm, kdma_values, run_variant } = experiment.parameters;
+    
+    for (const [scenarioId, scenario] of Object.entries(experiment.scenarios)) {
+      for (const sceneId of Object.keys(scenario.scenes)) {
+        entries.push({
+          scenario: scenarioId,
+          scene: sceneId,
+          kdma_values: JSON.stringify(kdma_values || []), // Serialize for comparison
+          adm: adm.name,
+          llm: llm.model_name,
+          run_variant: run_variant
+        });
+      }
+    }
+  }
+  
+  return entries;
+}
