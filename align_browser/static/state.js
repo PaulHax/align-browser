@@ -1,6 +1,46 @@
 // Functional State Management Module
 // Pure functions for managing application state without mutations
 
+// KDMA Utility Functions
+export const KDMAUtils = {
+  // Normalize KDMA object - removes extra fields, keeps only kdma and value
+  normalize: (kdma) => ({ kdma: kdma.kdma, value: kdma.value }),
+  
+  // Normalize KDMA value to 1 decimal place
+  normalizeValue: (value) => Math.round(parseFloat(value) * 10) / 10,
+  
+  // Format KDMA value for display (1 decimal place)
+  formatValue: (value) => typeof value === 'number' ? value.toFixed(1) : value,
+  
+  // Sort KDMA array by kdma name
+  sort: (kdmaArray) => [...kdmaArray].sort((a, b) => a.kdma.localeCompare(b.kdma)),
+  
+  // Normalize and sort KDMA array for comparison
+  normalizeAndSort: (kdmaArray) => {
+    return KDMAUtils.sort(kdmaArray.map(KDMAUtils.normalize));
+  },
+  
+  // Compare two KDMA arrays (normalized comparison)
+  arraysEqual: (array1, array2) => {
+    const sorted1 = KDMAUtils.normalizeAndSort(array1);
+    const sorted2 = KDMAUtils.normalizeAndSort(array2);
+    return JSON.stringify(sorted1) === JSON.stringify(sorted2);
+  },
+  
+  // Convert KDMA object to array and serialize for keys
+  serializeToKey: (kdmaObject) => {
+    const kdmaArray = Object.entries(kdmaObject).map(([kdma, value]) => ({ kdma, value }));
+    return JSON.stringify(KDMAUtils.sort(kdmaArray));
+  },
+  
+  // Convert KDMA object to key parts for experiment keys
+  toKeyParts: (kdmaObject) => {
+    return Object.entries(kdmaObject)
+      .map(([kdma, value]) => `${kdma}-${KDMAUtils.formatValue(value)}`)
+      .sort();
+  }
+};
+
 // Create initial empty state
 export function createInitialState() {
   return {
@@ -78,13 +118,8 @@ function getSelectedKey(state) {
   const llmBackbone = state.selectedLLM;
   const runVariant = state.selectedRunVariant;
 
-  const kdmaParts = [];
-  Object.entries(state.activeKDMAs).forEach(([kdma, value]) => {
-    kdmaParts.push(`${kdma}-${value.toFixed(1)}`);
-  });
-  
-  // Sort KDMA parts to match the key generation in build.py
-  const kdmaString = kdmaParts.sort().join("_");
+  const kdmaParts = KDMAUtils.toKeyParts(state.activeKDMAs);
+  const kdmaString = kdmaParts.join("_");
 
   return `${admType}:${llmBackbone}:${kdmaString}:${runVariant}`;
 }
@@ -231,14 +266,12 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
       // Only check constraint if the current selection has a non-null value for this parameter
       if (currentSelection[param] !== null && currentSelection[param] !== undefined) {
         // Special handling for kdma_values comparison (arrays where order doesn't matter)
+        // This filters manifest entries to find compatible KDMA combinations
         if (param === 'kdma_values') {
           const manifestKdmas = manifestEntry[param];
           const selectionKdmas = currentSelection[param];
-          // Sort both arrays by kdma name before comparing
-          const sortedManifest = [...manifestKdmas].sort((a, b) => a.kdma.localeCompare(b.kdma));
-          const sortedSelection = [...selectionKdmas].sort((a, b) => a.kdma.localeCompare(b.kdma));
-          // Compare sorted arrays
-          if (JSON.stringify(sortedManifest) !== JSON.stringify(sortedSelection)) {
+          
+          if (!KDMAUtils.arraysEqual(manifestKdmas, selectionKdmas)) {
             return false;
           }
         } else if (manifestEntry[param] !== currentSelection[param]) {
@@ -279,9 +312,24 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
     const validOptions = getValidOptionsFor(param, newParams);
     
     console.log(`Parameter ${param}: currentValue=${currentValue}, validOptions=${validOptions.length > 0 ? validOptions.slice(0, 3) : 'empty'}`);
+    if (param === 'kdma_values') {
+      console.log('  -> kdma_values validation using normalized comparison');
+    }
     
     // Only change if current value is invalid
-    if (!validOptions.includes(currentValue)) {
+    let isValid = validOptions.includes(currentValue);
+    
+    // For kdma_values, use normalized comparison since validOptions contains
+    // KDMA arrays that might have different object references but same values.
+    // This validates the current value against the filtered valid options
+    if (param === 'kdma_values' && !isValid && Array.isArray(currentValue)) {
+      isValid = validOptions.some(option => {
+        if (!Array.isArray(option)) return false;
+        return KDMAUtils.arraysEqual(option, currentValue);
+      });
+    }
+    
+    if (!isValid) {
       const newValue = validOptions.length > 0 ? validOptions[0] : null;
       newParams[param] = newValue;
       console.log(`  -> Updated ${param} from ${currentValue} to ${newValue}`);
@@ -335,15 +383,7 @@ function resolveParametersToRun(params) {
   
   console.log('Input kdmaValues:', kdmaValues);
   
-  const kdmaArray = [];
-  if (kdmaValues) {
-    Object.entries(kdmaValues).forEach(([kdma, value]) => {
-      kdmaArray.push({ kdma, value });
-    });
-  }
-  kdmaArray.sort((a, b) => a.kdma.localeCompare(b.kdma));
-  
-  const kdmaString = JSON.stringify(kdmaArray);
+  const kdmaString = KDMAUtils.serializeToKey(kdmaValues || {});
   
   const mapKey = `${scenario}:${scene}:${kdmaString}:${admType}:${llmBackbone}:${runVariant}`;
   
@@ -414,12 +454,9 @@ export function transformManifestForUpdateParameters(manifest) {
       });
       
       for (const [sceneId, sceneInfo] of Object.entries(scenario.scenes)) {
-        // remove kdes field
-        const cleanedKdmaValues = (kdma_values || []).map(kdma => ({
-          kdma: kdma.kdma,
-          value: kdma.value
-        }));
-        const kdmaString = JSON.stringify(cleanedKdmaValues);
+        // normalize kdma values
+        const cleanedKdmaValues = (kdma_values || []).map(KDMAUtils.normalize);
+        const kdmaString = JSON.stringify(KDMAUtils.sort(cleanedKdmaValues));
         
         const entry = {
           scenario: scenarioId,

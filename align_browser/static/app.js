@@ -9,6 +9,7 @@ import {
   decodeStateFromURL,
   loadManifest,
   fetchRunData,
+  KDMAUtils,
 } from './state.js';
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -104,8 +105,7 @@ document.addEventListener("DOMContentLoaded", () => {
       scenario: params.scenario || null,
       scene: params.scene || null,
       kdma_values: params.kdmas ? 
-        Object.entries(params.kdmas).map(([kdma, value]) => ({ kdma, value }))
-          .sort((a, b) => a.kdma.localeCompare(b.kdma))
+        KDMAUtils.sort(Object.entries(params.kdmas).map(([kdma, value]) => ({ kdma, value })))
         : [],
       adm: params.admType || null,
       llm: params.llmBackbone || null,
@@ -364,8 +364,7 @@ document.addEventListener("DOMContentLoaded", () => {
       scenario: currentParams.scenario || null,
       scene: currentParams.scene || null,
       kdma_values: currentParams.kdmas ? 
-        Object.entries(currentParams.kdmas).map(([kdma, value]) => ({ kdma, value }))
-          .sort((a, b) => a.kdma.localeCompare(b.kdma))
+        KDMAUtils.sort(Object.entries(currentParams.kdmas).map(([kdma, value]) => ({ kdma, value })))
         : [],
       adm: currentParams.admType || null,
       llm: currentParams.llmBackbone || null,
@@ -468,9 +467,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
   // Handle adding KDMA to pinned run - global for onclick access
-  window.addKDMAToRun = function(runId) {
+  window.addKDMAToRun = async function(runId) {
     const run = appState.pinnedRuns.get(runId);
-    if (!run) return;
     
     const availableKDMAs = getValidKDMAsForRun(runId);
     const currentKDMAs = run.kdmaValues || {};
@@ -499,45 +497,33 @@ document.addEventListener("DOMContentLoaded", () => {
     // Update KDMAs through the parameter validation system
     const newKDMAs = { ...currentKDMAs, [kdmaType]: initialValue };
     
-    // Use the parameter update system to ensure validation
-    updateParameterForRun(runId, 'kdmas', newKDMAs);
-    
-    // Refresh the comparison display to show new KDMA control
-    updateComparisonDisplay();
-    
-    // Reload experiment data for the new KDMA combination
-    reloadPinnedRun(runId);
-    
-    // Update URL state
-    urlState.updateURL();
+    await updatePinnedRunState({
+      runId,
+      parameter: 'kdmas',
+      value: newKDMAs,
+      needsReload: true,
+      updateUI: true
+    });
   };
 
   // Handle removing KDMA from pinned run - global for onclick access
-  window.removeKDMAFromRun = function(runId, kdmaType) {
+  window.removeKDMAFromRun = async function(runId, kdmaType) {
     const run = appState.pinnedRuns.get(runId);
-    if (!run) return;
-    
     const currentKDMAs = { ...(run.kdmaValues || {}) };
     delete currentKDMAs[kdmaType];
     
-    // Use the parameter update system to ensure validation
-    updateParameterForRun(runId, 'kdmas', currentKDMAs);
-    
-    // Refresh the comparison display
-    updateComparisonDisplay();
-    
-    // Reload experiment data for the new KDMA combination
-    reloadPinnedRun(runId);
-    
-    // Update URL state
-    urlState.updateURL();
+    await updatePinnedRunState({
+      runId,
+      parameter: 'kdmas',
+      value: currentKDMAs,
+      needsReload: true,
+      updateUI: true
+    });
   };
 
   // Handle KDMA type change for pinned run - global for onclick access
-  window.handleRunKDMATypeChange = function(runId, oldKdmaType, newKdmaType) {
+  window.handleRunKDMATypeChange = async function(runId, oldKdmaType, newKdmaType) {
     const run = appState.pinnedRuns.get(runId);
-    if (!run) return;
-    
     const currentKDMAs = { ...(run.kdmaValues || {}) };
     const currentValue = currentKDMAs[oldKdmaType];
     
@@ -549,91 +535,49 @@ document.addEventListener("DOMContentLoaded", () => {
     const validValues = availableKDMAs[newKdmaType] || [];
     let newValue = currentValue;
     
-    if (validValues.length > 0 && !validValues.includes(currentValue)) {
+    if (validValues.length > 0 && !validValues.some(v => Math.abs(v - newValue) < 0.001)) {
       newValue = validValues[0]; // Use first valid value
     }
     
     currentKDMAs[newKdmaType] = newValue;
     
-    // Use the parameter update system to ensure validation
-    updateParameterForRun(runId, 'kdmas', currentKDMAs);
-    
-    // Refresh the comparison display
-    updateComparisonDisplay();
-    
-    // Reload experiment data for the new KDMA combination
-    reloadPinnedRun(runId);
-    
-    // Update URL state
-    urlState.updateURL();
+    await updatePinnedRunState({
+      runId,
+      parameter: 'kdmas',
+      value: currentKDMAs,
+      needsReload: true,
+      updateUI: true
+    });
   };
 
   // Handle KDMA slider input for pinned run - global for onclick access
-  window.handleRunKDMASliderInput = function(runId, kdmaType, sliderElement) {
+  window.handleRunKDMASliderInput = async function(runId, kdmaType, sliderElement) {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return;
     
-    const rawValue = parseFloat(sliderElement.value);
+    // Round to 1 decimal place to avoid floating-point precision issues
+    const normalizedValue = KDMAUtils.normalizeValue(sliderElement.value);
     
-    // Get valid values considering current KDMA constraints
-    const currentKDMAs = { ...(run.kdmaValues || {}) };
-    
-    // Create a constraint that includes other KDMAs but NOT the one being changed
-    const constraintKDMAs = { ...currentKDMAs };
-    delete constraintKDMAs[kdmaType]; // Remove the one we're changing
-    
-    const constraints = {
-      scenario: run.scenario,
-      admType: run.admType,  
-      llmBackbone: run.llmBackbone
-    };
-    
-    // Add other KDMAs as constraints if any exist
-    if (Object.keys(constraintKDMAs).length > 0) {
-      constraints.kdmas = constraintKDMAs;
-    }
-    
-    const validOptions = getValidOptionsForConstraints(constraints);
-    const validValues = Array.from(validOptions.kdmas[kdmaType] || []);
-    
-    // Snap to nearest valid value if we have valid values
-    let newValue = rawValue;
-    if (validValues.length > 0) {
-      newValue = validValues.reduce((closest, validValue) => 
-        Math.abs(validValue - rawValue) < Math.abs(closest - rawValue) ? validValue : closest
-      );
-      
-      // Update slider to show snapped value
-      if (newValue !== rawValue) {
-        sliderElement.value = newValue;
-      }
-    }
-    
-    // Update the display value immediately
+    // Update the display value immediately for responsiveness
     const valueDisplay = document.getElementById(`kdma-value-${runId}-${kdmaType}`);
     if (valueDisplay) {
-      valueDisplay.textContent = formatKDMAValue(newValue);
+      valueDisplay.textContent = formatKDMAValue(normalizedValue);
     }
     
-    currentKDMAs[kdmaType] = newValue;
+    // Update the KDMA values - let the parameter system handle validation
+    const currentKDMAs = { ...(run.kdmaValues || {}) };
+    const updatedKDMAs = { ...currentKDMAs, [kdmaType]: normalizedValue };
     
-    // Update the run state immediately to prevent bouncing
-    run.kdmaValues = currentKDMAs;
-    
-    // Update column parameters directly without validation
-    // since slider values are already validated
-    const params = getParametersForRun(runId);
-    params.kdmas = currentKDMAs;
-    columnParameters.set(runId, createParameterStructure(params));
-    
-    // Debounce the reload to avoid too many requests while sliding
-    if (window.kdmaReloadTimeout) {
-      clearTimeout(window.kdmaReloadTimeout);
-    }
-    window.kdmaReloadTimeout = setTimeout(async () => {
-      await reloadPinnedRun(runId);
-      urlState.updateURL();
-    }, 500);
+    // Use updatePinnedRunState with debouncing for the reload
+    await updatePinnedRunState({
+      runId,
+      parameter: 'kdmas',
+      value: updatedKDMAs,
+      needsReload: true,
+      updateUI: true, // Let the parameter system update the UI with validated values
+      updateURL: true,
+      debounceMs: 500 // Debounce to avoid too many requests while sliding
+    });
   };
 
   // Internal function to load results without loading guard
@@ -1291,7 +1235,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return Math.max(maxKDMAs, 1); // At least 1 KDMA should be possible
   }
 
-  // Get valid KDMAs for a specific run using constraint-aware filtering
+  // Get valid KDMAs for a specific run
   function getValidKDMAsForRun(runId) {
     const run = appState.pinnedRuns.get(runId);
     if (!run) {
@@ -1305,28 +1249,18 @@ document.addEventListener("DOMContentLoaded", () => {
       return {};
     }
     
-    const currentKDMAs = run.kdmaValues || {};
-    
-    // Filter valid combinations based on current KDMA selections
-    const compatibleCombinations = kdmaStructure.validCombinations.filter(combination => {
-      // Check if this combination is compatible with current selections
-      return Object.entries(currentKDMAs).every(([kdmaType, value]) => {
-        return combination.some(kdma => kdma.kdma === kdmaType && kdma.value === value);
-      });
-    });
-    
-    // Extract available types and values from compatible combinations
+    // Extract all available types and values from valid combinations
+    // updateParameters already handles constraint validation
     const availableOptions = {};
-    compatibleCombinations.forEach(combination => {
+    kdmaStructure.validCombinations.forEach(combination => {
       combination.forEach(kdma => {
-        if (!currentKDMAs[kdma.kdma]) { // Only show unused types
-          if (!availableOptions[kdma.kdma]) {
-            availableOptions[kdma.kdma] = new Set();
-          }
-          availableOptions[kdma.kdma].add(kdma.value);
+        if (!availableOptions[kdma.kdma]) {
+          availableOptions[kdma.kdma] = new Set();
         }
+        availableOptions[kdma.kdma].add(kdma.value);
       });
     });
+    
     return availableOptions;
   }
   
@@ -1369,7 +1303,7 @@ document.addEventListener("DOMContentLoaded", () => {
   
   // Format KDMA value consistently across the application
   function formatKDMAValue(value) {
-    return typeof value === 'number' ? value.toFixed(1) : value;
+    return KDMAUtils.formatValue(value);
   }
 
 
@@ -1752,14 +1686,28 @@ document.addEventListener("DOMContentLoaded", () => {
     const runConfig = appState.createRunConfig();
     
     try {
-      await loadResultsForConfig(runConfig);
+      // Use fetchRunData directly to get complete data including timing_s
+      const params = {
+        scenario: runConfig.scenario,
+        scene: runConfig.scene,
+        admType: runConfig.admType,
+        llmBackbone: runConfig.llmBackbone,
+        runVariant: runConfig.runVariant,
+        kdmaValues: runConfig.kdmaValues
+      };
+      const runData = await fetchRunData(params);
+      
+      if (!runData || !runData.inputOutput) {
+        throw new Error('No data found for parameters');
+      }
       
       // Store complete run data
       const pinnedData = {
         ...runConfig,
-        inputOutput: appState.currentInputOutput,
-        inputOutputArray: appState.currentInputOutputArray,
-          timing: appState.currentTiming,
+        inputOutput: runData.inputOutput,
+        inputOutputArray: runData.inputOutputArray,
+        timing: runData.timing,
+        timing_s: runData.timing_s,
         loadStatus: 'loaded'
       };
       
