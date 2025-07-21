@@ -133,7 +133,7 @@ export function generateRunId() {
 
 
 // Create a run configuration factory function
-export function createRunConfig(state) {
+export function createRunConfig(params, availableKDMAs) {
   // Create sophisticated KDMA structure that preserves permutation constraints
   const kdmaStructure = {
     validCombinations: [], // Array of valid KDMA combinations
@@ -141,9 +141,9 @@ export function createRunConfig(state) {
     typeValueMap: {} // kdmaType -> Set of all possible values for that type
   };
   
-  if (state.availableKDMAs && Array.isArray(state.availableKDMAs)) {
+  if (availableKDMAs && Array.isArray(availableKDMAs)) {
     // Store all valid combinations and build type/value maps
-    state.availableKDMAs.forEach(kdmaCombination => {
+    availableKDMAs.forEach(kdmaCombination => {
       if (Array.isArray(kdmaCombination)) {
         // Store the valid combination
         kdmaStructure.validCombinations.push([...kdmaCombination]);
@@ -162,24 +162,33 @@ export function createRunConfig(state) {
     });
   }
   
+  // Create a temporary state object for getSelectedKey
+  const tempState = {
+    selectedScenario: params.scenario,
+    selectedScene: params.scene,
+    selectedAdmType: params.admType,
+    selectedLLM: params.llmBackbone,
+    selectedRunVariant: params.runVariant,
+    activeKDMAs: params.kdmaValues || {}
+  };
   
   return {
     id: generateRunId(),
     timestamp: new Date().toISOString(),
-    scenario: state.selectedScenario,
-    scene: state.selectedScene,
-    admType: state.selectedAdmType,
-    llmBackbone: state.selectedLLM,
-    runVariant: state.selectedRunVariant,
-    kdmaValues: { ...state.activeKDMAs },
-    experimentKey: getSelectedKey(state),
+    scenario: params.scenario,
+    scene: params.scene,
+    admType: params.admType,
+    llmBackbone: params.llmBackbone,
+    runVariant: params.runVariant,
+    kdmaValues: { ...params.kdmaValues },
+    experimentKey: getSelectedKey(tempState),
     loadStatus: 'pending',
     // Store available options at time of creation for dropdown population
     availableOptions: {
-      scenarios: [...state.availableScenarios],
-      scenes: [...state.availableScenes],
-      admTypes: [...state.availableAdmTypes],
-      llms: [...state.availableLLMs],
+      scenarios: params.availableScenarios || [],
+      scenes: params.availableScenes || [],
+      admTypes: params.availableAdmTypes || [],
+      llms: params.availableLLMs || [],
       kdmas: kdmaStructure  // Sophisticated structure with constraint information
     }
   };
