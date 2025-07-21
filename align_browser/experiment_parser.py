@@ -1,7 +1,6 @@
 """Parser for experiment directory structures using Pydantic models."""
 
 import re
-import json
 import yaml
 from pathlib import Path
 from typing import List, Dict
@@ -9,7 +8,7 @@ from collections import defaultdict
 from align_browser.experiment_models import (
     ExperimentData,
     Manifest,
-    InputOutputItem,
+    InputOutputFile,
     calculate_file_checksums,
 )
 
@@ -106,10 +105,8 @@ def _create_experiments_from_directory(experiment_dir: Path) -> List[ExperimentD
     """
     experiments = []
 
-    # Load input_output.json
-    input_output_path = experiment_dir / "input_output.json"
-    with open(input_output_path) as f:
-        input_output_data = json.load(f)
+    # Load input_output using the standard method (which now sets original_index)
+    input_output = InputOutputFile.from_file(experiment_dir / "input_output.json")
 
     # Load config to check for uniform alignment target
     config_path = experiment_dir / ".hydra" / "config.yaml"
@@ -121,14 +118,14 @@ def _create_experiments_from_directory(experiment_dir: Path) -> List[ExperimentD
     # Group by alignment_target_id
     grouped_data = defaultdict(list)
 
-    for item in input_output_data:
+    for item in input_output.data:
         # Determine alignment target for this item
         if has_config_alignment:
             # Uniform KDMA: Use alignment target from config for all items
             alignment_target_id = config_data["alignment_target"]["id"]
         else:
             # Mixed KDMA: Use alignment target from input item
-            alignment_target_id = item["input"].get("alignment_target_id")
+            alignment_target_id = item.input.alignment_target_id
             if alignment_target_id is None:
                 alignment_target_id = "unaligned"  # Handle null alignment targets
 
@@ -143,17 +140,11 @@ def _create_experiments_from_directory(experiment_dir: Path) -> List[ExperimentD
                 experiments.append(experiment)
                 break  # Only one experiment for uniform KDMA
             else:
-                # Mixed KDMA: Create experiment for this specific alignment target (logical grouping only)
-                # Convert to InputOutputItem format keeping original scenario IDs
-                input_output_items = []
-                for item in items:
-                    input_output_items.append(InputOutputItem(**item))
-
-                # Create experiment using logical grouping (no file duplication)
+                # Mixed KDMA: Create experiment for this specific alignment target
                 experiment = ExperimentData.from_directory_mixed_kdma(
                     experiment_dir,
                     alignment_target_id,
-                    input_output_items,
+                    items,  # items already have original_index
                 )
                 experiments.append(experiment)
 

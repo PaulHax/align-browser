@@ -77,11 +77,7 @@ document.addEventListener("DOMContentLoaded", () => {
           llmBackbone: run.llmBackbone,
           kdmas: run.kdmaValues
         });
-      } else {
-        // For truly new runs, start with auto-corrected valid combination
-        defaultParams = correctParametersToValid({});
       }
-      
       columnParameters.set(runId, defaultParams);
     }
     
@@ -343,45 +339,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return validOptions;
   }
   
-  function correctParametersToValid(currentParams) {
-    if (!window.updateAppParameters) {
-      console.warn('updateAppParameters not available, using fallback');
-      return currentParams;
-    }
-    
-    // Convert app.js format to state.js format
-    const stateParams = {
-      scenario: currentParams.scenario || null,
-      scene: currentParams.scene || null,
-      kdma_values: currentParams.kdmas ? 
-        KDMAUtils.sort(Object.entries(currentParams.kdmas).map(([kdma, value]) => ({ kdma, value })))
-        : [],
-      adm: currentParams.admType || null,
-      llm: currentParams.llmBackbone || null,
-      run_variant: currentParams.runVariant || null
-    };
-    
-    const result = window.updateAppParameters(stateParams, {});
-    const validParams = result.params;
-    
-    // Convert back to app.js format
-    const kdmas = {};
-    if (validParams.kdma_values && Array.isArray(validParams.kdma_values)) {
-      validParams.kdma_values.forEach(item => {
-        kdmas[item.kdma] = item.value;
-      });
-    }
-    
-    return {
-      scenario: validParams.scenario,
-      scene: validParams.scene,
-      admType: validParams.adm,
-      llmBackbone: validParams.llm,
-      kdmas: kdmas,
-      runVariant: validParams.run_variant
-    };
-  }
-
 
   // Handle LLM change for pinned runs - global for onclick access
   window.handleRunLLMChange = async function(runId, newLLM) {
@@ -428,7 +385,7 @@ document.addEventListener("DOMContentLoaded", () => {
     await window.updatePinnedRunState({
       runId,
       parameter: 'runVariant',
-      value: newVariant === 'default' ? null : newVariant,
+      value: newVariant,
       needsReload: true,
       updateUI: true
     });
@@ -597,6 +554,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Get updated parameters from columnParameters
     const params = getParametersForRun(runId);
+    
     
     try {
       // Load new data using fetchRunData
