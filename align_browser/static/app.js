@@ -90,20 +90,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return validParams;
   }
   
-  // Sync appState FROM current run parameters
-  function syncAppStateFromRun(runId = CURRENT_RUN_ID) {
-    if (runId === CURRENT_RUN_ID) {
-      const params = getParametersForRun(CURRENT_RUN_ID);
-      appState = updateUserSelections(appState, {
-        scenario: params.scenario,
-        baseScenario: params.baseScenario,
-        admType: params.admType,
-        llm: params.llmBackbone,
-        kdmas: { ...params.kdmas }
-      });
-    }
-  }
-  
   // Sync current run parameters FROM appState
   function syncRunFromAppState() {
     const params = {
@@ -121,7 +107,6 @@ document.addEventListener("DOMContentLoaded", () => {
         validParams.admType !== params.admType ||
         validParams.llmBackbone !== params.llmBackbone ||
         JSON.stringify(validParams.kdmas) !== JSON.stringify(params.kdmas)) {
-      syncAppStateFromRun(CURRENT_RUN_ID);
       return true; // Parameters were corrected
     }
     
@@ -146,13 +131,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const paramField = paramMap[paramType] || paramType;
     params[paramField] = newValue;
     
-    // Apply auto-correction
     const correctedParams = setParametersForRun(runId, params);
-    
-    // Update UI if it's the current run
-    if (runId === CURRENT_RUN_ID && updateUI) {
-      syncAppStateFromRun(CURRENT_RUN_ID);
-    }
     
     return correctedParams;
   }
@@ -184,18 +163,7 @@ document.addEventListener("DOMContentLoaded", () => {
         kdmas: kdmas
       });
       
-      // Update UI dropdowns to reflect the valid initial parameters
-      updateScenarioDropdowns();
-      updateAdmDropdown();
-      updateLLMDropdown();
-      updateKDMAControls();
     }
-    
-    // Initialize current run parameters from appState
-    // This establishes the baseline for the current run state
-    syncRunFromAppState();
-    
-    console.log('Run context system initialized with current run:', getParametersForRun(CURRENT_RUN_ID));
   }
 
   // URL State Management System
@@ -220,8 +188,6 @@ document.addEventListener("DOMContentLoaded", () => {
           kdmas: state.kdmas || appState.activeKDMAs
         });
         
-        // Sync restored state to current run parameters
-        syncRunFromAppState();
         
         // Restore pinned runs
         if (state.pinnedRuns && state.pinnedRuns.length > 0) {
@@ -247,8 +213,51 @@ document.addEventListener("DOMContentLoaded", () => {
       manifest = result.manifest;
       window.updateAppParameters = result.updateAppParameters;
       
-      extractParametersFromManifest();
-      populateUIControls();
+      // Get initial valid parameters and available options
+      const initialResult = window.updateAppParameters({
+        scenario: null,
+        scene: null,
+        kdma_values: JSON.stringify([]),
+        adm: null,
+        llm: null,
+        run_variant: null
+      }, {});
+      
+      // Set available options from the result
+      appState.availableScenarios = initialResult.options.scenario || [];
+      appState.availableBaseScenarios = initialResult.options.scene || [];
+      appState.availableAdmTypes = initialResult.options.adm || [];
+      appState.availableLLMs = initialResult.options.llm || [];
+      
+      // Parse KDMA values to get available KDMAs
+      // Extract unique KDMA names from all available kdma_values options
+      const allKdmaValues = initialResult.options.kdma_values || [];
+      const kdmaNames = new Set();
+      allKdmaValues.forEach(kdmaValuesStr => {
+        try {
+          const kdmaArray = JSON.parse(kdmaValuesStr);
+          kdmaArray.forEach(item => kdmaNames.add(item.kdma));
+        } catch (e) {
+          console.warn('Failed to parse kdma_values:', e);
+        }
+      });
+      appState.availableKDMAs = Array.from(kdmaNames).sort();
+      
+      // Initialize appState with the valid parameters
+      const kdmaArray = JSON.parse(initialResult.params.kdma_values || '[]');
+      const kdmas = Object.fromEntries(
+        kdmaArray.map(({ kdma, value }) => [kdma, value])
+      );
+      
+      appState = updateUserSelections(appState, {
+        scenario: initialResult.params.scenario,
+        baseScenario: initialResult.params.scene,
+        admType: initialResult.params.adm,
+        llm: initialResult.params.llm,
+        runVariant: initialResult.params.run_variant,
+        kdmas: kdmas
+      });
+      
       
       // Initialize run context system
       initializeRunContextSystem();
@@ -274,90 +283,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
   }
 
-  // Extract unique parameters and build validCombinations structure
-  function extractParametersFromManifest() {
-    appState.availableScenarios.clear();
-    appState.availableBaseScenarios.clear();
-    appState.availableAdmTypes.clear();
-    appState.availableKDMAs.clear();
-    appState.availableLLMs.clear();
-    appState.validCombinations = {};
-
-    // Handle new manifest structure with experiment_keys
-    const experiments = manifest.experiment_keys || manifest;
-
-    // First pass: collect all scenarios and base scenario IDs
-    for (const experimentKey in experiments) {
-      const experiment = experiments[experimentKey];
-      for (const scenarioId in experiment.scenarios) {
-        appState.availableScenarios.add(scenarioId);
-        // Extract base scenario ID by removing index suffix
-        const baseScenarioId = scenarioId.replace(/-\d+$/, "");
-        appState.availableBaseScenarios.add(baseScenarioId);
-      }
-    }
-
-    // Second pass: build global parameter sets
-    for (const experimentKey in experiments) {
-      const experiment = experiments[experimentKey];
-      for (const scenarioId in experiment.scenarios) {
-        const scenario = experiment.scenarios[scenarioId];
-        const config = scenario.config;
-        if (!config) continue;
-
-        const admType = config.adm ? config.adm.name : "unknown_adm";
-        const llmBackbone =
-          config.adm &&
-          config.adm.structured_inference_engine &&
-          config.adm.structured_inference_engine.model_name
-            ? config.adm.structured_inference_engine.model_name
-            : "no_llm";
-
-        appState.availableAdmTypes.add(admType);
-        appState.availableLLMs.add(llmBackbone);
-
-        if (!appState.validCombinations[admType]) {
-          appState.validCombinations[admType] = {};
-        }
-        if (!appState.validCombinations[admType][llmBackbone]) {
-          appState.validCombinations[admType][llmBackbone] = {};
-        }
-
-        if (config.alignment_target && config.alignment_target.kdma_values) {
-          config.alignment_target.kdma_values.forEach((kdma_entry) => {
-            const kdma = kdma_entry.kdma;
-            const value = kdma_entry.value;
-            appState.availableKDMAs.add(kdma);
-
-            if (!appState.validCombinations[admType][llmBackbone][kdma]) {
-              appState.validCombinations[admType][llmBackbone][kdma] = new Set();
-            }
-            appState.validCombinations[admType][llmBackbone][kdma].add(value);
-          });
-        }
-      }
-    }
-
-    // Convert Sets to Arrays for easier use in UI
-    appState.availableScenarios = Array.from(appState.availableScenarios);
-    appState.availableBaseScenarios = Array.from(appState.availableBaseScenarios).sort();
-    appState.availableAdmTypes = Array.from(appState.availableAdmTypes).sort();
-    appState.availableKDMAs = Array.from(appState.availableKDMAs).sort();
-    appState.availableLLMs = Array.from(appState.availableLLMs).sort();
-
-    // Convert inner Sets to sorted Arrays
-    for (const adm in appState.validCombinations) {
-      for (const llm in appState.validCombinations[adm]) {
-        for (const kdma in appState.validCombinations[adm][llm]) {
-          appState.validCombinations[adm][llm][kdma] = Array.from(
-            appState.validCombinations[adm][llm][kdma],
-          ).sort((a, b) => a - b);
-        }
-      }
-    }
-
-    console.log("Valid Combinations (structured):", appState.validCombinations);
-  }
   
   // Core function that extracts parameters from experiment config
   function extractParametersFromConfig(config) {
@@ -444,37 +369,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return validOptions;
   }
   
-  // Convenience function to check if a specific parameter combination is valid
-  function isValidParameterCombination(scenario, admType, llmBackbone, kdmas, baseScenario = null, runVariant = null) {
-    // Check baseScenario/scenario consistency if both are provided
-    if (baseScenario && scenario) {
-      const scenarioBase = scenario.replace(/-\d+$/, "");
-      if (scenarioBase !== baseScenario) {
-        return false;
-      }
-    }
-    
-    const constraints = { scenario, admType, llmBackbone, kdmas };
-    const validOptions = getValidOptionsForConstraints(constraints);
-    
-    // Check if the basic combination is valid
-    if (!validOptions.scenarios.has(scenario)) {
-      return false;
-    }
-    
-    // If no run variant specified, combination is valid
-    if (!runVariant) {
-      return true;
-    }
-    
-    // Check if run variant exists for this ADM+LLM+KDMA combination
-    const baseKey = buildExperimentKey(admType, llmBackbone, kdmas);
-    const runVariantKey = `${baseKey}_${runVariant}`;
-    
-    return Object.keys(manifest.experiment_keys || {}).includes(runVariantKey);
-  }
-  
-  // Correct parameters to be valid using the new updateParameters system
   function correctParametersToValid(currentParams) {
     if (!window.updateAppParameters) {
       console.warn('updateAppParameters not available, using fallback');
@@ -521,11 +415,6 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
-  function populateUIControls() {
-    // Initialize current run parameters with initial state
-    syncRunFromAppState();
-  }
-  
 
   // Handle LLM change for pinned runs - global for onclick access
   window.handleRunLLMChange = async function(runId, newLLM) {

@@ -10,7 +10,6 @@ export function createInitialState() {
     availableAdmTypes: [],
     availableKDMAs: [],
     availableLLMs: [],
-    validCombinations: {},
     
     // User selections
     selectedBaseScenario: null,
