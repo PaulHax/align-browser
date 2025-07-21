@@ -109,7 +109,15 @@ export function createRunConfig(state) {
     runVariant: state.selectedRunVariant,
     kdmaValues: { ...state.activeKDMAs },
     experimentKey: getSelectedKey(state),
-    loadStatus: 'pending'
+    loadStatus: 'pending',
+    // Store available options at time of creation for dropdown population
+    availableOptions: {
+      scenarios: [...state.availableScenarios],
+      baseScenarios: [...state.availableBaseScenarios],
+      admTypes: [...state.availableAdmTypes],
+      llms: [...state.availableLLMs],
+      kdmas: [...state.availableKDMAs]
+    }
   };
 }
 
