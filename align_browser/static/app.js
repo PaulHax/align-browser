@@ -92,7 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
   
   
   // Update a parameter for any run with validation and UI sync
-  function updateParameterForRun(runId, paramType, newValue, updateUI = true) {
+  function updateParameterForRun(runId, paramType, newValue) {
     const params = getParametersForRun(runId);
     
     // Map parameter types to parameter structure fields
@@ -188,10 +188,10 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       
       // Set available options from the result
-      appState.availableScenarios = initialResult.options.scenario || [];
-      appState.availableBaseScenarios = initialResult.options.scene || [];
-      appState.availableAdmTypes = initialResult.options.adm || [];
-      appState.availableLLMs = initialResult.options.llm || [];
+      appState.availableScenarios = new Set(initialResult.options.scenario || []);
+      appState.availableBaseScenarios = new Set(initialResult.options.scene || []);
+      appState.availableAdmTypes = new Set(initialResult.options.adm || []);
+      appState.availableLLMs = new Set(initialResult.options.llm || []);
       
       // Parse KDMA values to get available KDMAs
       // Extract unique KDMA names from all available kdma_values options
@@ -1328,7 +1328,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!run) return escapeHtml(currentValue);
     
     // For base scenario, we show all available base scenarios
-    const availableBaseScenarios = Array.from(appState.availableBaseScenarios).sort();
+    const availableBaseScenarios = run.availableOptions.baseScenarios.sort();
     
     let html = `<select class="table-scenario-select" onchange="handleRunBaseScenarioChange('${runId}', this.value)">`;
     availableBaseScenarios.forEach(baseScenario => {
@@ -1352,17 +1352,14 @@ document.addEventListener("DOMContentLoaded", () => {
       return '<span class="na-value">No base scenario</span>';
     }
     
-    const matchingScenarios = Array.from(appState.availableScenarios).filter((scenarioId) => {
-      const extractedBase = scenarioId.replace(/-\d+$/, "");
-      return extractedBase === baseScenarioId;
-    });
+    const availableScenarios = run.availableOptions.scenarios;
     
-    if (matchingScenarios.length === 0) {
+    if (availableScenarios.length === 0) {
       return '<span class="na-value">No scenarios available</span>';
     }
     
     let html = `<select class="table-scenario-select" onchange="handleRunSpecificScenarioChange('${runId}', this.value)">`;
-    matchingScenarios.forEach(scenario => {
+    availableScenarios.forEach(scenario => {
       const selected = scenario === currentValue ? 'selected' : '';
       html += `<option value="${escapeHtml(scenario)}" ${selected}>${escapeHtml(scenario)}</option>`;
     });
