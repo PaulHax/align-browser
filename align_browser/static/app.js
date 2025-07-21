@@ -213,7 +213,15 @@ document.addEventListener("DOMContentLoaded", () => {
       manifest = result.manifest;
       window.updateAppParameters = result.updateAppParameters;
       
+      // Debug manifest structure
+      console.log('Loaded manifest structure:', {
+        hasExperiments: !!manifest.experiments,
+        experimentCount: manifest.experiments ? Object.keys(manifest.experiments).length : 0,
+        firstExperiment: manifest.experiments ? Object.keys(manifest.experiments)[0] : null
+      });
+      
       // Get initial valid parameters and available options
+      console.log('Calling updateAppParameters with null values...');
       const initialResult = window.updateAppParameters({
         scenario: null,
         scene: null,
@@ -222,6 +230,12 @@ document.addEventListener("DOMContentLoaded", () => {
         llm: null,
         run_variant: null
       }, {});
+      
+      console.log('updateAppParameters result:', {
+        params: initialResult.params,
+        optionKeys: Object.keys(initialResult.options),
+        optionCounts: Object.entries(initialResult.options).map(([key, arr]) => [key, Array.isArray(arr) ? arr.length : 'not array'])
+      });
       
       // Set available options from the result
       appState.availableScenarios = initialResult.options.scenario || [];

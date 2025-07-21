@@ -178,9 +178,21 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
   
   // Helper to check if manifest entry matches current selection
   const matchesCurrentSelection = (manifestEntry, excludeParam, currentSelection) => {
+    const excludeParamIndex = priorityOrder.indexOf(excludeParam);
+    
     for (const param of priorityOrder) {
       if (param === excludeParam) continue;
-      if (currentSelection[param] && manifestEntry[param] !== currentSelection[param]) {
+      
+      const paramIndex = priorityOrder.indexOf(param);
+      
+      // Only apply constraints from higher priority parameters (already set)
+      // Lower priority parameters shouldn't constrain higher priority ones
+      if (paramIndex >= excludeParamIndex) {
+        continue; // Skip constraints from same or lower priority parameters
+      }
+      
+      // Only check constraint if the current selection has a non-null value for this parameter
+      if (currentSelection[param] !== null && currentSelection[param] !== undefined && manifestEntry[param] !== currentSelection[param]) {
         return false;
       }
     }
@@ -192,24 +204,47 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
     const validEntries = manifest.filter(entry => 
       matchesCurrentSelection(entry, parameterName, currentSelection)
     );
-    return [...new Set(validEntries.map(entry => entry[parameterName]))];
+    const options = [...new Set(validEntries.map(entry => entry[parameterName]))];
+    
+    if (parameterName === 'scenario' || parameterName === 'scene') {
+      console.log(`getValidOptionsFor(${parameterName}):`, {
+        manifestLength: manifest.length,
+        validEntriesLength: validEntries.length,
+        currentSelection: JSON.stringify(currentSelection),
+        firstEntry: validEntries[0],
+        firstFewOptions: options.slice(0, 3)
+      });
+    }
+    
+    return options;
   };
   
   // Find the highest priority parameter that changed
   const changedParams = Object.keys(changes);
-  const highestChangedIndex = Math.min(
-    ...changedParams.map(param => priorityOrder.indexOf(param))
-  );
+  let highestChangedIndex;
   
-  // Check and potentially update lower priority parameters
+  if (changedParams.length === 0) {
+    // No changes provided - validate/correct all parameters from the beginning
+    highestChangedIndex = -1;
+  } else {
+    highestChangedIndex = Math.min(
+      ...changedParams.map(param => priorityOrder.indexOf(param))
+    );
+  }
+  
+  // Check and potentially update parameters starting from the highest changed index
   for (let i = highestChangedIndex + 1; i < priorityOrder.length; i++) {
     const param = priorityOrder[i];
     const currentValue = newParams[param];
     const validOptions = getValidOptionsFor(param, newParams);
     
+    console.log(`Parameter ${param}: currentValue=${currentValue}, validOptions=${validOptions.length > 0 ? validOptions.slice(0, 3) : 'empty'}`);
+    
     // Only change if current value is invalid
     if (!validOptions.includes(currentValue)) {
-      newParams[param] = validOptions.length > 0 ? validOptions[0] : null;
+      const newValue = validOptions.length > 0 ? validOptions[0] : null;
+      newParams[param] = newValue;
+      console.log(`  -> Updated ${param} from ${currentValue} to ${newValue}`);
     }
   }
   
@@ -286,29 +321,48 @@ export async function fetchRunData(params) {
 
 // Transform hierarchical manifest to flat array for updateParameters
 export function transformManifestForUpdateParameters(manifest) {
+  console.log('transformManifestForUpdateParameters called with:', {
+    hasExperiments: !!manifest.experiments,
+    experimentKeys: manifest.experiments ? Object.keys(manifest.experiments) : []
+  });
+  
   const entries = [];
   
   if (!manifest.experiments) {
+    console.warn('No experiments found in manifest');
     return entries;
   }
   
   parameterRunMap.clear();
   
   for (const [experimentKey, experiment] of Object.entries(manifest.experiments)) {
+    console.log(`Processing experiment ${experimentKey}:`, {
+      hasParameters: !!experiment.parameters,
+      hasScenarios: !!experiment.scenarios,
+      scenarioKeys: experiment.scenarios ? Object.keys(experiment.scenarios) : []
+    });
+    
     const { adm, llm, kdma_values, run_variant } = experiment.parameters;
     
     for (const [scenarioId, scenario] of Object.entries(experiment.scenarios)) {
+      console.log(`  Processing scenario ${scenarioId}:`, {
+        hasScenes: !!scenario.scenes,
+        sceneKeys: scenario.scenes ? Object.keys(scenario.scenes) : []
+      });
+      
       for (const [sceneId, sceneInfo] of Object.entries(scenario.scenes)) {
         const kdmaString = JSON.stringify(kdma_values || []);
         
-        entries.push({
+        const entry = {
           scenario: scenarioId,
           scene: sceneId,
           kdma_values: kdmaString,
           adm: adm.name,
           llm: llm.model_name,
           run_variant: run_variant
-        });
+        };
+        
+        entries.push(entry);
         
         const mapKey = `${scenarioId}:${sceneId}:${kdmaString}:${adm.name}:${llm.model_name}:${run_variant}`;
         
@@ -320,6 +374,16 @@ export function transformManifestForUpdateParameters(manifest) {
       }
     }
   }
+  
+  console.log(`Transform complete. Generated ${entries.length} entries:`, 
+    entries.slice(0, 3).map(e => ({ ...e, kdma_values: 'truncated' }))
+  );
+  
+  // Debug: show unique scenarios and scenes
+  const uniqueScenarios = [...new Set(entries.map(e => e.scenario))];
+  const uniqueScenes = [...new Set(entries.map(e => e.scene))];
+  console.log(`Unique scenarios: ${uniqueScenarios.slice(0, 5)} (${uniqueScenarios.length} total)`);
+  console.log(`Unique scenes: ${uniqueScenes.slice(0, 5)} (${uniqueScenes.length} total)`);
   
   return entries;
 }
