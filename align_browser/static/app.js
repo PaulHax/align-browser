@@ -418,7 +418,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return;
     
-    // Round to 1 decimal place to avoid floating-point precision issues
+    // The slider already constrains to valid values via min/max/step, so just normalize
     const normalizedValue = KDMAUtils.normalizeValue(sliderElement.value);
     
     // Update the display value immediately for responsiveness
@@ -1033,6 +1033,22 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
     
+    // Sort valid values to ensure proper order
+    validValues.sort((a, b) => a - b);
+    
+    // Calculate slider properties from valid values
+    const minVal = validValues.length > 0 ? Math.min(...validValues) : 0;
+    const maxVal = validValues.length > 0 ? Math.max(...validValues) : 1;
+    
+    // Calculate step as smallest difference between consecutive values, or 0.1 if only one value
+    let step = 0.1;
+    if (validValues.length > 1) {
+      const diffs = [];
+      for (let i = 1; i < validValues.length; i++) {
+        diffs.push(validValues[i] - validValues[i-1]);
+      }
+      step = Math.min(...diffs);
+    }
     
     return `
       <div class="table-kdma-control">
@@ -1046,7 +1062,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <input type="range" 
                class="table-kdma-value-slider"
                id="kdma-slider-${runId}-${kdmaType}"
-               min="0" max="1" step="0.1" 
+               min="${minVal}" max="${maxVal}" step="${step}" 
                value="${value}"
                oninput="handleRunKDMASliderInput('${runId}', '${kdmaType}', this)">
         <span class="table-kdma-value-display" id="kdma-value-${runId}-${kdmaType}">${formatKDMAValue(value)}</span>
