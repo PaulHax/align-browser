@@ -12,8 +12,8 @@ export function createInitialState() {
     availableLLMs: [],
     
     // User selections
-    selectedBaseScenario: null,
     selectedScenario: null,
+    selectedScene: null,
     selectedAdmType: null,
     selectedLLM: null,
     selectedRunVariant: 'default',
@@ -39,11 +39,11 @@ export function createInitialState() {
 export function updateUserSelections(state, updates) {
   const newState = { ...state };
   
-  if (updates.baseScenario !== undefined) {
-    newState.selectedBaseScenario = updates.baseScenario;
-  }
   if (updates.scenario !== undefined) {
     newState.selectedScenario = updates.scenario;
+  }
+  if (updates.scene !== undefined) {
+    newState.selectedScene = updates.scene;
   }
   if (updates.admType !== undefined) {
     newState.selectedAdmType = updates.admType;
@@ -103,7 +103,7 @@ export function createRunConfig(state) {
     id: generateRunId(),
     timestamp: new Date().toISOString(),
     scenario: state.selectedScenario,
-    baseScenario: state.selectedBaseScenario,
+    baseScenario: state.selectedScene,
     admType: state.selectedAdmType,
     llmBackbone: state.selectedLLM,
     runVariant: state.selectedRunVariant,
@@ -128,7 +128,7 @@ export function createParameterStructure(params = {}) {
 // URL State Management Functions
 export function encodeStateToURL(state) {
   const urlState = {
-    baseScenario: state.selectedBaseScenario,
+    baseScenario: state.selectedScene,
     scenario: state.selectedScenario,
     admType: state.selectedAdmType,
     llm: state.selectedLLM,

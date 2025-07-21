@@ -53,7 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // For current run, use existing appState as starting point
         defaultParams = createParameterStructure({
           scenario: appState.selectedScenario,
-          baseScenario: appState.selectedBaseScenario,
+          baseScenario: appState.selectedScene,
           admType: appState.selectedAdmType,
           llmBackbone: appState.selectedLLM,
           kdmas: appState.activeKDMAs
@@ -90,28 +90,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return validParams;
   }
   
-  // Sync current run parameters FROM appState
-  function syncRunFromAppState() {
-    const params = {
-      scenario: appState.selectedScenario,
-      baseScenario: appState.selectedBaseScenario,
-      admType: appState.selectedAdmType,
-      llmBackbone: appState.selectedLLM,
-      kdmas: { ...appState.activeKDMAs }
-    };
-    
-    const validParams = setParametersForRun(CURRENT_RUN_ID, params);
-    
-    // If auto-correction changed parameters, sync back to appState
-    if (validParams.scenario !== params.scenario ||
-        validParams.admType !== params.admType ||
-        validParams.llmBackbone !== params.llmBackbone ||
-        JSON.stringify(validParams.kdmas) !== JSON.stringify(params.kdmas)) {
-      return true; // Parameters were corrected
-    }
-    
-    return false; // No correction needed
-  }
   
   // Update a parameter for any run with validation and UI sync
   function updateParameterForRun(runId, paramType, newValue, updateUI = true) {
@@ -137,34 +115,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   
   // Initialize the run context system after manifest is loaded
-  function initializeRunContextSystem() {
-    if (window.updateAppParameters) {
-      const validInitialParams = window.updateAppParameters({
-        scenario: null,
-        scene: null,
-        kdma_values: JSON.stringify([]),
-        adm: null,
-        llm: null,
-        run_variant: 'default'
-      }, {});
-      
-      // Convert back to app.js format and update appState
-      const kdmaArray = JSON.parse(validInitialParams.params.kdma_values || '[]');
-      const kdmas = Object.fromEntries(
-        kdmaArray.map(({ kdma, value }) => [kdma, value])
-      );
-      
-      appState = updateUserSelections(appState, {
-        scenario: validInitialParams.params.scenario,
-        baseScenario: validInitialParams.params.scene,
-        admType: validInitialParams.params.adm,
-        llm: validInitialParams.params.llm,
-        runVariant: validInitialParams.params.run_variant,
-        kdmas: kdmas
-      });
-      
-    }
-  }
 
   // URL State Management System
   const urlState = {
@@ -181,7 +131,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (state) {
         // Restore selections
         appState = updateUserSelections(appState, {
-          baseScenario: state.baseScenario || appState.selectedBaseScenario,
+          baseScenario: state.baseScenario || appState.selectedScene,
           scenario: state.scenario || appState.selectedScenario,
           admType: state.admType || appState.selectedAdmType,
           llm: state.llm || appState.selectedLLM,
@@ -265,7 +215,7 @@ document.addEventListener("DOMContentLoaded", () => {
       
       appState = updateUserSelections(appState, {
         scenario: initialResult.params.scenario,
-        baseScenario: initialResult.params.scene,
+        scene: initialResult.params.scene,
         admType: initialResult.params.adm,
         llm: initialResult.params.llm,
         runVariant: initialResult.params.run_variant,
@@ -273,8 +223,6 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       
       
-      // Initialize run context system
-      initializeRunContextSystem();
       
       // Try to restore state from URL, otherwise load results normally
       const restoredFromURL = await urlState.restoreFromURL();
@@ -282,7 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log('No URL state, loading initial results');
         console.log('Current appState before loadResults:', {
           scenario: appState.selectedScenario,
-          baseScenario: appState.selectedBaseScenario,
+          scene: appState.selectedScene,
           admType: appState.selectedAdmType,
           llm: appState.selectedLLM
         });
@@ -1108,7 +1056,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Pin run from configuration (for URL restoration)
   async function pinRunFromConfig(runConfig) {
     // Set app state to match the configuration
-    appState.selectedBaseScenario = runConfig.baseScenario;
+    appState.selectedScene = runConfig.baseScenario;
     appState.selectedScenario = runConfig.scenario;
     appState.selectedAdmType = runConfig.admType;
     appState.selectedLLM = runConfig.llmBackbone;
@@ -1227,7 +1175,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function loadResultsForConfig(config) {
     // Temporarily set state to this config
     const originalState = {
-      selectedBaseScenario: appState.selectedBaseScenario,
+      selectedScene: appState.selectedScene,
       selectedScenario: appState.selectedScenario,
       selectedAdmType: appState.selectedAdmType,
       selectedLLM: appState.selectedLLM,
@@ -1235,7 +1183,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     
     // Set state to the config
-    appState.selectedBaseScenario = config.baseScenario;
+    appState.selectedScene = config.baseScenario;
     appState.selectedScenario = config.scenario;
     appState.selectedAdmType = config.admType;
     appState.selectedLLM = config.llmBackbone;
@@ -1246,7 +1194,7 @@ document.addEventListener("DOMContentLoaded", () => {
       await loadResults();
     } finally {
       // Restore original state
-      appState.selectedBaseScenario = originalState.selectedBaseScenario;
+      appState.selectedScene = originalState.selectedScene;
       appState.selectedScenario = originalState.selectedScenario;
       appState.selectedAdmType = originalState.selectedAdmType;
       appState.selectedLLM = originalState.selectedLLM;
@@ -2095,14 +2043,14 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Temporarily update app state to match the last run's configuration
     const originalState = {
-      selectedBaseScenario: appState.selectedBaseScenario,
+      selectedScene: appState.selectedScene,
       selectedScenario: appState.selectedScenario,
       selectedAdmType: appState.selectedAdmType,
       selectedLLM: appState.selectedLLM,
       activeKDMAs: { ...appState.activeKDMAs }
     };
     
-    appState.selectedBaseScenario = lastRun.baseScenario;
+    appState.selectedScene = lastRun.baseScenario;
     appState.selectedScenario = lastRun.scenario;
     appState.selectedAdmType = lastRun.admType;
     appState.selectedLLM = lastRun.llmBackbone;
