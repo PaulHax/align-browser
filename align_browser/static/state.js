@@ -417,6 +417,7 @@ export async function fetchRunData(params) {
     const inputOutputArray = await inputOutputResponse.json();
     const timingData = await timingResponse.json();
     
+    
     // Return complete data structure
     return {
       inputOutput: inputOutputArray[runInfo.sourceIndex],
