@@ -3,12 +3,12 @@ import {
   createInitialState,
   updateUserSelections,
   updateCurrentData,
-  getSelectedKey,
   createRunConfig,
   createParameterStructure,
   encodeStateToURL,
   decodeStateFromURL,
   loadManifest,
+  fetchRunData,
 } from './state.js';
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -227,7 +227,6 @@ document.addEventListener("DOMContentLoaded", () => {
       // Try to restore state from URL, otherwise load results normally
       const restoredFromURL = await urlState.restoreFromURL();
       if (!restoredFromURL) {
-        console.log('No URL state, loading initial results');
         console.log('Current appState before loadResults:', {
           scenario: appState.selectedScenario,
           scene: appState.selectedScene,
@@ -717,8 +716,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // Internal function to load results without loading guard
   async function loadResultsInternal() {
     if (!appState.selectedScenario) {
-      // Message will be displayed in the table
-      
       // Clear current data when no scenario
       appState = updateCurrentData(appState, {
         inputOutput: null,
@@ -729,167 +726,62 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const selectedKey = getSelectedKey(appState);
-    console.log(
-      "Attempting to load:",
-      selectedKey,
-      "Scenario:",
-      appState.selectedScenario,
-    );
+    console.log("Loading results for:", {
+      scenario: appState.selectedScenario,
+      scene: appState.selectedScene,
+      admType: appState.selectedAdmType,
+      llmBackbone: appState.selectedLLM,
+      runVariant: appState.selectedRunVariant,
+      kdmaValues: appState.activeKDMAs
+    });
 
-    // Handle new manifest structure with experiment_keys
-    const experiments = manifest.experiment_keys || manifest;
-    if (
-      experiments[selectedKey] &&
-      experiments[selectedKey].scenarios[appState.selectedScenario]
-    ) {
-      const dataPaths = experiments[selectedKey].scenarios[appState.selectedScenario];
-      try {
-        const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
-        const timingData = await (await fetch(dataPaths.timing)).json();
+    // Create parameter structure for fetchRunData
+    const params = {
+      scenario: appState.selectedScenario,
+      scene: appState.selectedScene,
+      admType: appState.selectedAdmType,
+      llmBackbone: appState.selectedLLM,
+      runVariant: appState.selectedRunVariant,
+      kdmaValues: appState.activeKDMAs
+    };
 
-        // Extract the index from the scenario ID (e.g., "test_scenario_1-0" → 0)
-        const scenarioIndex = parseInt(appState.selectedScenario.split('-').pop());
-        
-        // Get the specific element from each array using the index
-        const inputOutputItem = inputOutputArray[scenarioIndex];
-
-        // Helper function to format complex data structures cleanly
-        const formatValue = (value, depth = 0) => {
-          
-          if (value === null || value === undefined) {
-            return '<span style="color: #999; font-style: italic;">null</span>';
-          }
-          
-          if (typeof value === 'boolean') {
-            return `<span style="color: #0066cc; font-weight: bold;">${value}</span>`;
-          }
-          
-          if (typeof value === 'number') {
-            return `<span style="color: #cc6600; font-weight: bold;">${value}</span>`;
-          }
-          
-          if (typeof value === 'string') {
-            if (value.length > 100) {
-              return `<div style="background-color: #f8f9fa; padding: 8px; border-radius: 4px; border-left: 3px solid #dee2e6; margin: 4px 0; white-space: pre-wrap;">${value}</div>`;
-            }
-            return `<span style="color: #333;">${value}</span>`;
-          }
-          
-          if (Array.isArray(value)) {
-            if (value.length === 0) {
-              return '<span style="color: #999; font-style: italic;">empty list</span>';
-            }
-            
-            let html = '<div style="margin: 4px 0;">';
-            value.forEach((item, index) => {
-              html += `<div style="margin: 2px 0; padding-left: ${depth * 20 + 10}px;">`;
-              html += `<span style="color: #666; font-size: 0.9em;">${index + 1}.</span> `;
-              html += formatValue(item, depth + 1);
-              html += '</div>';
-            });
-            html += '</div>';
-            return html;
-          }
-          
-          if (typeof value === 'object') {
-            const keys = Object.keys(value);
-            if (keys.length === 0) {
-              return '<span style="color: #999; font-style: italic;">empty object</span>';
-            }
-            
-            let html = '<div style="margin: 4px 0;">';
-            keys.forEach(key => {
-              html += `<div style="margin: 4px 0; padding-left: ${depth * 20 + 10}px;">`;
-              html += `<span style="color: #0066cc; font-weight: 600;">${key}:</span> `;
-              html += formatValue(value[key], depth + 1);
-              html += '</div>';
-            });
-            html += '</div>';
-            return html;
-          }
-          
-          return String(value);
-        };
-
-        // Content will be displayed via the comparison table
-        
-        // Store current data for pinning
-        appState = updateCurrentData(appState, {
-          inputOutput: inputOutputItem,
-          inputOutputArray: inputOutputArray,
-          timing: timingData
-        });
-          
-        
-        // Update comparison display (always-on table mode)
-        updateComparisonDisplay();
-      } catch (error) {
-        console.error("Error fetching experiment data:", error);
-        // Error will be displayed in the table
-        
-        // Clear current data on error
+    try {
+      // Use fetchRunData from state.js to get the result
+      const inputOutputItem = await fetchRunData(params);
+      
+      if (!inputOutputItem) {
+        console.warn("No data found for parameters:", params);
+        // Clear current data when no data found
         appState = updateCurrentData(appState, {
           inputOutput: null,
           inputOutputArray: null,
-            timing: null
+          timing: null
         });
-          updateComparisonDisplay(); // Update table with error state
+        updateComparisonDisplay(); // Update table with no data state
+        return;
       }
-    } else {
-      // Try to find a fallback experiment key with run variant
-      let fallbackKey = null;
-      
-      // Look for keys that start with the base pattern
-      const availableKeys = Object.keys(experiments);
-      const basePattern = selectedKey;
-      
-      // First, try to find exact match with available variants
-      for (const key of availableKeys) {
-        if (key.startsWith(basePattern + '_') && experiments[key].scenarios[appState.selectedScenario]) {
-          fallbackKey = key;
-          break;
-        }
-      }
-      
-      if (fallbackKey) {
-        console.log(`Using fallback key: ${fallbackKey} for requested key: ${selectedKey}`);
-        
-        // Auto-update the app state to use the run variant found
-        const variantSuffix = fallbackKey.substring(basePattern.length + 1);
-        if (variantSuffix) {
-          appState.selectedRunVariant = variantSuffix;
-          console.log(`Auto-selected run variant: ${variantSuffix}`);
-        }
-        
-        const dataPaths = experiments[fallbackKey].scenarios[appState.selectedScenario];
-        try {
-          const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
-          const timingData = await (await fetch(dataPaths.timing)).json();
 
-          const scenarioIndex = parseInt(appState.selectedScenario.split('-').pop());
-          const inputOutputItem = inputOutputArray[scenarioIndex];
+      // Store current data for pinning - for now, we only have the single inputOutput item
+      // TODO: We may need to fetch the full inputOutputArray and timing data separately
+      appState = updateCurrentData(appState, {
+        inputOutput: inputOutputItem,
+        inputOutputArray: null, // We don't have this from fetchRunData yet
+        timing: null // We don't have this from fetchRunData yet
+      });
 
-          appState = updateCurrentData(appState, {
-            inputOutput: inputOutputItem,
-            inputOutputArray: inputOutputArray,
-              timing: timingData
-          });
-
-          updateComparisonDisplay();
-          return;
-        } catch (error) {
-          console.error("Error fetching fallback experiment data:", error);
-        }
-      }
+      // Update comparison display (always-on table mode)
+      updateComparisonDisplay();
       
-      // No data message will be displayed in the table
-      console.warn(`No data found for key: ${selectedKey}, scenario: ${appState.selectedScenario}`);
+    } catch (error) {
+      console.error("Error fetching run data:", error);
       
-      // Clear current data when no data found
-      appState.currentInputOutput = null;
-      appState.currentTiming = null;
-      updateComparisonDisplay(); // Update table with no data state
+      // Clear current data on error
+      appState = updateCurrentData(appState, {
+        inputOutput: null,
+        inputOutputArray: null,
+        timing: null
+      });
+      updateComparisonDisplay(); // Update table with error state
     }
   }
 

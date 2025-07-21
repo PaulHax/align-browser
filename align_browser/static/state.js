@@ -73,7 +73,7 @@ export function updateCurrentData(state, updates) {
 
 
 // Pure selectors (computed values)
-export function getSelectedKey(state) {
+function getSelectedKey(state) {
   const admType = state.selectedAdmType;
   const llmBackbone = state.selectedLLM;
   const runVariant = state.selectedRunVariant;
@@ -287,10 +287,13 @@ export function getManifest() {
 
 function resolveParametersToRun(params) {
   if (!parameterRunMap || parameterRunMap.size === 0) {
+    console.warn('parameterRunMap is empty or not initialized');
     return undefined;
   }
   
   const { scenario, scene, kdmaValues, admType, llmBackbone, runVariant } = params;
+  
+  console.log('Input kdmaValues:', kdmaValues);
   
   const kdmaArray = [];
   if (kdmaValues) {
@@ -304,7 +307,9 @@ function resolveParametersToRun(params) {
   
   const mapKey = `${scenario}:${scene}:${kdmaString}:${admType}:${llmBackbone}:${runVariant}`;
   
-  return parameterRunMap.get(mapKey);
+  const result = parameterRunMap.get(mapKey);
+  
+  return result;
 }
 
 export async function fetchRunData(params) {
@@ -351,7 +356,12 @@ export function transformManifestForUpdateParameters(manifest) {
       });
       
       for (const [sceneId, sceneInfo] of Object.entries(scenario.scenes)) {
-        const kdmaString = JSON.stringify(kdma_values || []);
+        // remove kdes field
+        const cleanedKdmaValues = (kdma_values || []).map(kdma => ({
+          kdma: kdma.kdma,
+          value: kdma.value
+        }));
+        const kdmaString = JSON.stringify(cleanedKdmaValues);
         
         const entry = {
           scenario: scenarioId,
