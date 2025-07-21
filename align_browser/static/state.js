@@ -6,7 +6,7 @@ export function createInitialState() {
   return {
     // Data from manifest
     availableScenarios: [],
-    availableBaseScenarios: [],
+    availableScenes: [],
     availableAdmTypes: [],
     availableKDMAs: [],
     availableLLMs: [],
@@ -132,7 +132,7 @@ export function createRunConfig(state) {
     id: generateRunId(),
     timestamp: new Date().toISOString(),
     scenario: state.selectedScenario,
-    baseScenario: state.selectedScene,
+    scene: state.selectedScene,
     admType: state.selectedAdmType,
     llmBackbone: state.selectedLLM,
     runVariant: state.selectedRunVariant,
@@ -142,7 +142,7 @@ export function createRunConfig(state) {
     // Store available options at time of creation for dropdown population
     availableOptions: {
       scenarios: [...state.availableScenarios],
-      baseScenarios: [...state.availableBaseScenarios],
+      scenes: [...state.availableScenes],
       admTypes: [...state.availableAdmTypes],
       llms: [...state.availableLLMs],
       kdmas: kdmaStructure  // Sophisticated structure with constraint information
@@ -154,7 +154,7 @@ export function createRunConfig(state) {
 export function createParameterStructure(params = {}) {
   return {
     scenario: params.scenario || null,
-    baseScenario: params.baseScenario || null,
+    scene: params.scene || null,
     admType: params.admType || null,
     llmBackbone: params.llmBackbone || null,
     runVariant: params.runVariant || 'default',
@@ -165,7 +165,7 @@ export function createParameterStructure(params = {}) {
 // URL State Management Functions
 export function encodeStateToURL(state) {
   const urlState = {
-    baseScenario: state.selectedScene,
+    scene: state.selectedScene,
     scenario: state.selectedScenario,
     admType: state.selectedAdmType,
     llm: state.selectedLLM,
@@ -173,7 +173,7 @@ export function encodeStateToURL(state) {
     kdmas: state.activeKDMAs,
     pinnedRuns: Array.from(state.pinnedRuns.values()).map(run => ({
       scenario: run.scenario,
-      baseScenario: run.baseScenario,
+      scene: run.scene,
       admType: run.admType,
       llmBackbone: run.llmBackbone,
       runVariant: run.runVariant,
@@ -358,10 +358,28 @@ export async function fetchRunData(params) {
     return undefined;
   }
   
-  const response = await fetch(runInfo.inputOutputPath);
-  const inputOutputArray = await response.json();
-  
-  return inputOutputArray[runInfo.sourceIndex];
+  try {
+    // Fetch both input/output and timing data
+    const [inputOutputResponse, timingResponse] = await Promise.all([
+      fetch(runInfo.inputOutputPath),
+      fetch(runInfo.timingPath)
+    ]);
+    
+    const inputOutputArray = await inputOutputResponse.json();
+    const timingData = await timingResponse.json();
+    
+    // Return complete data structure
+    return {
+      inputOutput: inputOutputArray[runInfo.sourceIndex],
+      inputOutputArray: inputOutputArray,
+      timing: timingData,
+      experimentKey: runInfo.experimentKey,
+      timing_s: runInfo.timing_s
+    };
+  } catch (error) {
+    console.error('Error fetching run data:', error);
+    return undefined;
+  }
 }
 
 // Transform hierarchical manifest to flat array for updateParameters
@@ -419,7 +437,9 @@ export function transformManifestForUpdateParameters(manifest) {
         parameterRunMap.set(mapKey, {
           experimentKey,
           sourceIndex: sceneInfo.source_index,
-          inputOutputPath: scenario.input_output.file
+          inputOutputPath: scenario.input_output.file,
+          timingPath: scenario.timing,
+          timing_s: sceneInfo.timing_s
         });
       }
     }

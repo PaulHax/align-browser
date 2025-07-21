@@ -143,7 +143,7 @@ footer {
   background: #fafafa;
 }
 
-.parameter-row[data-category="base_scenario"],
+.parameter-row[data-category="scene"],
 .parameter-row[data-category="scenario"],
 .parameter-row[data-category="adm_type"],
 .parameter-row[data-category="llm_backbone"] {
