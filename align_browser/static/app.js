@@ -28,8 +28,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Standalone function to create run config from parameters
   function createRunConfigFromParams(params) {
-    // Get context-specific available KDMAs using updateAppParameters with the run's parameters
+    // Get context-specific available options using updateAppParameters with the run's parameters
     let availableKDMAs = [];
+    let enhancedParams = { ...params };
+    
     if (window.updateAppParameters) {
       const result = window.updateAppParameters({
         scenario: params.scenario,
@@ -39,10 +41,20 @@ document.addEventListener("DOMContentLoaded", () => {
         llm: params.llmBackbone,
         run_variant: params.runVariant
       }, {});
+      
       availableKDMAs = result.options.kdma_values || [];
+      
+      // Add all available options to params if they weren't provided
+      enhancedParams = {
+        ...params,
+        availableScenarios: params.availableScenarios || result.options.scenario || [],
+        availableScenes: params.availableScenes || result.options.scene || [],
+        availableAdmTypes: params.availableAdmTypes || result.options.adm || [],
+        availableLLMs: params.availableLLMs || result.options.llm || []
+      };
     }
     
-    return createRunConfig(params, availableKDMAs);
+    return createRunConfig(enhancedParams, availableKDMAs);
   }
 
   
@@ -181,8 +193,21 @@ document.addEventListener("DOMContentLoaded", () => {
         // Restore pinned runs
         if (state.pinnedRuns && state.pinnedRuns.length > 0) {
           for (const runConfig of state.pinnedRuns) {
-            await pinRunFromConfig(runConfig);
+            // Convert runConfig to params format expected by addColumn
+            // Don't pass availableOptions - let addColumn calculate them fresh
+            const params = {
+              scenario: runConfig.scenario,
+              scene: runConfig.scene,
+              admType: runConfig.admType,
+              llmBackbone: runConfig.llmBackbone,
+              runVariant: runConfig.runVariant,
+              kdmaValues: runConfig.kdmaValues
+            };
+            // Skip URL updates during batch restoration
+            await addColumn(params, { updateURL: false });
           }
+          // Update URL once after all runs are restored
+          urlState.updateURL();
         }
         
         return true; // Successfully restored
@@ -205,14 +230,6 @@ document.addEventListener("DOMContentLoaded", () => {
         llm: null,
         run_variant: null
       }, {});
-      
-      console.log('updateAppParameters result:', {
-        params: initialResult.params,
-        optionKeys: Object.keys(initialResult.options),
-        optionCounts: Object.entries(initialResult.options).map(([key, arr]) => [key, Array.isArray(arr) ? arr.length : 'not array'])
-      });
-      
-      
       
       // Store first valid parameters for auto-pinning but don't populate appState selections
       const firstValidParams = {
@@ -554,70 +571,6 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
 
-  // Pin run from configuration (for URL restoration)
-  async function pinRunFromConfig(runConfig) {
-    // Extract parameters from the run config
-    let availableOptions = runConfig.availableOptions;
-    
-    // If no available options stored, get them dynamically from updateAppParameters
-    if (!availableOptions && window.updateAppParameters) {
-      const result = window.updateAppParameters({
-        scenario: runConfig.scenario,
-        scene: runConfig.scene,
-        kdma_values: Object.entries(runConfig.kdmaValues || {}).map(([kdma, value]) => ({ kdma, value })),
-        adm: runConfig.admType,
-        llm: runConfig.llmBackbone,
-        run_variant: runConfig.runVariant
-      }, {});
-      
-      availableOptions = {
-        scenarios: result.options.scenario || [],
-        scenes: result.options.scene || [],
-        admTypes: result.options.adm || [],
-        llms: result.options.llm || []
-      };
-    }
-    
-    const params = {
-      scene: runConfig.scene,
-      scenario: runConfig.scenario,
-      admType: runConfig.admType,
-      llmBackbone: runConfig.llmBackbone,
-      runVariant: runConfig.runVariant,
-      kdmaValues: runConfig.kdmaValues,
-      availableScenarios: availableOptions?.scenarios || [],
-      availableScenes: availableOptions?.scenes || [],
-      availableAdmTypes: availableOptions?.admTypes || [],
-      availableLLMs: availableOptions?.llms || []
-    };
-    
-      const runData = await fetchRunData({
-        scenario: params.scenario,
-        scene: params.scene,
-        admType: params.admType,
-        llmBackbone: params.llmBackbone,
-        runVariant: params.runVariant,
-        kdmaValues: params.kdmaValues
-      });
-      
-      if (!runData || !runData.inputOutput) {
-        throw new Error('No data found for parameters');
-      }
-      
-      // Store complete run data with original ID and timestamp preserved
-      const pinnedData = {
-        ...runConfig, // Preserve original ID, timestamp, etc.
-        inputOutput: runData.inputOutput,
-        inputOutputArray: runData.inputOutputArray,
-        timing: runData.timing,
-        timing_s: runData.timing_s,
-        loadStatus: 'loaded'
-      };
-      
-      appState.pinnedRuns.set(runConfig.id, pinnedData);
-      
-
-  }
 
   // Reload data for a specific pinned run after parameter changes (pure approach)
   async function reloadPinnedRun(runId) {
@@ -1498,7 +1451,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Add a column with specific parameters (no appState manipulation)
-  async function addColumn(params) {
+  async function addColumn(params, options = {}) {
     if (!params.scenario) {
       console.warn('No scenario provided for addColumn');
       return;
@@ -1533,7 +1486,11 @@ document.addEventListener("DOMContentLoaded", () => {
     
     appState.pinnedRuns.set(runConfig.id, pinnedData);
     updateComparisonDisplay();
-    urlState.updateURL();
+    
+    // Only update URL if not explicitly disabled (e.g., during batch restoration)
+    if (options.updateURL !== false) {
+      urlState.updateURL();
+    }
     
     return runConfig.id; // Return the ID for reference
     
