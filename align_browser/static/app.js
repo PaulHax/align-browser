@@ -929,7 +929,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return KDMAUtils.formatValue(value);
   }
 
-
   // Generate experiment key from parameters (shared utility function)
   function buildExperimentKey(admType, llmBackbone, kdmas) {
     const kdmaParts = [];
@@ -940,16 +939,49 @@ document.addEventListener("DOMContentLoaded", () => {
     return kdmaString ? `${admType}_${llmBackbone}_${kdmaString}` : `${admType}_${llmBackbone}`;
   }
 
-  
+  // Check if we can add another KDMA given current KDMA values
+  function canAddKDMAToRun(runId, currentKDMAs) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run?.availableOptions?.kdmas?.validCombinations) {
+      return false;
+    }
+    
+    const currentKDMAEntries = Object.entries(currentKDMAs || {});
+    const maxKDMAs = getMaxKDMAsForRun(runId);
+    
+    // First check if we're already at max
+    if (currentKDMAEntries.length >= maxKDMAs) {
+      return false;
+    }
+    
+    // Convert current KDMAs to array format for comparison
+    const currentKDMAArray = currentKDMAEntries.map(([kdma, value]) => ({ kdma, value }));
+    
+    // Check if there are any valid combinations that:
+    // 1. Include all current KDMAs with their exact values
+    // 2. Have at least one additional KDMA
+    return run.availableOptions.kdmas.validCombinations.some(combination => {
+      if (!Array.isArray(combination) || combination.length <= currentKDMAArray.length) {
+        return false;
+      }
+      
+      // Check if this combination includes all current KDMAs with matching values
+      return currentKDMAArray.every(currentKDMA => 
+        combination.some(combKDMA => 
+          combKDMA.kdma === currentKDMA.kdma && 
+          Math.abs(combKDMA.value - currentKDMA.value) < 0.001
+        )
+      );
+    });
+  }
 
   // Create KDMA controls HTML for table cells
   function createKDMAControlsForRun(runId, currentKDMAs) {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return '<span class="na-value">N/A</span>';
     
-    const maxKDMAs = getMaxKDMAsForRun(runId);
     const currentKDMAEntries = Object.entries(currentKDMAs || {});
-    const canAddMore = currentKDMAEntries.length < maxKDMAs;
+    const canAddMore = canAddKDMAToRun(runId, currentKDMAs);
     
     let html = `<div class="table-kdma-container" data-run-id="${runId}">`;
     
@@ -959,22 +991,12 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     
     // Add button - always show but enable/disable based on availability
-    const availableKDMAs = getValidKDMAsForRun(runId);
-    const availableTypes = Object.keys(availableKDMAs).filter(type => 
-      !currentKDMAs || currentKDMAs[type] === undefined
-    );
-    
-    const canAdd = canAddMore && availableTypes.length > 0;
-    const disabledAttr = canAdd ? '' : 'disabled';
+    const disabledAttr = canAddMore ? '' : 'disabled';
     
     // Determine tooltip text for disabled state
     let tooltipText = '';
-    if (!canAdd) {
-      if (!canAddMore) {
-        tooltipText = `title="Maximum KDMAs reached (${maxKDMAs})"`;
-      } else {
-        tooltipText = 'title="All available KDMA types have been added"';
-      }
+    if (!canAddMore) {
+      tooltipText = 'title="No valid KDMA combinations available with current values"';
     }
     
     html += `<button class="add-kdma-btn" onclick="addKDMAToRun('${runId}')" 
