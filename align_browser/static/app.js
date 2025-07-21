@@ -26,7 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ...createInitialState(),
     // Convert arrays to Sets to maintain existing behavior
     availableScenarios: new Set(),
-    availableBaseScenarios: new Set(),
+    availableScenes: new Set(),
     availableAdmTypes: new Set(),
     availableKDMAs: new Set(),
     availableLLMs: new Set(),
@@ -53,7 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // For current run, use existing appState as starting point
         defaultParams = createParameterStructure({
           scenario: appState.selectedScenario,
-          baseScenario: appState.selectedScene,
+          scene: appState.selectedScene,
           admType: appState.selectedAdmType,
           llmBackbone: appState.selectedLLM,
           kdmas: appState.activeKDMAs
@@ -64,7 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (run) {
           defaultParams = createParameterStructure({
             scenario: run.scenario,
-            baseScenario: run.baseScenario,
+            scene: run.scene,
             admType: run.admType,
             llmBackbone: run.llmBackbone,
             kdmas: run.kdmaValues
@@ -98,7 +98,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Map parameter types to parameter structure fields
     const paramMap = {
       'scenario': 'scenario',
-      'baseScenario': 'baseScenario', 
+      'scene': 'scene', 
       'admType': 'admType',
       'llmBackbone': 'llmBackbone',
       'llm': 'llmBackbone', // alias
@@ -131,7 +131,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (state) {
         // Restore selections
         appState = updateUserSelections(appState, {
-          baseScenario: state.baseScenario || appState.selectedScene,
+          scene: state.scene || appState.selectedScene,
           scenario: state.scenario || appState.selectedScenario,
           admType: state.admType || appState.selectedAdmType,
           llm: state.llm || appState.selectedLLM,
@@ -189,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
       
       // Set available options from the result
       appState.availableScenarios = new Set(initialResult.options.scenario || []);
-      appState.availableBaseScenarios = new Set(initialResult.options.scene || []);
+      appState.availableScenes = new Set(initialResult.options.scene || []);
       appState.availableAdmTypes = new Set(initialResult.options.adm || []);
       appState.availableLLMs = new Set(initialResult.options.llm || []);
       
@@ -224,8 +224,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // Auto-pin the initial configuration if no pinned runs exist
         if (appState.pinnedRuns.size === 0 && appState.currentInputOutput) {
           // Ensure we have a valid display name before pinning
-          setTimeout(() => {
-            pinCurrentRun();
+          setTimeout(async () => {
+            await pinCurrentRun();
           }, 100); // Small delay to ensure appState is fully updated
         }
       }
@@ -326,7 +326,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Convert app.js format to state.js format
     const stateParams = {
       scenario: currentParams.scenario || null,
-      scene: currentParams.baseScenario || null,
+      scene: currentParams.scene || null,
       kdma_values: currentParams.kdmas ? 
         Object.entries(currentParams.kdmas).map(([kdma, value]) => ({ kdma, value }))
           .sort((a, b) => a.kdma.localeCompare(b.kdma))
@@ -349,7 +349,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     return {
       scenario: validParams.scenario,
-      baseScenario: validParams.scene,
+      scene: validParams.scene,
       admType: validParams.adm,
       llmBackbone: validParams.llm,
       kdmas: kdmas,
@@ -434,8 +434,8 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // Handle base scenario change for pinned runs - global for onclick access
-  window.handleRunBaseScenarioChange = async function(runId, newBaseScenario) {
-    console.log(`Changing base scenario for run ${runId} to ${newBaseScenario}`);
+  window.handleRunSceneChange = async function(runId, newScene) {
+    console.log(`Changing scene for run ${runId} to ${newScene}`);
     
     const run = appState.pinnedRuns.get(runId);
     if (!run) {
@@ -444,7 +444,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     
     // Update base scenario with validation through central system
-    updateParameterForRun(runId, 'baseScenario', newBaseScenario);
+    updateParameterForRun(runId, 'scene', newScene);
     
     // After scenario change, validate and potentially reset KDMAs
     await validateKDMAsForScenarioChange(runId);
@@ -727,10 +727,10 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     try {
-      // Use fetchRunData from state.js to get the result
-      const inputOutputItem = await fetchRunData(params);
+      // Use fetchRunData from state.js to get the complete result
+      const runData = await fetchRunData(params);
       
-      if (!inputOutputItem) {
+      if (!runData || !runData.inputOutput) {
         console.warn("No data found for parameters:", params);
         // Clear current data when no data found
         appState = updateCurrentData(appState, {
@@ -742,12 +742,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // Store current data for pinning - for now, we only have the single inputOutput item
-      // TODO: We may need to fetch the full inputOutputArray and timing data separately
+      // Store current data for pinning with complete data
       appState = updateCurrentData(appState, {
-        inputOutput: inputOutputItem,
-        inputOutputArray: null, // We don't have this from fetchRunData yet
-        timing: null // We don't have this from fetchRunData yet
+        inputOutput: runData.inputOutput,
+        inputOutputArray: runData.inputOutputArray,
+        timing: runData.timing
       });
 
       // Update comparison display (always-on table mode)
@@ -767,127 +766,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
 
-  // Pure function to load experiment data for any parameter combination
-  async function loadExperimentData(scenario, admType, llmBackbone, kdmas, runVariant = null) {
-    if (!scenario) {
-      return {
-        inputOutput: null,
-        inputOutputArray: null,
-        timing: null,
-        error: 'No scenario provided'
-      };
-    }
-
-    // Generate experiment key from parameters using shared utility
-    let experimentKey = buildExperimentKey(admType, llmBackbone, kdmas);
-    
-    // Add run variant if provided
-    if (runVariant) {
-      experimentKey += `_${runVariant}`;
-    }
-
-    console.log("Loading experiment data:", experimentKey, "Scenario:", scenario);
-
-    // Handle new manifest structure with experiment_keys
-    const experiments = manifest.experiment_keys || manifest;
-    if (
-      experiments[experimentKey] &&
-      experiments[experimentKey].scenarios[scenario]
-    ) {
-      const dataPaths = experiments[experimentKey].scenarios[scenario];
-      try {
-        const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
-        const timingData = await (await fetch(dataPaths.timing)).json();
-
-        // Extract the index from the scenario ID (e.g., "test_scenario_1-0" → 0)
-        const scenarioIndex = parseInt(scenario.split('-').pop());
-        
-        // Get the specific element from each array using the index
-        const inputOutputItem = inputOutputArray[scenarioIndex];
-
-        return {
-          inputOutput: inputOutputItem,
-          inputOutputArray: inputOutputArray,
-          timing: timingData,
-          experimentKey: experimentKey,
-          error: null
-        };
-      } catch (error) {
-        console.error("Error fetching experiment data:", error);
-        return {
-          inputOutput: null,
-          inputOutputArray: null,
-            timing: null,
-          experimentKey: experimentKey,
-          error: error.message
-        };
-      }
-    } else {
-      // Try to find a fallback experiment key
-      let fallbackKey = null;
-      
-      // If a run variant was requested, try falling back to the base key (without run variant)
-      if (runVariant) {
-        const baseKey = buildExperimentKey(admType, llmBackbone, kdmas);
-        if (experiments[baseKey] && experiments[baseKey].scenarios[scenario]) {
-          fallbackKey = baseKey;
-          console.log(`Fallback: Using base key without run variant: ${fallbackKey} for requested key: ${experimentKey}`);
-        }
-      }
-      
-      // If no fallback found yet, try to find any other variant for the same base
-      if (!fallbackKey) {
-        const availableKeys = Object.keys(experiments);
-        const baseKey = runVariant ? buildExperimentKey(admType, llmBackbone, kdmas) : experimentKey;
-        
-        // Look for keys that match the base pattern (either exact or with variants)
-        for (const key of availableKeys) {
-          if ((key === baseKey || key.startsWith(baseKey + '_')) && experiments[key].scenarios[scenario]) {
-            fallbackKey = key;
-            break;
-          }
-        }
-      }
-      
-      if (fallbackKey) {
-        console.log(`Using fallback key: ${fallbackKey} for requested key: ${experimentKey}`);
-        const dataPaths = experiments[fallbackKey].scenarios[scenario];
-        try {
-          const inputOutputArray = await (await fetch(dataPaths.input_output)).json();
-          const timingData = await (await fetch(dataPaths.timing)).json();
-
-          const scenarioIndex = parseInt(scenario.split('-').pop());
-          const inputOutputItem = inputOutputArray[scenarioIndex];
-
-          return {
-            inputOutput: inputOutputItem,
-            inputOutputArray: inputOutputArray,
-              timing: timingData,
-            experimentKey: fallbackKey, // Return the actual key used
-            error: null
-          };
-        } catch (error) {
-          console.error("Error fetching fallback experiment data:", error);
-        }
-      }
-      
-      // Generate debug information to help identify the issue
-      const similarKeys = Object.keys(experiments).filter(key => 
-        key.startsWith(`${experimentKey.split('_')[0]}_${experimentKey.split('_')[1]}_`)
-      );
-      
-      console.warn(`No data found for key: ${experimentKey}, scenario: ${scenario}`);
-      console.warn(`Available similar keys:`, similarKeys);
-      
-      return {
-        inputOutput: null,
-        inputOutputArray: null,
-        timing: null,
-        experimentKey: experimentKey,
-        error: `No experiment data found for ${experimentKey} with scenario ${scenario}`
-      };
-    }
-  }
 
   // Function to load and display results for current run
   async function loadResults() {
@@ -900,7 +778,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Pin current run to comparison
-  function pinCurrentRun() {
+  async function pinCurrentRun() {
     if (!appState.currentInputOutput) {
       showNotification('No data to pin - load a configuration first', 'error');
       return;
@@ -908,12 +786,25 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const runConfig = appState.createRunConfig();
     
-    // Store complete run data
+    // Get fresh run data including timing_s
+    const params = {
+      scenario: appState.selectedScenario,
+      scene: appState.selectedScene,
+      admType: appState.selectedAdmType,
+      llmBackbone: appState.selectedLLM,
+      runVariant: appState.selectedRunVariant,
+      kdmaValues: appState.activeKDMAs
+    };
+    
+    const runData = await fetchRunData(params);
+    
+    // Store complete run data with fresh data including timing_s
     const pinnedData = {
       ...runConfig,
-      inputOutput: appState.currentInputOutput,
-      inputOutputArray: appState.currentInputOutputArray,
-      timing: appState.currentTiming,
+      inputOutput: runData.inputOutput,
+      inputOutputArray: runData.inputOutputArray,
+      timing: runData.timing,
+      timing_s: runData.timing_s,
       loadStatus: 'loaded'
     };
     
@@ -929,7 +820,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Pin run from configuration (for URL restoration)
   async function pinRunFromConfig(runConfig) {
     // Set app state to match the configuration
-    appState.selectedScene = runConfig.baseScenario;
+    appState.selectedScene = runConfig.scene;
     appState.selectedScenario = runConfig.scenario;
     appState.selectedAdmType = runConfig.admType;
     appState.selectedLLM = runConfig.llmBackbone;
@@ -990,34 +881,34 @@ document.addEventListener("DOMContentLoaded", () => {
     const params = getParametersForRun(runId);
     
     try {
-      // Load new data using pure function - no global state modification
-      const experimentData = await loadExperimentData(
-        params.scenario,
-        params.admType,
-        params.llmBackbone,
-        params.kdmas,
-        params.runVariant
-      );
+      // Load new data using fetchRunData
+      const experimentData = await fetchRunData({
+        scenario: params.scenario,
+        scene: params.scene,
+        admType: params.admType,
+        llmBackbone: params.llmBackbone,
+        kdmaValues: params.kdmas,
+        runVariant: params.runVariant
+      });
       
       // Always update run parameters to reflect the intended state
       run.scenario = params.scenario;
-      run.baseScenario = params.baseScenario;
+      run.scene = params.scene;
       run.admType = params.admType;
       run.llmBackbone = params.llmBackbone;
       run.runVariant = params.runVariant;
       run.kdmaValues = { ...params.kdmas };
       
-      if (experimentData.error) {
-        console.error(`Failed to load data for run ${runId}:`, experimentData.error);
+      if (!experimentData || !experimentData.inputOutput) {
+        console.error(`Failed to load data for run ${runId}: No data returned`);
         run.loadStatus = 'error';
-        // Keep existing data but update parameters
-        run.experimentKey = experimentData.experimentKey || run.experimentKey;
       } else {
         // Update with new results
         run.experimentKey = experimentData.experimentKey;
         run.inputOutput = experimentData.inputOutput;
         run.inputOutputArray = experimentData.inputOutputArray;
         run.timing = experimentData.timing;
+        run.timing_s = experimentData.timing_s;
         run.loadStatus = 'loaded';
         
         console.log(`Successfully reloaded run ${runId} with new data`);
@@ -1028,7 +919,7 @@ document.addEventListener("DOMContentLoaded", () => {
       
       // Even on exception, update run parameters to reflect the intended state
       run.scenario = params.scenario;
-      run.baseScenario = params.baseScenario;
+      run.scene = params.scene;
       run.admType = params.admType;
       run.llmBackbone = params.llmBackbone;
       run.runVariant = params.runVariant;
@@ -1056,7 +947,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     
     // Set state to the config
-    appState.selectedScene = config.baseScenario;
+    appState.selectedScene = config.scene;
     appState.selectedScenario = config.scenario;
     appState.selectedAdmType = config.admType;
     appState.selectedLLM = config.llmBackbone;
@@ -1164,7 +1055,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const parameters = new Map();
     
     // Configuration parameters
-    parameters.set("base_scenario", { type: "string", required: true });
+    parameters.set("scene", { type: "string", required: true });
     parameters.set("scenario", { type: "string", required: true });
     parameters.set("scenario_state", { type: "longtext", required: false });
     parameters.set("available_choices", { type: "choices", required: false });
@@ -1191,7 +1082,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!run) return 'N/A';
     
     // Configuration parameters
-    if (paramName === 'base_scenario') return run.baseScenario || 'N/A';
+    if (paramName === 'scene') return run.scene || 'N/A';
     if (paramName === 'scenario') return run.scenario || 'N/A';
     if (paramName === 'adm_type') return run.admType || 'N/A';
     if (paramName === 'llm_backbone') return run.llmBackbone || 'N/A';
@@ -1227,35 +1118,14 @@ document.addEventListener("DOMContentLoaded", () => {
       return run.inputOutput.output.action.justification || 'N/A';
     }
     
-    // Timing data
-    if (paramName === 'probe_time' && run.timing && run.scenario) {
-      try {
-        // Extract the scenario index from the scenario ID (e.g., "test_scenario_1-0" → 0)
-        const scenarioIndex = parseInt(run.scenario.split('-').pop());
-        if (scenarioIndex >= 0 && run.timing.raw_times_s && run.timing.raw_times_s[scenarioIndex] !== undefined) {
-          return run.timing.raw_times_s[scenarioIndex].toFixed(2);
-        }
-      } catch (error) {
-        console.warn('Error getting individual probe time:', error);
-      }
-      return 'N/A';
+    // Timing data - comes from scene timing_s in manifest
+    if (paramName === 'probe_time' && run.timing_s !== undefined && run.timing_s !== null) {
+      return run.timing_s.toFixed(2);
     }
     
-    // Raw Data
-    if (paramName === 'input_output_json') {
-      if (run.inputOutputArray && run.scenario) {
-        try {
-          // Extract the scenario index from the scenario ID (e.g., "test_scenario_1-0" → 0)
-          const scenarioIndex = parseInt(run.scenario.split('-').pop());
-          
-          if (scenarioIndex >= 0 && Array.isArray(run.inputOutputArray) && run.inputOutputArray[scenarioIndex]) {
-            return run.inputOutputArray[scenarioIndex];
-          }
-        } catch (error) {
-          console.warn('Error getting input/output JSON:', error);
-        }
-      }
-      return 'N/A';
+    // Raw Data - inputOutput is already the correct object for this scene
+    if (paramName === 'input_output_json' && run.inputOutput) {
+      return run.inputOutput;
     }
     
     return 'N/A';
@@ -1266,11 +1136,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return escapeHtml(currentValue);
     
-    const validOptions = getValidOptionsForConstraints({ 
-      scenario: run.scenario,
-      admType: run.admType 
-    });
-    const validLLMs = Array.from(validOptions.llmBackbones).sort();
+    const validLLMs = Array.from(run.availableOptions.llms);
     
     let html = `<select class="table-llm-select" onchange="handleRunLLMChange('${runId}', this.value)">`;
     validLLMs.forEach(llm => {
@@ -1287,10 +1153,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return escapeHtml(currentValue);
     
-    const validOptions = getValidOptionsForConstraints({ 
-      scenario: run.scenario
-    });
-    const validADMs = Array.from(validOptions.admTypes).sort();
+    const validADMs = Array.from(run.availableOptions.admTypes);
     
     let html = `<select class="table-adm-select" onchange="handleRunADMChange('${runId}', this.value)">`;
     validADMs.forEach(adm => {
@@ -1303,18 +1166,18 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Create dropdown HTML for base scenario selection in table cells
-  function createBaseScenarioDropdownForRun(runId, currentValue) {
+  function createSceneDropdownForRun(runId, currentValue) {
     // Check if run exists
     const run = appState.pinnedRuns.get(runId);
     if (!run) return escapeHtml(currentValue);
     
     // For base scenario, we show all available base scenarios
-    const availableBaseScenarios = run.availableOptions.baseScenarios.sort();
+    const availableScenes = run.availableOptions.scenes.sort();
     
-    let html = `<select class="table-scenario-select" onchange="handleRunBaseScenarioChange('${runId}', this.value)">`;
-    availableBaseScenarios.forEach(baseScenario => {
-      const selected = baseScenario === currentValue ? 'selected' : '';
-      html += `<option value="${escapeHtml(baseScenario)}" ${selected}>${escapeHtml(baseScenario)}</option>`;
+    let html = `<select class="table-scenario-select" onchange="handleRunSceneChange('${runId}', this.value)">`;
+    availableScenes.forEach(scene => {
+      const selected = scene === currentValue ? 'selected' : '';
+      html += `<option value="${escapeHtml(scene)}" ${selected}>${escapeHtml(scene)}</option>`;
     });
     html += '</select>';
     
@@ -1327,10 +1190,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return escapeHtml(currentValue);
     
-    const baseScenarioId = run.baseScenario;
+    const sceneId = run.scene;
     
-    if (!baseScenarioId) {
-      return '<span class="na-value">No base scenario</span>';
+    if (!sceneId) {
+      return '<span class="na-value">No scene</span>';
     }
     
     const availableScenarios = run.availableOptions.scenarios;
@@ -1746,8 +1609,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (paramName === 'adm_type') {
         return createADMDropdownForRun(runId, value);
       }
-      if (paramName === 'base_scenario') {
-        return createBaseScenarioDropdownForRun(runId, value);
+      if (paramName === 'scene') {
+        return createSceneDropdownForRun(runId, value);
       }
       if (paramName === 'scenario') {
         return createSpecificScenarioDropdownForRun(runId, value);
@@ -1937,7 +1800,7 @@ document.addEventListener("DOMContentLoaded", () => {
       activeKDMAs: { ...appState.activeKDMAs }
     };
     
-    appState.selectedScene = lastRun.baseScenario;
+    appState.selectedScene = lastRun.scene;
     appState.selectedScenario = lastRun.scenario;
     appState.selectedAdmType = lastRun.admType;
     appState.selectedLLM = lastRun.llmBackbone;
