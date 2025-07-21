@@ -254,90 +254,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   
-  // Core function that extracts parameters from experiment config
-  function extractParametersFromConfig(config) {
-    if (!config) return null;
-    
-    const admType = config.adm ? config.adm.name : "unknown_adm";
-    const llmBackbone = config.adm && 
-      config.adm.structured_inference_engine && 
-      config.adm.structured_inference_engine.model_name
-      ? config.adm.structured_inference_engine.model_name 
-      : "no_llm";
-    
-    const kdmas = {};
-    if (config.alignment_target && config.alignment_target.kdma_values) {
-      config.alignment_target.kdma_values.forEach((kdma_entry) => {
-        const kdma = kdma_entry.kdma;
-        const value = kdma_entry.value;
-        
-        if (!kdmas[kdma]) {
-          kdmas[kdma] = new Set();
-        }
-        kdmas[kdma].add(value);
-      });
-    }
-    
-    return { admType, llmBackbone, kdmas };
-  }
-  
-  // Check if extracted parameters match given constraints
-  function matchesConstraints(constraints, scenarioId, params) {
-    if (constraints.scenario && constraints.scenario !== scenarioId) {
-      return false;
-    }
-    if (constraints.admType && constraints.admType !== params.admType) {
-      return false;
-    }
-    if (constraints.llmBackbone && constraints.llmBackbone !== params.llmBackbone) {
-      return false;
-    }
-    if (constraints.kdmas) {
-      // Check if all constraint KDMAs have matching values
-      for (const [kdmaName, requiredValue] of Object.entries(constraints.kdmas)) {
-        if (!params.kdmas[kdmaName] || !params.kdmas[kdmaName].has(requiredValue)) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-  
-  // Core function that finds all valid options given constraints
-  function getValidOptionsForConstraints(constraints = {}) {
-    const experiments = manifest.experiment_keys || manifest;
-    const validOptions = {
-      scenarios: new Set(),
-      admTypes: new Set(),
-      llmBackbones: new Set(),
-      kdmas: {} // kdmaName -> Set of valid values
-    };
-    
-    for (const expKey in experiments) {
-      const experiment = experiments[expKey];
-      
-      for (const scenarioId in experiment.scenarios) {
-        const scenario = experiment.scenarios[scenarioId];
-        const params = extractParametersFromConfig(scenario.config);
-        
-        if (params && matchesConstraints(constraints, scenarioId, params)) {
-          validOptions.scenarios.add(scenarioId);
-          validOptions.admTypes.add(params.admType);
-          validOptions.llmBackbones.add(params.llmBackbone);
-          
-          // Merge KDMAs
-          for (const [kdmaName, kdmaValues] of Object.entries(params.kdmas)) {
-            if (!validOptions.kdmas[kdmaName]) {
-              validOptions.kdmas[kdmaName] = new Set();
-            }
-            kdmaValues.forEach(value => validOptions.kdmas[kdmaName].add(value));
-          }
-        }
-      }
-    }
-    
-    return validOptions;
-  }
   
 
   // Handle LLM change for pinned runs - global for onclick access
@@ -963,21 +879,13 @@ document.addEventListener("DOMContentLoaded", () => {
   // Get valid KDMAs for a specific run
   function getValidKDMAsForRun(runId) {
     const run = appState.pinnedRuns.get(runId);
-    if (!run) {
-      console.log('getValidKDMAsForRun: No run found for ID:', runId);
-      return {};
-    }
-    
-    const kdmaStructure = run.availableOptions?.kdmas;
-    if (!kdmaStructure || !kdmaStructure.validCombinations) {
-      console.log('getValidKDMAsForRun: No KDMA structure found for run', runId);
+    if (!run?.availableOptions?.kdmas?.validCombinations) {
       return {};
     }
     
     // Extract all available types and values from valid combinations
-    // updateParameters already handles constraint validation
     const availableOptions = {};
-    kdmaStructure.validCombinations.forEach(combination => {
+    run.availableOptions.kdmas.validCombinations.forEach(combination => {
       combination.forEach(kdma => {
         if (!availableOptions[kdma.kdma]) {
           availableOptions[kdma.kdma] = new Set();
