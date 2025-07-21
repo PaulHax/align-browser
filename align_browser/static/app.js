@@ -944,52 +944,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return 0;
     
-    // First check if we can add more KDMAs given current constraints
-    const currentKDMAs = run.kdmaValues || {};
-    const currentCount = Object.keys(currentKDMAs).length;
-    
-    // Try to see if adding one more KDMA is possible
-    const constraints = {
-      scenario: run.scenario,
-      admType: run.admType,
-      llmBackbone: run.llmBackbone
-    };
-    
-    // If we have current KDMAs, include them as constraints
-    if (currentCount > 0) {
-      constraints.kdmas = { ...currentKDMAs };
+    const kdmaOptions = run.availableOptions?.kdmas;
+    if (!kdmaOptions || !kdmaOptions.validCombinations) {
+      return 1; // Default to at least 1 KDMA if no options available
     }
     
-    const validOptions = getValidOptionsForConstraints(constraints);
-    const availableTypes = Object.keys(validOptions.kdmas || {}).filter(type => 
-      !currentKDMAs[type]
-    );
-    
-    // If we can add more types, max is at least current + 1
-    if (availableTypes.length > 0) {
-      return currentCount + 1;
-    }
-    
-    // Otherwise, check what we actually have experimentally
-    const experiments = manifest.experiment_keys || manifest;
-    let maxKDMAs = currentCount;
-    
-    for (const expKey in experiments) {
-      if (expKey.startsWith(`${run.admType}_${run.llmBackbone}_`) && 
-          experiments[expKey].scenarios && 
-          experiments[expKey].scenarios[run.scenario]) {
-        
-        // Count KDMAs in this experiment key
-        const keyParts = expKey.split('_');
-        let kdmaCount = 0;
-        for (let i = 2; i < keyParts.length; i++) {
-          if (keyParts[i].includes('-')) {
-            kdmaCount++;
-          }
-        }
-        maxKDMAs = Math.max(maxKDMAs, kdmaCount);
+    // Find the maximum number of KDMAs in any valid combination
+    let maxKDMAs = 0;
+    kdmaOptions.validCombinations.forEach(combination => {
+      if (Array.isArray(combination)) {
+        maxKDMAs = Math.max(maxKDMAs, combination.length);
       }
-    }
+    });
     
     return Math.max(maxKDMAs, 1); // At least 1 KDMA should be possible
   }
@@ -1023,20 +989,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return availableOptions;
   }
   
-  // Check if removing KDMAs is allowed for a run (i.e., experiments exist without KDMAs)
-  function canRemoveKDMAsForRun(runId) {
-    const run = appState.pinnedRuns.get(runId);
-    if (!run) return false;
-    
-    // Check if there are any experiments for this ADM/LLM combination without KDMAs
-    const experiments = manifest.experiment_keys || manifest;
-    const baseKey = `${run.admType}_${run.llmBackbone}`;
-    
-    // Look for experiments that match the base key exactly (no KDMAs)
-    return experiments.hasOwnProperty(baseKey) && 
-           experiments[baseKey].scenarios && 
-           experiments[baseKey].scenarios[run.scenario];
-  }
 
   // Check if a specific KDMA can be removed from a run
   function canRemoveSpecificKDMA(runId, kdmaType) {
@@ -1044,20 +996,24 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!run) return false;
     
     const currentKDMAs = run.kdmaValues || {};
+    const kdmaOptions = run.availableOptions?.kdmas;
+    if (!kdmaOptions || !kdmaOptions.validCombinations) {
+      return false;
+    }
     
     // Create a copy of current KDMAs without the one we want to remove
     const remainingKDMAs = { ...currentKDMAs };
     delete remainingKDMAs[kdmaType];
     
-    // If no KDMAs would remain, use the original canRemoveKDMAsForRun check
-    if (Object.keys(remainingKDMAs).length === 0) {
-      return canRemoveKDMAsForRun(runId);
-    }
+    // Convert remaining KDMAs to the format used in validCombinations
+    const remainingKDMAArray = Object.entries(remainingKDMAs).map(([kdma, value]) => ({ kdma, value }));
     
-    // Check if experiments exist with the remaining KDMAs for this specific scenario
-    // We need to directly check the manifest instead of using getValidOptionsForConstraints
-    // because that function might be too permissive
-    return checkExperimentExistsForScenario(run.scenario, run.admType, run.llmBackbone, remainingKDMAs);
+    // Check if the remaining KDMA combination exists in validCombinations
+    return kdmaOptions.validCombinations.some(combination => {
+      if (!Array.isArray(combination)) return false;
+      
+      return KDMAUtils.arraysEqual(remainingKDMAArray, combination);
+    });
   }
   
   // Format KDMA value consistently across the application
@@ -1076,59 +1032,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return kdmaString ? `${admType}_${llmBackbone}_${kdmaString}` : `${admType}_${llmBackbone}`;
   }
 
-  // Check if experiments exist for a specific scenario with given parameters
-  function checkExperimentExistsForScenario(scenario, admType, llmBackbone, kdmas) {
-    const experiments = manifest.experiment_keys || manifest;
-    
-    // Build the experiment key using shared utility
-    const experimentKey = buildExperimentKey(admType, llmBackbone, kdmas);
-    
-    // Check if this experiment exists and has the target scenario
-    if (experiments[experimentKey] && 
-        experiments[experimentKey].scenarios && 
-        experiments[experimentKey].scenarios[scenario]) {
-      return true;
-    }
-    
-    // If direct key lookup fails, try all possible orderings of KDMAs
-    // since the experiment keys might have different KDMA ordering
-    const kdmaKeys = Object.keys(kdmas || {});
-    if (kdmaKeys.length > 1) {
-      const permutations = getKDMAPermutations(kdmaKeys);
-      for (const permutation of permutations) {
-        const reorderedKdmas = {};
-        permutation.forEach(kdmaName => {
-          if (kdmas[kdmaName] !== undefined) {
-            reorderedKdmas[kdmaName] = kdmas[kdmaName];
-          }
-        });
-        
-        const altKey = buildExperimentKey(admType, llmBackbone, reorderedKdmas);
-        if (experiments[altKey] && 
-            experiments[altKey].scenarios && 
-            experiments[altKey].scenarios[scenario]) {
-          return true;
-        }
-      }
-    }
-    
-    return false;
-  }
   
-  // Generate all permutations of KDMA keys for experiment key lookup
-  function getKDMAPermutations(kdmaKeys) {
-    if (kdmaKeys.length <= 1) return [kdmaKeys];
-    
-    const permutations = [];
-    for (let i = 0; i < kdmaKeys.length; i++) {
-      const rest = kdmaKeys.slice(0, i).concat(kdmaKeys.slice(i + 1));
-      const restPermutations = getKDMAPermutations(rest);
-      for (const perm of restPermutations) {
-        permutations.push([kdmaKeys[i]].concat(perm));
-      }
-    }
-    return permutations;
-  }
 
   // Create KDMA controls HTML for table cells
   function createKDMAControlsForRun(runId, currentKDMAs) {
