@@ -2,7 +2,6 @@
 import {
   createInitialState,
   updateUserSelections,
-  updateCurrentData,
   createRunConfig,
   createParameterStructure,
   encodeStateToURL,
@@ -24,12 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
   
   // Central application state initialized with functional state
   let appState = {
-    ...createInitialState(),
-    // Convert arrays to Sets to maintain existing behavior
-    availableScenarios: new Set(),
-    availableScenes: new Set(),
-    availableAdmTypes: new Set(),
-    availableLLMs: new Set(),
+    ...createInitialState()
   };
 
   // Standalone function to create run config from parameters
@@ -51,8 +45,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return createRunConfig(params, availableKDMAs);
   }
 
-  // Constants for run identification
-  const CURRENT_RUN_ID = 'current';
   
   // Parameter storage by run ID 
   const columnParameters = new Map();
@@ -63,30 +55,19 @@ document.addEventListener("DOMContentLoaded", () => {
       // Initialize with default parameters using auto-correction
       let defaultParams;
       
-      if (runId === CURRENT_RUN_ID) {
-        // For current run, use existing appState as starting point
+      // For pinned runs, initialize with the run's actual parameters
+      const run = appState.pinnedRuns.get(runId);
+      if (run) {
         defaultParams = createParameterStructure({
-          scenario: appState.selectedScenario,
-          scene: appState.selectedScene,
-          admType: appState.selectedAdmType,
-          llmBackbone: appState.selectedLLM,
-          kdmas: appState.activeKDMAs
+          scenario: run.scenario,
+          scene: run.scene,
+          admType: run.admType,
+          llmBackbone: run.llmBackbone,
+          kdmas: run.kdmaValues
         });
       } else {
-        // For pinned runs, initialize with the run's actual parameters
-        const run = appState.pinnedRuns.get(runId);
-        if (run) {
-          defaultParams = createParameterStructure({
-            scenario: run.scenario,
-            scene: run.scene,
-            admType: run.admType,
-            llmBackbone: run.llmBackbone,
-            kdmas: run.kdmaValues
-          });
-        } else {
-          // For truly new runs, start with auto-corrected valid combination
-          defaultParams = correctParametersToValid({});
-        }
+        // For truly new runs, start with auto-corrected valid combination
+        defaultParams = correctParametersToValid({});
       }
       
       columnParameters.set(runId, defaultParams);
@@ -231,11 +212,6 @@ document.addEventListener("DOMContentLoaded", () => {
         optionCounts: Object.entries(initialResult.options).map(([key, arr]) => [key, Array.isArray(arr) ? arr.length : 'not array'])
       });
       
-      // Set available options from the result
-      appState.availableScenarios = new Set(initialResult.options.scenario || []);
-      appState.availableScenes = new Set(initialResult.options.scene || []);
-      appState.availableAdmTypes = new Set(initialResult.options.adm || []);
-      appState.availableLLMs = new Set(initialResult.options.llm || []);
       
       
       // Store first valid parameters for auto-pinning but don't populate appState selections
@@ -248,10 +224,10 @@ document.addEventListener("DOMContentLoaded", () => {
         kdmaValues: Object.fromEntries(
           (initialResult.params.kdma_values || []).map(({ kdma, value }) => [kdma, value])
         ),
-        availableScenarios: [...appState.availableScenarios],
-        availableScenes: [...appState.availableScenes], 
-        availableAdmTypes: [...appState.availableAdmTypes],
-        availableLLMs: [...appState.availableLLMs]
+        availableScenarios: initialResult.options.scenario || [],
+        availableScenes: initialResult.options.scene || [], 
+        availableAdmTypes: initialResult.options.adm || [],
+        availableLLMs: initialResult.options.llm || []
       };
       
       // Try to restore state from URL, otherwise auto-pin first valid configuration
@@ -577,95 +553,31 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
-  // Internal function to load results without loading guard
-  async function loadResultsInternal() {
-    if (!appState.selectedScenario) {
-      // Clear current data when no scenario
-      appState = updateCurrentData(appState, {
-        inputOutput: null,
-        inputOutputArray: null,
-        timing: null
-      });
-      updateComparisonDisplay(); // Update table with no scenario state
-      return;
-    }
-
-    console.log("Loading results for:", {
-      scenario: appState.selectedScenario,
-      scene: appState.selectedScene,
-      admType: appState.selectedAdmType,
-      llmBackbone: appState.selectedLLM,
-      runVariant: appState.selectedRunVariant,
-      kdmaValues: appState.activeKDMAs
-    });
-
-    // Create parameter structure for fetchRunData
-    const params = {
-      scenario: appState.selectedScenario,
-      scene: appState.selectedScene,
-      admType: appState.selectedAdmType,
-      llmBackbone: appState.selectedLLM,
-      runVariant: appState.selectedRunVariant,
-      kdmaValues: appState.activeKDMAs
-    };
-
-    try {
-      // Use fetchRunData from state.js to get the complete result
-      const runData = await fetchRunData(params);
-      
-      if (!runData || !runData.inputOutput) {
-        console.warn("No data found for parameters:", params);
-        // Clear current data when no data found
-        appState = updateCurrentData(appState, {
-          inputOutput: null,
-          inputOutputArray: null,
-          timing: null
-        });
-        updateComparisonDisplay(); // Update table with no data state
-        return;
-      }
-
-      // Store current data for pinning with complete data
-      appState = updateCurrentData(appState, {
-        inputOutput: runData.inputOutput,
-        inputOutputArray: runData.inputOutputArray,
-        timing: runData.timing
-      });
-
-      // Update comparison display (always-on table mode)
-      updateComparisonDisplay();
-      
-    } catch (error) {
-      console.error("Error fetching run data:", error);
-      
-      // Clear current data on error
-      appState = updateCurrentData(appState, {
-        inputOutput: null,
-        inputOutputArray: null,
-        timing: null
-      });
-      updateComparisonDisplay(); // Update table with error state
-    }
-  }
-
-
-
-  // Function to load and display results for current run
-  async function loadResults() {
-    if (appState.isUpdatingProgrammatically) {
-      // Don't update results while we're in the middle of updating dropdowns
-      return;
-    }
-    
-    await loadResultsInternal();
-  }
-
-
-
 
   // Pin run from configuration (for URL restoration)
   async function pinRunFromConfig(runConfig) {
     // Extract parameters from the run config
+    let availableOptions = runConfig.availableOptions;
+    
+    // If no available options stored, get them dynamically from updateAppParameters
+    if (!availableOptions && window.updateAppParameters) {
+      const result = window.updateAppParameters({
+        scenario: runConfig.scenario,
+        scene: runConfig.scene,
+        kdma_values: Object.entries(runConfig.kdmaValues || {}).map(([kdma, value]) => ({ kdma, value })),
+        adm: runConfig.admType,
+        llm: runConfig.llmBackbone,
+        run_variant: runConfig.runVariant
+      }, {});
+      
+      availableOptions = {
+        scenarios: result.options.scenario || [],
+        scenes: result.options.scene || [],
+        admTypes: result.options.adm || [],
+        llms: result.options.llm || []
+      };
+    }
+    
     const params = {
       scene: runConfig.scene,
       scenario: runConfig.scenario,
@@ -673,10 +585,10 @@ document.addEventListener("DOMContentLoaded", () => {
       llmBackbone: runConfig.llmBackbone,
       runVariant: runConfig.runVariant,
       kdmaValues: runConfig.kdmaValues,
-      availableScenarios: runConfig.availableOptions?.scenarios || [...appState.availableScenarios],
-      availableScenes: runConfig.availableOptions?.scenes || [...appState.availableScenes],
-      availableAdmTypes: runConfig.availableOptions?.admTypes || [...appState.availableAdmTypes],
-      availableLLMs: runConfig.availableOptions?.llms || [...appState.availableLLMs]
+      availableScenarios: availableOptions?.scenarios || [],
+      availableScenes: availableOptions?.scenes || [],
+      availableAdmTypes: availableOptions?.admTypes || [],
+      availableLLMs: availableOptions?.llms || []
     };
     
       const runData = await fetchRunData({
@@ -1405,7 +1317,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Format values for display in table cells
   function formatValue(value, type, paramName = '', runId = '') {
     // Special handling for run_variant - always try to show dropdown if possible
-    if (runId !== 'current' && runId !== '' && paramName === 'run_variant') {
+    if (runId !== '' && paramName === 'run_variant') {
       return createRunVariantDropdownForRun(runId, value);
     }
     
@@ -1414,7 +1326,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     
     // Special handling for editable parameters in pinned runs
-    if (runId !== 'current' && runId !== '') {
+    if (runId !== '') {
       if (paramName === 'llm_backbone') {
         return createLLMDropdownForRun(runId, value);
       }
@@ -1823,18 +1735,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Display name generation uses imported function
 
-  function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.textContent = message;
-    notification.style.cssText = `
-      position: fixed; top: 20px; right: 20px; padding: 10px 20px;
-      background: ${type === 'error' ? '#f44336' : type === 'success' ? '#4caf50' : '#2196F3'};
-      color: white; border-radius: 4px; z-index: 1000;
-    `;
-    document.body.appendChild(notification);
-    setTimeout(() => notification.remove(), 3000);
-  }
 
   // Initialize static button event listeners
   const addColumnBtn = document.getElementById('add-column-btn');
