@@ -175,7 +175,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const initialResult = window.updateAppParameters({
         scenario: null,
         scene: null,
-        kdma_values: JSON.stringify([]),
+        kdma_values: [],
         adm: null,
         llm: null,
         run_variant: null
@@ -193,22 +193,11 @@ document.addEventListener("DOMContentLoaded", () => {
       appState.availableAdmTypes = new Set(initialResult.options.adm || []);
       appState.availableLLMs = new Set(initialResult.options.llm || []);
       
-      // Parse KDMA values to get available KDMAs
-      // Extract unique KDMA names from all available kdma_values options
-      const allKdmaValues = initialResult.options.kdma_values || [];
-      const kdmaNames = new Set();
-      allKdmaValues.forEach(kdmaValuesStr => {
-        try {
-          const kdmaArray = JSON.parse(kdmaValuesStr);
-          kdmaArray.forEach(item => kdmaNames.add(item.kdma));
-        } catch (e) {
-          console.warn('Failed to parse kdma_values:', e);
-        }
-      });
-      appState.availableKDMAs = Array.from(kdmaNames).sort();
+      // Store the complete KDMA options from the new system
+      appState.availableKDMAs = initialResult.options.kdma_values || [];
       
       // Initialize appState with the valid parameters
-      const kdmaArray = JSON.parse(initialResult.params.kdma_values || '[]');
+      const kdmaArray = initialResult.params.kdma_values || [];
       const kdmas = Object.fromEntries(
         kdmaArray.map(({ kdma, value }) => [kdma, value])
       );
@@ -221,8 +210,6 @@ document.addEventListener("DOMContentLoaded", () => {
         runVariant: initialResult.params.run_variant,
         kdmas: kdmas
       });
-      
-      
       
       // Try to restore state from URL, otherwise load results normally
       const restoredFromURL = await urlState.restoreFromURL();
@@ -340,30 +327,24 @@ document.addEventListener("DOMContentLoaded", () => {
     const stateParams = {
       scenario: currentParams.scenario || null,
       scene: currentParams.baseScenario || null,
-      kdma_values: currentParams.kdmas ? JSON.stringify(
+      kdma_values: currentParams.kdmas ? 
         Object.entries(currentParams.kdmas).map(([kdma, value]) => ({ kdma, value }))
           .sort((a, b) => a.kdma.localeCompare(b.kdma))
-      ) : JSON.stringify([]),
+        : [],
       adm: currentParams.admType || null,
       llm: currentParams.llmBackbone || null,
       run_variant: currentParams.runVariant || null
     };
     
-    // Use the new updateParameters system
     const result = window.updateAppParameters(stateParams, {});
     const validParams = result.params;
     
     // Convert back to app.js format
     const kdmas = {};
-    if (validParams.kdma_values) {
-      try {
-        const kdmaArray = JSON.parse(validParams.kdma_values);
-        kdmaArray.forEach(item => {
-          kdmas[item.kdma] = item.value;
-        });
-      } catch (e) {
-        console.warn('Failed to parse kdma_values:', e);
-      }
+    if (validParams.kdma_values && Array.isArray(validParams.kdma_values)) {
+      validParams.kdma_values.forEach(item => {
+        kdmas[item.kdma] = item.value;
+      });
     }
     
     return {
@@ -1505,26 +1486,43 @@ document.addEventListener("DOMContentLoaded", () => {
     return Math.max(maxKDMAs, 1); // At least 1 KDMA should be possible
   }
 
-  // Get valid KDMAs for a specific run
+  // Get valid KDMAs for a specific run using constraint-aware filtering
   function getValidKDMAsForRun(runId) {
     const run = appState.pinnedRuns.get(runId);
-    if (!run) return {};
-    
-    // Include current KDMAs as constraints to ensure we only get valid combinations
-    const constraints = {
-      scenario: run.scenario,
-      admType: run.admType,
-      llmBackbone: run.llmBackbone
-    };
-    
-    // If there are existing KDMAs, include them as constraints
-    if (run.kdmaValues && Object.keys(run.kdmaValues).length > 0) {
-      constraints.kdmas = { ...run.kdmaValues };
+    if (!run) {
+      console.log('getValidKDMAsForRun: No run found for ID:', runId);
+      return {};
     }
     
-    const validOptions = getValidOptionsForConstraints(constraints);
+    const kdmaStructure = run.availableOptions?.kdmas;
+    if (!kdmaStructure || !kdmaStructure.validCombinations) {
+      console.log('getValidKDMAsForRun: No KDMA structure found for run', runId);
+      return {};
+    }
     
-    return validOptions.kdmas;
+    const currentKDMAs = run.kdmaValues || {};
+    
+    // Filter valid combinations based on current KDMA selections
+    const compatibleCombinations = kdmaStructure.validCombinations.filter(combination => {
+      // Check if this combination is compatible with current selections
+      return Object.entries(currentKDMAs).every(([kdmaType, value]) => {
+        return combination.some(kdma => kdma.kdma === kdmaType && kdma.value === value);
+      });
+    });
+    
+    // Extract available types and values from compatible combinations
+    const availableOptions = {};
+    compatibleCombinations.forEach(combination => {
+      combination.forEach(kdma => {
+        if (!currentKDMAs[kdma.kdma]) { // Only show unused types
+          if (!availableOptions[kdma.kdma]) {
+            availableOptions[kdma.kdma] = new Set();
+          }
+          availableOptions[kdma.kdma].add(kdma.value);
+        }
+      });
+    });
+    return availableOptions;
   }
   
   // Check if removing KDMAs is allowed for a run (i.e., experiments exist without KDMAs)
