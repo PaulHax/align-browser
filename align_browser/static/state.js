@@ -99,6 +99,35 @@ export function generateRunId() {
 
 // Create a run configuration factory function
 export function createRunConfig(state) {
+  // Create sophisticated KDMA structure that preserves permutation constraints
+  const kdmaStructure = {
+    validCombinations: [], // Array of valid KDMA combinations
+    availableTypes: new Set(), // All KDMA types that appear in any combination
+    typeValueMap: {} // kdmaType -> Set of all possible values for that type
+  };
+  
+  if (state.availableKDMAs && Array.isArray(state.availableKDMAs)) {
+    // Store all valid combinations and build type/value maps
+    state.availableKDMAs.forEach(kdmaCombination => {
+      if (Array.isArray(kdmaCombination)) {
+        // Store the valid combination
+        kdmaStructure.validCombinations.push([...kdmaCombination]);
+        
+        // Extract types and values for the maps
+        kdmaCombination.forEach(kdmaItem => {
+          if (kdmaItem.kdma && kdmaItem.value !== undefined) {
+            kdmaStructure.availableTypes.add(kdmaItem.kdma);
+            if (!kdmaStructure.typeValueMap[kdmaItem.kdma]) {
+              kdmaStructure.typeValueMap[kdmaItem.kdma] = new Set();
+            }
+            kdmaStructure.typeValueMap[kdmaItem.kdma].add(kdmaItem.value);
+          }
+        });
+      }
+    });
+  }
+  
+  
   return {
     id: generateRunId(),
     timestamp: new Date().toISOString(),
@@ -116,7 +145,7 @@ export function createRunConfig(state) {
       baseScenarios: [...state.availableBaseScenarios],
       admTypes: [...state.availableAdmTypes],
       llms: [...state.availableLLMs],
-      kdmas: [...state.availableKDMAs]
+      kdmas: kdmaStructure  // Sophisticated structure with constraint information
     }
   };
 }
@@ -200,8 +229,21 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
       }
       
       // Only check constraint if the current selection has a non-null value for this parameter
-      if (currentSelection[param] !== null && currentSelection[param] !== undefined && manifestEntry[param] !== currentSelection[param]) {
-        return false;
+      if (currentSelection[param] !== null && currentSelection[param] !== undefined) {
+        // Special handling for kdma_values comparison (arrays where order doesn't matter)
+        if (param === 'kdma_values') {
+          const manifestKdmas = manifestEntry[param];
+          const selectionKdmas = currentSelection[param];
+          // Sort both arrays by kdma name before comparing
+          const sortedManifest = [...manifestKdmas].sort((a, b) => a.kdma.localeCompare(b.kdma));
+          const sortedSelection = [...selectionKdmas].sort((a, b) => a.kdma.localeCompare(b.kdma));
+          // Compare sorted arrays
+          if (JSON.stringify(sortedManifest) !== JSON.stringify(sortedSelection)) {
+            return false;
+          }
+        } else if (manifestEntry[param] !== currentSelection[param]) {
+          return false;
+        }
       }
     }
     return true;
@@ -213,16 +255,6 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
       matchesCurrentSelection(entry, parameterName, currentSelection)
     );
     const options = [...new Set(validEntries.map(entry => entry[parameterName]))];
-    
-    if (parameterName === 'scenario' || parameterName === 'scene') {
-      console.log(`getValidOptionsFor(${parameterName}):`, {
-        manifestLength: manifest.length,
-        validEntriesLength: validEntries.length,
-        currentSelection: JSON.stringify(currentSelection),
-        firstEntry: validEntries[0],
-        firstFewOptions: options.slice(0, 3)
-      });
-    }
     
     return options;
   };
@@ -374,7 +406,7 @@ export function transformManifestForUpdateParameters(manifest) {
         const entry = {
           scenario: scenarioId,
           scene: sceneId,
-          kdma_values: kdmaString,
+          kdma_values: cleanedKdmaValues,
           adm: adm.name,
           llm: llm.model_name,
           run_variant: run_variant
