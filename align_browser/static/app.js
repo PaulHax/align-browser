@@ -81,16 +81,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return columnParameters.get(runId);
   }
   
-  // Set parameters for any run ID with validation
-  function setParametersForRun(runId, params) {
-    // Always validate parameters before storing
-    const validParams = correctParametersToValid(params);
-    columnParameters.set(runId, createParameterStructure(validParams));
-    
-    return validParams;
-  }
-  
-  
   // Update a parameter for any run with validation and UI sync
   function updateParameterForRun(runId, paramType, newValue) {
     const params = getParametersForRun(runId);
@@ -109,7 +99,62 @@ document.addEventListener("DOMContentLoaded", () => {
     const paramField = paramMap[paramType] || paramType;
     params[paramField] = newValue;
     
-    const correctedParams = setParametersForRun(runId, params);
+    // Use updateAppParameters for validation instead of setParametersForRun
+    const stateParams = {
+      scenario: params.scenario || null,
+      scene: params.scene || null,
+      kdma_values: params.kdmas ? 
+        Object.entries(params.kdmas).map(([kdma, value]) => ({ kdma, value }))
+          .sort((a, b) => a.kdma.localeCompare(b.kdma))
+        : [],
+      adm: params.admType || null,
+      llm: params.llmBackbone || null,
+      run_variant: params.runVariant || null
+    };
+    
+    const result = window.updateAppParameters(stateParams, {});
+    const validParams = result.params;
+    const validOptions = result.options;
+    
+    // Convert back to app.js format
+    const kdmas = {};
+    if (validParams.kdma_values && Array.isArray(validParams.kdma_values)) {
+      validParams.kdma_values.forEach(item => {
+        kdmas[item.kdma] = item.value;
+      });
+    }
+    
+    const correctedParams = {
+      scenario: validParams.scenario,
+      scene: validParams.scene,
+      admType: validParams.adm,
+      llmBackbone: validParams.llm,
+      kdmas: kdmas,
+      runVariant: validParams.run_variant
+    };
+    
+    // Store corrected parameters
+    columnParameters.set(runId, createParameterStructure(correctedParams));
+    
+    // Update the actual run state
+    const run = appState.pinnedRuns.get(runId);
+    run.scenario = correctedParams.scenario;
+    run.scene = correctedParams.scene;
+    run.admType = correctedParams.admType;
+    run.llmBackbone = correctedParams.llmBackbone;
+    run.runVariant = correctedParams.runVariant;
+    run.kdmaValues = correctedParams.kdmas;
+    
+    // Store the available options for UI dropdowns
+    run.availableOptions = {
+      scenarios: validOptions.scenario || [],
+      scenes: validOptions.scene || [],
+      admTypes: validOptions.adm || [],
+      llms: validOptions.llm || [],
+      kdmas: {
+        validCombinations: validOptions.kdma_values || []
+      }
+    };
     
     return correctedParams;
   }
@@ -163,15 +208,6 @@ document.addEventListener("DOMContentLoaded", () => {
       manifest = result.manifest;
       window.updateAppParameters = result.updateAppParameters;
       
-      // Debug manifest structure
-      console.log('Loaded manifest structure:', {
-        hasExperiments: !!manifest.experiments,
-        experimentCount: manifest.experiments ? Object.keys(manifest.experiments).length : 0,
-        firstExperiment: manifest.experiments ? Object.keys(manifest.experiments)[0] : null
-      });
-      
-      // Get initial valid parameters and available options
-      console.log('Calling updateAppParameters with null values...');
       const initialResult = window.updateAppParameters({
         scenario: null,
         scene: null,
@@ -371,13 +407,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Handle ADM type change for pinned runs - global for onclick access
   window.handleRunADMChange = async function(runId, newADM) {
-    console.log(`Changing ADM type for run ${runId} to ${newADM}`);
-    
     const run = appState.pinnedRuns.get(runId);
-    if (!run) {
-      console.warn(`Run ${runId} not found`);
-      return;
-    }
     
     // Initialize LLM preferences for this run if not present
     if (!run.llmPreferences) {
@@ -389,141 +419,53 @@ document.addEventListener("DOMContentLoaded", () => {
       run.llmPreferences[run.admType] = run.llmBackbone;
     }
     
-    // Update ADM type with validation
-    const updatedParams = updateParameterForRun(runId, 'admType', newADM);
+    // Update ADM type with validation - this will also update available options
+    updateParameterForRun(runId, 'admType', newADM);
     
     // Try to restore LLM preference for the new ADM type
-    if (run.llmPreferences[newADM]) {
-      // Check if preferred LLM is valid for new ADM
-      const validOptions = getValidOptionsForConstraints({
-        scenario: updatedParams.scenario,
-        admType: newADM
-      });
-      
-      if (validOptions.llmBackbones.has(run.llmPreferences[newADM])) {
-        console.log(`Restoring LLM preference for ADM ${newADM}: ${run.llmPreferences[newADM]}`);
-        updateParameterForRun(runId, 'llmBackbone', run.llmPreferences[newADM]);
-      }
+    if (run.llmPreferences[newADM] && run.availableOptions?.llms?.includes(run.llmPreferences[newADM])) {
+      updateParameterForRun(runId, 'llmBackbone', run.llmPreferences[newADM]);
     }
     
-    // Reload data for this specific run
-    await reloadPinnedRun(runId);
-    
-    // Update URL state
-    urlState.updateURL();
+    await window.updatePinnedRunState({
+      runId,
+      needsReload: true,
+      updateUI: true
+    });
   };
 
   // Handle run variant change for pinned runs - global for onclick access
   window.handleRunVariantChange = async function(runId, newVariant) {
-    console.log(`Changing run variant for run ${runId} to ${newVariant}`);
-    
-    const run = appState.pinnedRuns.get(runId);
-    if (!run) {
-      console.warn(`Run ${runId} not found`);
-      return;
-    }
-    
-    // Update run variant with validation
-    updateParameterForRun(runId, 'runVariant', newVariant === 'default' ? null : newVariant);
-    
-    // Reload data for this specific run
-    await reloadPinnedRun(runId);
-    
-    // Update URL state
-    urlState.updateURL();
+    await window.updatePinnedRunState({
+      runId,
+      parameter: 'runVariant',
+      value: newVariant === 'default' ? null : newVariant,
+      needsReload: true,
+      updateUI: true
+    });
   };
 
   // Handle base scenario change for pinned runs - global for onclick access
   window.handleRunSceneChange = async function(runId, newScene) {
-    console.log(`Changing scene for run ${runId} to ${newScene}`);
-    
-    const run = appState.pinnedRuns.get(runId);
-    if (!run) {
-      console.warn(`Run ${runId} not found`);
-      return;
-    }
-    
-    // Update base scenario with validation through central system
-    updateParameterForRun(runId, 'scene', newScene);
-    
-    // After scenario change, validate and potentially reset KDMAs
-    await validateKDMAsForScenarioChange(runId);
-    
-    // Reload data for this specific run
-    await reloadPinnedRun(runId);
-    
-    // Update URL state
-    urlState.updateURL();
-  };
-
-  // Handle specific scenario change for pinned runs - global for onclick access
-  window.handleRunSpecificScenarioChange = async function(runId, newScenario) {
-    console.log(`Changing specific scenario for run ${runId} to ${newScenario}`);
-    
-    // Update scenario with validation through central system
-    updateParameterForRun(runId, 'scenario', newScenario);
-    
-    // After scenario change, validate and potentially reset KDMAs
-    await validateKDMAsForScenarioChange(runId);
-    
-    // Reload data for this specific run
-    await reloadPinnedRun(runId);
-    
-    // Update URL state
-    urlState.updateURL();
-  };
-
-  // Validate KDMAs after scenario change and reset if necessary
-  async function validateKDMAsForScenarioChange(runId) {
-    const run = appState.pinnedRuns.get(runId);
-    if (!run) return;
-
-    // Check if current KDMA configuration is valid for the new scenario
-    const currentParams = getParametersForRun(runId);
-    const baseKey = buildExperimentKey(currentParams.admType, currentParams.llmBackbone, currentParams.kdmas);
-    
-    // Check if this combination exists for the current scenario
-    const experimentExists = Object.keys(manifest.experiment_keys || {}).some(key => {
-      if (key === baseKey || key.startsWith(baseKey + '_')) {
-        const experiment = manifest.experiment_keys[key];
-        return experiment && experiment.scenarios && experiment.scenarios[currentParams.scenario];
-      }
-      return false;
+    await window.updatePinnedRunState({
+      runId,
+      parameter: 'scene',
+      value: newScene,
+      needsReload: true,
+      updateUI: true
     });
+  };
 
-    if (!experimentExists) {
-      console.log(`Current KDMA configuration not valid for scenario ${currentParams.scenario}, resetting KDMAs`);
-      
-      // Get first valid KDMA combination for this scenario+ADM+LLM
-      const constraints = {
-        scenario: currentParams.scenario,
-        admType: currentParams.admType,
-        llmBackbone: currentParams.llmBackbone
-      };
-      
-      const validOptions = getValidOptionsForConstraints(constraints);
-      
-      if (Object.keys(validOptions.kdmas).length > 0) {
-        // Build first valid KDMA combination
-        const newKDMAs = {};
-        for (const [kdmaName, kdmaValues] of Object.entries(validOptions.kdmas)) {
-          if (kdmaValues.size > 0) {
-            newKDMAs[kdmaName] = Array.from(kdmaValues)[0];
-          }
-        }
-        
-        console.log(`Resetting to valid KDMA configuration:`, newKDMAs);
-        
-        // Update both run state and column parameters
-        run.kdmaValues = newKDMAs;
-        currentParams.kdmas = newKDMAs;
-        columnParameters.set(runId, createParameterStructure(currentParams));
-        
-        // Update comparison display to show new KDMA controls
-        updateComparisonDisplay();
-      }
-    }
-  }
+  window.handleRunScnarioChange = async function(runId, newScenario) {
+    await window.updatePinnedRunState({
+      runId,
+      parameter: 'scenario',
+      value: newScenario,
+      needsReload: true,
+      updateUI: true
+    });
+  };
+
 
   // Handle adding KDMA to pinned run - global for onclick access
   window.addKDMAToRun = function(runId) {
@@ -1202,7 +1144,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return '<span class="na-value">No scenarios available</span>';
     }
     
-    let html = `<select class="table-scenario-select" onchange="handleRunSpecificScenarioChange('${runId}', this.value)">`;
+    let html = `<select class="table-scenario-select" onchange="handleRunScnarioChange('${runId}', this.value)">`;
     availableScenarios.forEach(scenario => {
       const selected = scenario === currentValue ? 'selected' : '';
       html += `<option value="${escapeHtml(scenario)}" ${selected}>${escapeHtml(scenario)}</option>`;
