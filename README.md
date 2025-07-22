@@ -38,7 +38,6 @@ Each experiment directory must contain:
 
 - `.hydra/config.yaml` - Hydra configuration file
 - `input_output.json` - Experiment input/output data
-- `scores.json` - Scoring results
 - `timing.json` - Timing information
 
 **Example Structure:**
@@ -49,14 +48,16 @@ experiments/
 │   ├── affiliation-0.0/
 │   │   ├── .hydra/config.yaml
 │   │   ├── input_output.json
-│   │   ├── scores.json
+│   │   ├── scores.json          # optional
 │   │   └── timing.json
-│   ├── affiliation-0.1/
-│   │   └── ...
-│   └── ...
-├── pipeline_random/
-│   └── ...
-└── pipeline_other/
+│   └── affiliation-0.1/
+│       └── ...
+├── deeply/nested/structure/
+│   └── experiment_dir/
+│       ├── .hydra/config.yaml
+│       ├── input_output.json
+│       └── timing.json
+└── any_organization_works/
     └── ...
 ```
 
@@ -64,7 +65,7 @@ experiments/
 
 The build system will automatically:
 
-- **Recursively search** through all subdirectories
+- **Recursively search** through all subdirectories at any depth
 - **Skip directories** containing `OUTDATED` in their path (case-insensitive)
 - **Only process directories** that contain all required files
 

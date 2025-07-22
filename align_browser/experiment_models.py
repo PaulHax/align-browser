@@ -130,7 +130,7 @@ class ExperimentConfig(BaseModel):
             f"{self.adm.name}:{self.adm.llm_backbone}:{kdma_string}:{self.run_variant}"
         )
 
-    def generate_experiment_key(self) -> str:
+    def generate_experiment_key(self, experiment_path: Path = None) -> str:
         """Generate hash-based experiment key for new manifest structure."""
         key_data = {
             "adm": self.adm.name,
@@ -138,6 +138,10 @@ class ExperimentConfig(BaseModel):
             "kdma": self._get_kdma_key(),
             "run_variant": self.run_variant,
         }
+
+        # Add experiment path to ensure uniqueness across different directories
+        if experiment_path:
+            key_data["path"] = str(experiment_path)
 
         # Create deterministic hash from sorted key data
         key_string = json.dumps(key_data, sort_keys=True)
@@ -420,8 +424,8 @@ class Manifest(BaseModel):
         source_file_checksums: Dict[str, str],
     ):
         """Add an experiment to the enhanced manifest."""
-        # Generate experiment key
-        exp_key = experiment.config.generate_experiment_key()
+        # Generate experiment key with path for uniqueness
+        exp_key = experiment.config.generate_experiment_key(experiment.experiment_path)
 
         # Create parameter structure
         parameters = {

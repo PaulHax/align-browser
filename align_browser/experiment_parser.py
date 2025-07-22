@@ -173,10 +173,16 @@ def parse_experiments_directory(experiments_root: Path) -> List[ExperimentData]:
     """
     experiments = []
 
+    directories_found = 0
+    directories_with_files = 0
+    directories_processed = 0
+
     # Recursively find all directories that have required experiment files
     for experiment_dir in experiments_root.rglob("*"):
         if not experiment_dir.is_dir():
             continue
+
+        directories_found += 1
 
         # Skip directories containing "OUTDATED" in their path
         if "OUTDATED" in str(experiment_dir).upper():
@@ -186,9 +192,12 @@ def parse_experiments_directory(experiments_root: Path) -> List[ExperimentData]:
         if not ExperimentData.has_required_files(experiment_dir):
             continue
 
+        directories_with_files += 1
+
         try:
             directory_experiments = _create_experiments_from_directory(experiment_dir)
             experiments.extend(directory_experiments)
+            directories_processed += 1
 
         except Exception as e:
             print(f"Error processing {experiment_dir}: {e}")
