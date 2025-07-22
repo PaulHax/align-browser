@@ -26,7 +26,6 @@ jobs:
     needs: release
     if: ${{ needs.release.outputs.release-created }}
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
       id-token: write
     steps:
