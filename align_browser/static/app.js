@@ -11,8 +11,6 @@ import {
 } from './state.js';
 
 document.addEventListener("DOMContentLoaded", () => {
-
-  let manifest = {};
   
   // UI state persistence for expandable content
   const expandableStates = {
@@ -197,7 +195,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // Function to fetch and parse manifest.json
   async function fetchManifest() {
       const result = await loadManifest();
-      manifest = result.manifest;
       window.updateAppParameters = result.updateAppParameters;
       
       const initialResult = window.updateAppParameters({
@@ -236,15 +233,21 @@ document.addEventListener("DOMContentLoaded", () => {
   
   
 
-  // Handle LLM change for pinned runs - global for onclick access
-  window.handleRunLLMChange = async function(runId, newLLM) {
+  // Generic parameter change handler for simple cases
+  async function handleSimpleParameterChange(runId, parameter, value, options = {}) {
     await window.updatePinnedRunState({
       runId,
-      parameter: 'llmBackbone',
-      value: newLLM,
+      parameter,
+      value,
       needsReload: true,
-      updateUI: false 
+      updateUI: true,
+      ...options
     });
+  }
+
+  // Handle LLM change for pinned runs - global for onclick access
+  window.handleRunLLMChange = async function(runId, newLLM) {
+    await handleSimpleParameterChange(runId, 'llmBackbone', newLLM, { updateUI: false });
   };
 
   // Handle ADM type change for pinned runs - global for onclick access
@@ -278,34 +281,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Handle run variant change for pinned runs - global for onclick access
   window.handleRunVariantChange = async function(runId, newVariant) {
-    await window.updatePinnedRunState({
-      runId,
-      parameter: 'runVariant',
-      value: newVariant,
-      needsReload: true,
-      updateUI: true
-    });
+    await handleSimpleParameterChange(runId, 'runVariant', newVariant);
   };
 
   // Handle base scenario change for pinned runs - global for onclick access
   window.handleRunSceneChange = async function(runId, newScene) {
-    await window.updatePinnedRunState({
-      runId,
-      parameter: 'scene',
-      value: newScene,
-      needsReload: true,
-      updateUI: true
-    });
+    await handleSimpleParameterChange(runId, 'scene', newScene);
   };
 
   window.handleRunScnarioChange = async function(runId, newScenario) {
-    await window.updatePinnedRunState({
-      runId,
-      parameter: 'scenario',
-      value: newScenario,
-      needsReload: true,
-      updateUI: true
-    });
+    await handleSimpleParameterChange(runId, 'scenario', newScenario);
   };
 
 
@@ -349,47 +334,54 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
-  // Handle removing KDMA from pinned run - global for onclick access
-  window.removeKDMAFromRun = async function(runId, kdmaType) {
+  // Helper function for KDMA updates
+  async function updateKDMAsForRun(runId, modifier, options = {}) {
     const run = appState.pinnedRuns.get(runId);
+    if (!run) return;
+    
     const currentKDMAs = { ...(run.kdmaValues || {}) };
-    delete currentKDMAs[kdmaType];
+    const updatedKDMAs = modifier(currentKDMAs);
     
     await updatePinnedRunState({
       runId,
       parameter: 'kdmas',
-      value: currentKDMAs,
+      value: updatedKDMAs,
       needsReload: true,
-      updateUI: true
+      updateUI: true,
+      ...options
+    });
+  }
+
+  // Handle removing KDMA from pinned run - global for onclick access
+  window.removeKDMAFromRun = async function(runId, kdmaType) {
+    await updateKDMAsForRun(runId, (kdmas) => {
+      const updated = { ...kdmas };
+      delete updated[kdmaType];
+      return updated;
     });
   };
 
   // Handle KDMA type change for pinned run - global for onclick access
   window.handleRunKDMATypeChange = async function(runId, oldKdmaType, newKdmaType) {
-    const run = appState.pinnedRuns.get(runId);
-    const currentKDMAs = { ...(run.kdmaValues || {}) };
-    const currentValue = currentKDMAs[oldKdmaType];
-    
-    // Remove old type and add new type
-    delete currentKDMAs[oldKdmaType];
-    
-    // Get valid values for new type and adjust value if needed
     const availableKDMAs = getValidKDMAsForRun(runId);
-    const validValues = availableKDMAs[newKdmaType] || [];
-    let newValue = currentValue;
     
-    if (validValues.length > 0 && !validValues.some(v => Math.abs(v - newValue) < 0.001)) {
-      newValue = validValues[0]; // Use first valid value
-    }
-    
-    currentKDMAs[newKdmaType] = newValue;
-    
-    await updatePinnedRunState({
-      runId,
-      parameter: 'kdmas',
-      value: currentKDMAs,
-      needsReload: true,
-      updateUI: true
+    await updateKDMAsForRun(runId, (kdmas) => {
+      const updated = { ...kdmas };
+      const currentValue = updated[oldKdmaType];
+      
+      // Remove old type
+      delete updated[oldKdmaType];
+      
+      // Get valid values for new type and adjust value if needed
+      const validValues = availableKDMAs[newKdmaType] || [];
+      let newValue = currentValue;
+      
+      if (validValues.length > 0 && !validValues.some(v => Math.abs(v - newValue) < 0.001)) {
+        newValue = validValues[0]; // Use first valid value
+      }
+      
+      updated[newKdmaType] = newValue;
+      return updated;
     });
   };
 
@@ -398,7 +390,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return;
     
-    // The slider already constrains to valid values via min/max/step, so just normalize
     const normalizedValue = KDMAUtils.normalizeValue(sliderElement.value);
     
     // Update the display value immediately for responsiveness
@@ -407,17 +398,11 @@ document.addEventListener("DOMContentLoaded", () => {
       valueDisplay.textContent = formatKDMAValue(normalizedValue);
     }
     
-    // Update the KDMA values - let the parameter system handle validation
-    const currentKDMAs = { ...(run.kdmaValues || {}) };
-    const updatedKDMAs = { ...currentKDMAs, [kdmaType]: normalizedValue };
-    
-    // Use updatePinnedRunState with debouncing for the reload
-    await updatePinnedRunState({
-      runId,
-      parameter: 'kdmas',
-      value: updatedKDMAs,
-      needsReload: true,
-      updateUI: true, // Let the parameter system update the UI with validated values
+    // Update the KDMA values with debouncing
+    await updateKDMAsForRun(runId, (kdmas) => ({
+      ...kdmas,
+      [kdmaType]: normalizedValue
+    }), {
       updateURL: true,
       debounceMs: 500 // Debounce to avoid too many requests while sliding
     });
@@ -665,85 +650,80 @@ document.addEventListener("DOMContentLoaded", () => {
     return 'N/A';
   }
 
-  // Create dropdown HTML for LLM selection in table cells
-  function createLLMDropdownForRun(runId, currentValue) {
+  // Generic dropdown creation function
+  function createDropdownForRun(runId, currentValue, options) {
+    const { 
+      optionsPath, 
+      cssClass, 
+      onChangeHandler,
+      sortOptions = false,
+      noOptionsMessage = null,
+      preCondition = null
+    } = options;
+    
     const run = appState.pinnedRuns.get(runId);
     if (!run) return escapeHtml(currentValue);
     
-    const validLLMs = Array.from(run.availableOptions.llms);
+    // Check pre-condition if provided
+    if (preCondition && !preCondition(run)) {
+      return noOptionsMessage || '<span class="na-value">N/A</span>';
+    }
     
-    let html = `<select class="table-llm-select" onchange="handleRunLLMChange('${runId}', this.value)">`;
-    validLLMs.forEach(llm => {
-      const selected = llm === currentValue ? 'selected' : '';
-      html += `<option value="${escapeHtml(llm)}" ${selected}>${escapeHtml(llm)}</option>`;
+    // Get options from the specified path in run.availableOptions
+    const availableOptions = optionsPath.split('.').reduce((obj, key) => obj?.[key], run.availableOptions);
+    if (!availableOptions || availableOptions.length === 0) {
+      return noOptionsMessage || '<span class="na-value">No options available</span>';
+    }
+    
+    const sortedOptions = sortOptions ? [...availableOptions].sort() : availableOptions;
+    
+    let html = `<select class="${cssClass}" onchange="${onChangeHandler}('${runId}', this.value)">`;
+    sortedOptions.forEach(option => {
+      const selected = option === currentValue ? 'selected' : '';
+      html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(option)}</option>`;
     });
     html += '</select>';
     
     return html;
+  }
+
+  // Create dropdown HTML for LLM selection in table cells
+  function createLLMDropdownForRun(runId, currentValue) {
+    return createDropdownForRun(runId, currentValue, {
+      optionsPath: 'llms',
+      cssClass: 'table-llm-select',
+      onChangeHandler: 'handleRunLLMChange'
+    });
   }
 
   // Create dropdown HTML for ADM type selection in table cells
   function createADMDropdownForRun(runId, currentValue) {
-    const run = appState.pinnedRuns.get(runId);
-    if (!run) return escapeHtml(currentValue);
-    
-    const validADMs = Array.from(run.availableOptions.admTypes);
-    
-    let html = `<select class="table-adm-select" onchange="handleRunADMChange('${runId}', this.value)">`;
-    validADMs.forEach(adm => {
-      const selected = adm === currentValue ? 'selected' : '';
-      html += `<option value="${escapeHtml(adm)}" ${selected}>${escapeHtml(adm)}</option>`;
+    return createDropdownForRun(runId, currentValue, {
+      optionsPath: 'admTypes',
+      cssClass: 'table-adm-select',
+      onChangeHandler: 'handleRunADMChange'
     });
-    html += '</select>';
-    
-    return html;
   }
 
   // Create dropdown HTML for base scenario selection in table cells
   function createSceneDropdownForRun(runId, currentValue) {
-    // Check if run exists
-    const run = appState.pinnedRuns.get(runId);
-    if (!run) return escapeHtml(currentValue);
-    
-    // For base scenario, we show all available base scenarios
-    const availableScenes = run.availableOptions.scenes.sort();
-    
-    let html = `<select class="table-scenario-select" onchange="handleRunSceneChange('${runId}', this.value)">`;
-    availableScenes.forEach(scene => {
-      const selected = scene === currentValue ? 'selected' : '';
-      html += `<option value="${escapeHtml(scene)}" ${selected}>${escapeHtml(scene)}</option>`;
+    return createDropdownForRun(runId, currentValue, {
+      optionsPath: 'scenes',
+      cssClass: 'table-scenario-select',
+      onChangeHandler: 'handleRunSceneChange',
+      sortOptions: true
     });
-    html += '</select>';
-    
-    return html;
   }
 
   // Create dropdown HTML for specific scenario selection in table cells
   function createSpecificScenarioDropdownForRun(runId, currentValue) {
-    // Check if run exists
-    const run = appState.pinnedRuns.get(runId);
-    if (!run) return escapeHtml(currentValue);
-    
-    const sceneId = run.scene;
-    
-    if (!sceneId) {
-      return '<span class="na-value">No scene</span>';
-    }
-    
-    const availableScenarios = run.availableOptions.scenarios;
-    
-    if (availableScenarios.length === 0) {
-      return '<span class="na-value">No scenarios available</span>';
-    }
-    
-    let html = `<select class="table-scenario-select" onchange="handleRunScnarioChange('${runId}', this.value)">`;
-    availableScenarios.forEach(scenario => {
-      const selected = scenario === currentValue ? 'selected' : '';
-      html += `<option value="${escapeHtml(scenario)}" ${selected}>${escapeHtml(scenario)}</option>`;
+    return createDropdownForRun(runId, currentValue, {
+      optionsPath: 'scenarios',
+      cssClass: 'table-scenario-select',
+      onChangeHandler: 'handleRunScnarioChange',
+      preCondition: (run) => run.scene,
+      noOptionsMessage: '<span class="na-value">No scene</span>'
     });
-    html += '</select>';
-    
-    return html;
   }
 
   // Create dropdown HTML for run variant selection in table cells
@@ -859,15 +839,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return KDMAUtils.formatValue(value);
   }
 
-  // Generate experiment key from parameters (shared utility function)
-  function buildExperimentKey(admType, llmBackbone, kdmas) {
-    const kdmaParts = [];
-    Object.entries(kdmas || {}).forEach(([kdma, value]) => {
-      kdmaParts.push(`${kdma}-${formatKDMAValue(value)}`);
-    });
-    const kdmaString = kdmaParts.sort().join("_");
-    return kdmaString ? `${admType}_${llmBackbone}_${kdmaString}` : `${admType}_${llmBackbone}`;
-  }
 
   // Check if we can add another KDMA given current KDMA values
   function canAddKDMAToRun(runId, currentKDMAs) {
@@ -1002,34 +973,45 @@ document.addEventListener("DOMContentLoaded", () => {
     `;
   }
 
+  // Parameter-specific dropdown handlers
+  const PARAMETER_DROPDOWN_HANDLERS = {
+    'run_variant': createRunVariantDropdownForRun,
+    'llm_backbone': createLLMDropdownForRun,
+    'adm_type': createADMDropdownForRun,
+    'scene': createSceneDropdownForRun,
+    'scenario': createSpecificScenarioDropdownForRun,
+    'kdma_values': createKDMAControlsForRun
+  };
+
+  // Create expandable content for long text or objects
+  function createExpandableContent(value, id, isLongText = false) {
+    const isExpanded = expandableStates[isLongText ? 'text' : 'objects'].get(id) || false;
+    const content = isLongText ? value : JSON.stringify(value, null, 2);
+    const preview = isLongText ? `${value.substring(0, 800)}...` : getObjectPreview(value);
+    
+    const shortDisplay = isExpanded ? 'none' : (isLongText ? 'inline' : 'inline');
+    const fullDisplay = isExpanded ? (isLongText ? 'inline' : 'block') : 'none';
+    const buttonText = isExpanded ? (isLongText ? 'Show Less' : 'Show Preview') : (isLongText ? 'Show More' : 'Show Details');
+    const toggleFunction = isLongText ? 'toggleText' : 'toggleObject';
+    const shortTag = isLongText ? 'span' : 'span';
+    const fullTag = isLongText ? 'span' : 'pre';
+
+    return `<div class="${isLongText ? 'expandable-text' : 'object-display'}" ${isLongText ? `data-full-text="${escapeHtml(content)}"` : ''} data-param-id="${id}">
+      <${shortTag} id="${id}_${isLongText ? 'short' : 'preview'}" style="display: ${shortDisplay};">${escapeHtml(preview)}</${shortTag}>
+      <${fullTag} id="${id}_full" style="display: ${fullDisplay};">${escapeHtml(content)}</${fullTag}>
+      <button class="show-more-btn" onclick="${toggleFunction}('${id}')">${buttonText}</button>
+    </div>`;
+  }
+
   // Format values for display in table cells
   function formatValue(value, type, paramName = '', runId = '') {
-    // Special handling for run_variant - always try to show dropdown if possible
-    if (runId !== '' && paramName === 'run_variant') {
-      return createRunVariantDropdownForRun(runId, value);
-    }
-    
     if (value === null || value === undefined || value === 'N/A') {
       return '<span class="na-value">N/A</span>';
     }
     
-    // Special handling for editable parameters in pinned runs
-    if (runId !== '') {
-      if (paramName === 'llm_backbone') {
-        return createLLMDropdownForRun(runId, value);
-      }
-      if (paramName === 'adm_type') {
-        return createADMDropdownForRun(runId, value);
-      }
-      if (paramName === 'scene') {
-        return createSceneDropdownForRun(runId, value);
-      }
-      if (paramName === 'scenario') {
-        return createSpecificScenarioDropdownForRun(runId, value);
-      }
-      if (paramName === 'kdma_values') {
-        return createKDMAControlsForRun(runId, value);
-      }
+    // Handle dropdown parameters for pinned runs
+    if (runId !== '' && PARAMETER_DROPDOWN_HANDLERS[paramName]) {
+      return PARAMETER_DROPDOWN_HANDLERS[paramName](runId, value);
     }
     
     switch (type) {
@@ -1038,20 +1020,8 @@ document.addEventListener("DOMContentLoaded", () => {
       
       case 'longtext':
         if (typeof value === 'string' && value.length > 800) {
-          const truncated = value.substring(0, 800);
-          // Include runId for per-column state persistence
           const id = `text_${paramName}_${runId}_${type}`;
-          const isExpanded = expandableStates.text.get(id) || false;
-          
-          const shortDisplay = isExpanded ? 'none' : 'inline';
-          const fullDisplay = isExpanded ? 'inline' : 'none';
-          const buttonText = isExpanded ? 'Show Less' : 'Show More';
-          
-          return `<div class="expandable-text" data-full-text="${escapeHtml(value)}" data-param-id="${id}">
-            <span id="${id}_short" style="display: ${shortDisplay};">${escapeHtml(truncated)}...</span>
-            <span id="${id}_full" style="display: ${fullDisplay};">${escapeHtml(value)}</span>
-            <button class="show-more-btn" onclick="toggleText('${id}')">${buttonText}</button>
-          </div>`;
+          return createExpandableContent(value, id, true);
         }
         return escapeHtml(value.toString());
       
@@ -1106,22 +1076,8 @@ document.addEventListener("DOMContentLoaded", () => {
         return kdmaHtml;
       
       case 'object':
-        // Include runId for per-column state persistence
         const id = `object_${paramName}_${runId}_${type}`;
-        const isExpanded = expandableStates.objects.get(id) || false;
-        
-        const preview = getObjectPreview(value);
-        const fullJson = JSON.stringify(value, null, 2);
-        
-        const previewDisplay = isExpanded ? 'none' : 'inline';
-        const fullDisplay = isExpanded ? 'block' : 'none';
-        const buttonText = isExpanded ? 'Show Preview' : 'Show Details';
-        
-        return `<div class="object-display" data-param-id="${id}">
-          <span id="${id}_preview" style="display: ${previewDisplay};">${escapeHtml(preview)}</span>
-          <pre id="${id}_full" style="display: ${fullDisplay};">${escapeHtml(fullJson)}</pre>
-          <button class="show-more-btn" onclick="toggleObject('${id}')">${buttonText}</button>
-        </div>`;
+        return createExpandableContent(value, id, false);
       
       default:
         return escapeHtml(value.toString());
