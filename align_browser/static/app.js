@@ -657,7 +657,6 @@ document.addEventListener("DOMContentLoaded", () => {
       optionsPath, 
       cssClass, 
       onChangeHandler,
-      sortOptions = false,
       noOptionsMessage = null,
       preCondition = null
     } = options;
@@ -676,7 +675,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return noOptionsMessage || '<span class="na-value">No options available</span>';
     }
     
-    const sortedOptions = sortOptions ? [...availableOptions].sort() : availableOptions;
+    const sortedOptions = [...availableOptions].sort();
     
     // Always disable dropdowns when there are few options
     const isDisabled = availableOptions.length <= 1;
@@ -715,8 +714,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return createDropdownForRun(runId, currentValue, {
       optionsPath: 'scenes',
       cssClass: 'table-scenario-select',
-      onChangeHandler: 'handleRunSceneChange',
-      sortOptions: true
+      onChangeHandler: 'handleRunSceneChange'
     });
   }
 
@@ -742,8 +740,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return createDropdownForRun(runId, actualCurrentValue, {
       optionsPath: 'runVariants',
       cssClass: 'table-run-variant-select',
-      onChangeHandler: 'handleRunVariantChange',
-      sortOptions: true
+      onChangeHandler: 'handleRunVariantChange'
     });
   }
 
