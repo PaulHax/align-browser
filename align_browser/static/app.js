@@ -1,7 +1,6 @@
 // Client-side application logic for ADM Results
 import {
   createInitialState,
-  updateUserSelections,
   createRunConfig,
   createParameterStructure,
   encodeStateToURL,
@@ -36,7 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const result = window.updateAppParameters({
         scenario: params.scenario,
         scene: params.scene,
-        kdma_values: Object.entries(params.kdmaValues || {}).map(([kdma, value]) => ({ kdma, value })),
+        kdma_values: params.kdmaValues || {},
         adm: params.admType,
         llm: params.llmBackbone,
         run_variant: params.runVariant
@@ -106,9 +105,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const stateParams = {
       scenario: params.scenario || null,
       scene: params.scene || null,
-      kdma_values: params.kdmas ? 
-        KDMAUtils.sort(Object.entries(params.kdmas).map(([kdma, value]) => ({ kdma, value })))
-        : [],
+      kdma_values: params.kdmas || {},
       adm: params.admType || null,
       llm: params.llmBackbone || null,
       run_variant: params.runVariant || null
@@ -176,16 +173,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const state = decodeStateFromURL();
       
       if (state) {
-        // Restore selections
-        appState = updateUserSelections(appState, {
-          scene: state.scene || appState.selectedScene,
-          scenario: state.scenario || appState.selectedScenario,
-          admType: state.admType || appState.selectedAdmType,
-          llm: state.llm || appState.selectedLLM,
-          kdmas: state.kdmas || appState.activeKDMAs
-        });
-        
-        
         // Restore pinned runs
         if (state.pinnedRuns && state.pinnedRuns.length > 0) {
           for (const runConfig of state.pinnedRuns) {
@@ -466,8 +453,8 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Show loading state
     run.loadStatus = 'loading';
-    updateComparisonDisplay();
-    
+    renderComparisonTable();
+
     // Get updated parameters from columnParameters
     const params = getParametersForRun(runId);
     
@@ -522,16 +509,9 @@ document.addEventListener("DOMContentLoaded", () => {
       run.isReloading = false;
     }
     
-    // Re-render the comparison table (current run data is unaffected)
-    updateComparisonDisplay();
-  }
-
-
-  // Update the comparison display with current + pinned runs
-  function updateComparisonDisplay() {
-    // Always use table mode - this is the "Always-On Comparison Mode"
     renderComparisonTable();
   }
+
 
   // Render the comparison table with pinned runs only
   function renderComparisonTable() {
@@ -868,8 +848,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // Find the maximum number of KDMAs in any valid combination
     let maxKDMAs = 0;
     kdmaOptions.validCombinations.forEach(combination => {
-      if (Array.isArray(combination)) {
-        maxKDMAs = Math.max(maxKDMAs, combination.length);
+      if (typeof combination === 'object' && combination !== null) {
+        maxKDMAs = Math.max(maxKDMAs, Object.keys(combination).length);
       }
     });
     
@@ -886,12 +866,14 @@ document.addEventListener("DOMContentLoaded", () => {
     // Extract all available types and values from valid combinations
     const availableOptions = {};
     run.availableOptions.kdmas.validCombinations.forEach(combination => {
-      combination.forEach(kdma => {
-        if (!availableOptions[kdma.kdma]) {
-          availableOptions[kdma.kdma] = new Set();
-        }
-        availableOptions[kdma.kdma].add(kdma.value);
-      });
+      if (typeof combination === 'object' && combination !== null) {
+        Object.entries(combination).forEach(([kdmaType, value]) => {
+          if (!availableOptions[kdmaType]) {
+            availableOptions[kdmaType] = new Set();
+          }
+          availableOptions[kdmaType].add(value);
+        });
+      }
     });
     
     return availableOptions;
@@ -913,14 +895,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const remainingKDMAs = { ...currentKDMAs };
     delete remainingKDMAs[kdmaType];
     
-    // Convert remaining KDMAs to the format used in validCombinations
-    const remainingKDMAArray = Object.entries(remainingKDMAs).map(([kdma, value]) => ({ kdma, value }));
-    
     // Check if the remaining KDMA combination exists in validCombinations
     return kdmaOptions.validCombinations.some(combination => {
-      if (!Array.isArray(combination)) return false;
+      if (typeof combination !== 'object' || combination === null) return false;
       
-      return KDMAUtils.arraysEqual(remainingKDMAArray, combination);
+      return KDMAUtils.objectsEqual(remainingKDMAs, combination);
     });
   }
   
@@ -1293,7 +1272,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
     
     appState.pinnedRuns.set(runConfig.id, pinnedData);
-    updateComparisonDisplay();
+    renderComparisonTable();
     
     // Only update URL if not explicitly disabled (e.g., during batch restoration)
     if (options.updateURL !== false) {
@@ -1451,7 +1430,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Update UI if requested
         if (updateUI) {
-                updateComparisonDisplay();
+          renderComparisonTable();
         }
 
         // Update URL state if requested
