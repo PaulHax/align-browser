@@ -143,6 +143,7 @@ document.addEventListener("DOMContentLoaded", () => {
       scenes: validOptions.scene || [],
       admTypes: validOptions.adm || [],
       llms: validOptions.llm || [],
+      runVariants: validOptions.run_variant || [],
       kdmas: {
         validCombinations: validOptions.kdma_values || []
       }
@@ -658,7 +659,9 @@ document.addEventListener("DOMContentLoaded", () => {
       onChangeHandler,
       sortOptions = false,
       noOptionsMessage = null,
-      preCondition = null
+      preCondition = null,
+      disableWhenFewOptions = false,
+      customDisplayText = null
     } = options;
     
     const run = appState.pinnedRuns.get(runId);
@@ -677,10 +680,15 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const sortedOptions = sortOptions ? [...availableOptions].sort() : availableOptions;
     
-    let html = `<select class="${cssClass}" onchange="${onChangeHandler}('${runId}', this.value)">`;
+    // Handle disabled state for few options
+    const isDisabled = disableWhenFewOptions && availableOptions.length <= 1;
+    const disabledAttr = isDisabled ? 'disabled' : '';
+    
+    let html = `<select class="${cssClass}" ${disabledAttr} onchange="${onChangeHandler}('${runId}', this.value)">`;
     sortedOptions.forEach(option => {
       const selected = option === currentValue ? 'selected' : '';
-      html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(option)}</option>`;
+      const displayText = customDisplayText ? customDisplayText(option) : option;
+      html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(displayText)}</option>`;
     });
     html += '</select>';
     
@@ -731,45 +739,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const run = appState.pinnedRuns.get(runId);
     if (!run) return escapeHtml(currentValue);
     
-    // Use the run's actual runVariant instead of the passed currentValue
-    // This ensures we show the correct selection after parameter updates
+    // Use the run's actual runVariant to ensure correct selection after parameter updates
     const actualCurrentValue = run.runVariant;
     
-    // Get available run variants using the parameter update system
-    const result = window.updateAppParameters({
-      scenario: run.scenario,
-      scene: run.scene,
-      kdma_values: run.kdmaValues || {},
-      adm: run.admType,
-      llm: run.llmBackbone,
-      run_variant: run.runVariant
-    }, {});
-    
-    const availableVariants = result.options.run_variant || [];
-    
-    // Always show a select dropdown, but disable it when there are 0 or 1 variants
-    const sortedVariants = availableVariants.sort();
-    const isDisabled = availableVariants.length <= 1;
-    const disabledAttr = isDisabled ? 'disabled' : '';
-    
-    let html = `<select class="table-run-variant-select" ${disabledAttr} onchange="handleRunVariantChange('${runId}', this.value)">`;
-    
-    if (availableVariants.length === 0) {
-      // No variants available - show current value or N/A
-      const displayValue = actualCurrentValue || 'N/A';
-      html += `<option value="${escapeHtml(actualCurrentValue || '')}" selected>${escapeHtml(displayValue)}</option>`;
-    } else {
-      // Show all available variants
-      sortedVariants.forEach(variant => {
-        const selected = variant === actualCurrentValue ? 'selected' : '';
-        const displayValue = variant === 'default' ? '(default)' : variant;
-        html += `<option value="${escapeHtml(variant)}" ${selected}>${escapeHtml(displayValue)}</option>`;
-      });
-    }
-    
-    html += '</select>';
-    
-    return html;
+    return createDropdownForRun(runId, actualCurrentValue, {
+      optionsPath: 'runVariants',
+      cssClass: 'table-run-variant-select',
+      onChangeHandler: 'handleRunVariantChange',
+      sortOptions: true,
+      disableWhenFewOptions: true,
+      customDisplayText: (variant) => variant === 'default' ? '(default)' : variant
+    });
   }
 
   // Get max KDMAs allowed for a specific run based on its constraints and current selections
