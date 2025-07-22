@@ -115,13 +115,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const validParams = result.params;
     const validOptions = result.options;
     
-    // Convert back to app.js format
-    const kdmas = {};
-    if (validParams.kdma_values && Array.isArray(validParams.kdma_values)) {
-      validParams.kdma_values.forEach(item => {
-        kdmas[item.kdma] = item.value;
-      });
-    }
+    // Convert back to app.js format  
+    const kdmas = validParams.kdma_values || {};
     
     const correctedParams = {
       scenario: validParams.scenario,
@@ -221,9 +216,7 @@ document.addEventListener("DOMContentLoaded", () => {
         admType: initialResult.params.adm,
         llmBackbone: initialResult.params.llm,
         runVariant: initialResult.params.run_variant,
-        kdmaValues: Object.fromEntries(
-          (initialResult.params.kdma_values || []).map(({ kdma, value }) => [kdma, value])
-        ),
+        kdmaValues: initialResult.params.kdma_values || {},
         availableScenarios: initialResult.options.scenario || [],
         availableScenes: initialResult.options.scene || [], 
         availableAdmTypes: initialResult.options.adm || [],
@@ -848,9 +841,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Find the maximum number of KDMAs in any valid combination
     let maxKDMAs = 0;
     kdmaOptions.validCombinations.forEach(combination => {
-      if (typeof combination === 'object' && combination !== null) {
-        maxKDMAs = Math.max(maxKDMAs, Object.keys(combination).length);
-      }
+      maxKDMAs = Math.max(maxKDMAs, Object.keys(combination).length);
     });
     
     return Math.max(maxKDMAs, 1); // At least 1 KDMA should be possible
@@ -866,14 +857,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // Extract all available types and values from valid combinations
     const availableOptions = {};
     run.availableOptions.kdmas.validCombinations.forEach(combination => {
-      if (typeof combination === 'object' && combination !== null) {
-        Object.entries(combination).forEach(([kdmaType, value]) => {
-          if (!availableOptions[kdmaType]) {
-            availableOptions[kdmaType] = new Set();
-          }
-          availableOptions[kdmaType].add(value);
-        });
-      }
+      Object.entries(combination).forEach(([kdmaType, value]) => {
+        if (!availableOptions[kdmaType]) {
+          availableOptions[kdmaType] = new Set();
+        }
+        availableOptions[kdmaType].add(value);
+      });
     });
     
     return availableOptions;
@@ -897,8 +886,6 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Check if the remaining KDMA combination exists in validCombinations
     return kdmaOptions.validCombinations.some(combination => {
-      if (typeof combination !== 'object' || combination === null) return false;
-      
       return KDMAUtils.objectsEqual(remainingKDMAs, combination);
     });
   }
@@ -933,24 +920,21 @@ document.addEventListener("DOMContentLoaded", () => {
       return false;
     }
     
-    // Convert current KDMAs to array format for comparison
-    const currentKDMAArray = currentKDMAEntries.map(([kdma, value]) => ({ kdma, value }));
-    
     // Check if there are any valid combinations that:
     // 1. Include all current KDMAs with their exact values
     // 2. Have at least one additional KDMA
     return run.availableOptions.kdmas.validCombinations.some(combination => {
-      if (!Array.isArray(combination) || combination.length <= currentKDMAArray.length) {
+      
+      const combinationKeys = Object.keys(combination);
+      if (combinationKeys.length <= currentKDMAEntries.length) {
         return false;
       }
       
       // Check if this combination includes all current KDMAs with matching values
-      return currentKDMAArray.every(currentKDMA => 
-        combination.some(combKDMA => 
-          combKDMA.kdma === currentKDMA.kdma && 
-          Math.abs(combKDMA.value - currentKDMA.value) < 0.001
-        )
-      );
+      return currentKDMAEntries.every(([kdmaType, value]) => {
+        return combination.hasOwnProperty(kdmaType) && 
+               Math.abs(combination[kdmaType] - value) < 0.001;
+      });
     });
   }
 
@@ -1142,44 +1126,38 @@ document.addEventListener("DOMContentLoaded", () => {
         return escapeHtml(value.toString());
       
       case 'kdma_values':
-        if (typeof value === 'object' && value !== null) {
-          const kdmaEntries = Object.entries(value);
-          if (kdmaEntries.length === 0) {
-            return '<span class="na-value">No KDMAs</span>';
-          }
-          
-          let kdmaHtml = '<div class="kdma-values-display">';
-          kdmaEntries.forEach(([kdmaName, kdmaValue]) => {
-            kdmaHtml += `<div class="kdma-value-item">
-              <span class="kdma-name">${escapeHtml(kdmaName)}:</span>
-              <span class="kdma-number">${formatKDMAValue(kdmaValue)}</span>
-            </div>`;
-          });
-          kdmaHtml += '</div>';
-          return kdmaHtml;
+        const kdmaEntries = Object.entries(value);
+        if (kdmaEntries.length === 0) {
+          return '<span class="na-value">No KDMAs</span>';
         }
-        return '<span class="na-value">N/A</span>';
+        
+        let kdmaHtml = '<div class="kdma-values-display">';
+        kdmaEntries.forEach(([kdmaName, kdmaValue]) => {
+          kdmaHtml += `<div class="kdma-value-item">
+            <span class="kdma-name">${escapeHtml(kdmaName)}:</span>
+            <span class="kdma-number">${formatKDMAValue(kdmaValue)}</span>
+          </div>`;
+        });
+        kdmaHtml += '</div>';
+        return kdmaHtml;
       
       case 'object':
-        if (typeof value === 'object') {
-          // Include runId for per-column state persistence
-          const id = `object_${paramName}_${runId}_${type}`;
-          const isExpanded = expandableStates.objects.get(id) || false;
-          
-          const preview = getObjectPreview(value);
-          const fullJson = JSON.stringify(value, null, 2);
-          
-          const previewDisplay = isExpanded ? 'none' : 'inline';
-          const fullDisplay = isExpanded ? 'block' : 'none';
-          const buttonText = isExpanded ? 'Show Preview' : 'Show Details';
-          
-          return `<div class="object-display" data-param-id="${id}">
-            <span id="${id}_preview" style="display: ${previewDisplay};">${escapeHtml(preview)}</span>
-            <pre id="${id}_full" style="display: ${fullDisplay};">${escapeHtml(fullJson)}</pre>
-            <button class="show-more-btn" onclick="toggleObject('${id}')">${buttonText}</button>
-          </div>`;
-        }
-        return escapeHtml(value.toString());
+        // Include runId for per-column state persistence
+        const id = `object_${paramName}_${runId}_${type}`;
+        const isExpanded = expandableStates.objects.get(id) || false;
+        
+        const preview = getObjectPreview(value);
+        const fullJson = JSON.stringify(value, null, 2);
+        
+        const previewDisplay = isExpanded ? 'none' : 'inline';
+        const fullDisplay = isExpanded ? 'block' : 'none';
+        const buttonText = isExpanded ? 'Show Preview' : 'Show Details';
+        
+        return `<div class="object-display" data-param-id="${id}">
+          <span id="${id}_preview" style="display: ${previewDisplay};">${escapeHtml(preview)}</span>
+          <pre id="${id}_full" style="display: ${fullDisplay};">${escapeHtml(fullJson)}</pre>
+          <button class="show-more-btn" onclick="toggleObject('${id}')">${buttonText}</button>
+        </div>`;
       
       default:
         return escapeHtml(value.toString());
@@ -1221,20 +1199,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     
     // Handle object comparison
-    if (typeof val1 === 'object' && typeof val2 === 'object') {
-      const keys1 = Object.keys(val1);
-      const keys2 = Object.keys(val2);
-      
-      if (keys1.length !== keys2.length) return false;
-      
-      for (const key of keys1) {
-        if (!keys2.includes(key)) return false;
-        if (!compareValues(val1[key], val2[key])) return false;
-      }
-      return true;
-    }
+    const keys1 = Object.keys(val1);
+    const keys2 = Object.keys(val2);
     
-    return false;
+    if (keys1.length !== keys2.length) return false;
+    
+    for (const key of keys1) {
+      if (!keys2.includes(key)) return false;
+      if (!compareValues(val1[key], val2[key])) return false;
+    }
+    return true;
   }
 
   // Add a column with specific parameters (no appState manipulation)
@@ -1285,10 +1259,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function getObjectPreview(obj) {
-    if (!obj || typeof obj !== 'object') return 'N/A';
+    if (!obj) return 'N/A';
     const keys = Object.keys(obj);
     if (keys.length === 0) return '{}';
-    if (keys.length === 1 && typeof obj[keys[0]] !== 'object') {
+    if (keys.length === 1) {
       return `${keys[0]}: ${obj[keys[0]]}`;
     }
     return `{${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '...' : ''}}`;
