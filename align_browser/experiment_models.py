@@ -45,12 +45,15 @@ def parse_alignment_target_id(alignment_target_id: str) -> List[KDMAValue]:
 
     Supports both single and multi-KDMA formats:
     - Single: "ADEPT-June2025-merit-0.0" -> [KDMAValue(kdma="merit", value=0.0)]
+    - Single with underscore: "ADEPT-June2025-personal_safety-0.0" -> [KDMAValue(kdma="personal_safety", value=0.0)]
+    - Short format: "personal_safety-0.0" -> [KDMAValue(kdma="personal_safety", value=0.0)]
     - Multi: "ADEPT-June2025-affiliation_merit-0.0_0.0" ->
              [KDMAValue(kdma="affiliation", value=0.0), KDMAValue(kdma="merit", value=0.0)]
     - Unaligned: "unaligned" -> [] (no KDMAs)
 
     Args:
         alignment_target_id: String like "ADEPT-June2025-merit-0.0",
+                           "ADEPT-June2025-personal_safety-0.0", "personal_safety-0.0",
                            "ADEPT-June2025-affiliation_merit-0.0_0.0", or "unaligned"
 
     Returns:
@@ -59,17 +62,14 @@ def parse_alignment_target_id(alignment_target_id: str) -> List[KDMAValue]:
     if not alignment_target_id or alignment_target_id == "unaligned":
         return []
 
-    # Split by hyphens: [prefix, scenario, kdma_part, value_part]
+    # Split by hyphens
     parts = alignment_target_id.split("-")
-    if len(parts) < 4:
+    if len(parts) < 2:
         return []
 
     # Extract KDMA names and values from the last two parts
-    kdma_part = parts[-2]  # e.g., "affiliation_merit" or "merit"
+    kdma_part = parts[-2]  # e.g., "affiliation_merit", "merit", or "personal_safety"
     value_part = parts[-1]  # e.g., "0.0_0.0" or "0.0"
-
-    # Split KDMA names by underscore
-    kdma_names = kdma_part.split("_")
 
     # Split values by underscore and convert to float
     try:
@@ -78,9 +78,17 @@ def parse_alignment_target_id(alignment_target_id: str) -> List[KDMAValue]:
     except ValueError:
         return []
 
-    # Ensure we have the same number of KDMAs and values
-    if len(kdma_names) != len(values):
-        return []
+    # Determine how to split KDMA names based on number of values
+    if len(values) == 1:
+        # Single value: treat entire kdma_part as one KDMA name (handles personal_safety)
+        kdma_names = [kdma_part]
+    else:
+        # Multiple values: split KDMA names by underscore
+        kdma_names = kdma_part.split("_")
+
+        # Ensure we have the same number of KDMAs and values
+        if len(kdma_names) != len(values):
+            return []
 
     # Create KDMAValue objects
     kdma_values = []

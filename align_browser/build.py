@@ -182,27 +182,27 @@ def serve_directory(directory, host="localhost", port=8000):
 
     def static_app(environ, start_response):
         """Simple WSGI app for serving static files."""
-        path_info = environ['PATH_INFO']
-        if path_info == '/':
-            path_info = '/index.html'
-        
-        file_path = Path(directory) / path_info.lstrip('/')
-        
+        path_info = environ["PATH_INFO"]
+        if path_info == "/":
+            path_info = "/index.html"
+
+        file_path = Path(directory) / path_info.lstrip("/")
+
         if not file_path.exists() or not file_path.is_file():
-            start_response('404 Not Found', [('Content-Type', 'text/plain')])
-            return [b'404 Not Found']
-        
+            start_response("404 Not Found", [("Content-Type", "text/plain")])
+            return [b"404 Not Found"]
+
         content_type, _ = mimetypes.guess_type(str(file_path))
         if content_type is None:
-            content_type = 'application/octet-stream'
-        
-        start_response('200 OK', [('Content-Type', content_type)])
-        with open(file_path, 'rb') as f:
+            content_type = "application/octet-stream"
+
+        start_response("200 OK", [("Content-Type", content_type)])
+        with open(file_path, "rb") as f:
             return [f.read()]
 
     if actual_port != port:
         print(f"Port {port} was busy, using port {actual_port} instead")
-    
+
     # Display appropriate URL based on host
     if host == "0.0.0.0":
         url = f"http://localhost:{actual_port}"
