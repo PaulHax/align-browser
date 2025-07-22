@@ -80,21 +80,19 @@ export function createRunConfig(params, availableKDMAs) {
   if (availableKDMAs && Array.isArray(availableKDMAs)) {
     // Store all valid combinations and build type/value maps
     availableKDMAs.forEach(kdmaCombination => {
-      if (typeof kdmaCombination === 'object' && kdmaCombination !== null) {
-        // Store the valid combination as object for unified usage
-        kdmaStructure.validCombinations.push({ ...kdmaCombination });
-        
-        // Extract types and values for the maps
-        Object.entries(kdmaCombination).forEach(([kdma, value]) => {
-          if (kdma && value !== undefined) {
-            kdmaStructure.availableTypes.add(kdma);
-            if (!kdmaStructure.typeValueMap[kdma]) {
-              kdmaStructure.typeValueMap[kdma] = new Set();
-            }
-            kdmaStructure.typeValueMap[kdma].add(value);
+      // Store the valid combination as object for unified usage
+      kdmaStructure.validCombinations.push({ ...kdmaCombination });
+      
+      // Extract types and values for the maps
+      Object.entries(kdmaCombination).forEach(([kdma, value]) => {
+        if (kdma && value !== undefined) {
+          kdmaStructure.availableTypes.add(kdma);
+          if (!kdmaStructure.typeValueMap[kdma]) {
+            kdmaStructure.typeValueMap[kdma] = new Set();
           }
-        });
-      }
+          kdmaStructure.typeValueMap[kdma].add(value);
+        }
+      });
     });
   }
   
@@ -256,9 +254,8 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
     // For kdma_values, use normalized comparison since validOptions contains
     // KDMA objects that might have different object references but same values.
     // This validates the current value against the filtered valid options
-    if (param === 'kdma_values' && !isValid && typeof currentValue === 'object') {
+    if (param === 'kdma_values' && !isValid) {
       isValid = validOptions.some(option => {
-        if (typeof option !== 'object') return false;
         return KDMAUtils.objectsEqual(option, currentValue);
       });
     }
@@ -400,14 +397,14 @@ export function transformManifestForUpdateParameters(manifest) {
           scene: sceneId,
           kdma_values: kdmaObject,
           adm: adm.name,
-          llm: llm.model_name,
+          llm: llm?.model_name || null,
           run_variant: run_variant
         };
         
         entries.push(entry);
         
         const kdmaString = KDMAUtils.serializeToKey(kdmaObject);
-        const mapKey = `${scenarioId}:${sceneId}:${kdmaString}:${adm.name}:${llm.model_name}:${run_variant}`;
+        const mapKey = `${scenarioId}:${sceneId}:${kdmaString}:${adm.name}:${llm?.model_name || null}:${run_variant}`;
         
         parameterRunMap.set(mapKey, {
           experimentKey,
