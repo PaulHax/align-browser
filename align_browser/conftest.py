@@ -116,6 +116,34 @@ def ensure_kdma_slider_value(page, selector, value):
         return False
 
 
+def ensure_dropdown_selection(page, selector, required_value, description="dropdown"):
+    """
+    Ensures a dropdown has the required value selected.
+    Fails if the required value cannot be ensured (either by selection or auto-selection).
+
+    Args:
+        page: Playwright page object
+        selector: CSS selector for the select element
+        required_value: The required value that must be selected
+        description: Human-readable description for error messages
+
+    Raises:
+        AssertionError: If the required value cannot be ensured
+    """
+    dropdown = page.locator(selector).first
+
+    if dropdown.is_enabled():
+        # Dropdown is enabled - try to select the required value
+        dropdown.select_option(required_value)
+        page.wait_for_load_state("networkidle")
+
+    # Verify the required value is now selected (whether we selected it or it was auto-selected)
+    current_value = dropdown.input_value()
+    assert current_value == required_value, (
+        f"{description} dropdown must have '{required_value}' selected, but has '{current_value}'"
+    )
+
+
 class FrontendTestServer:
     """HTTP server for serving the built frontend during tests."""
 

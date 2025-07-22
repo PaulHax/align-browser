@@ -10,6 +10,23 @@ import {
   KDMAUtils,
 } from './state.js';
 
+// Constants
+const TEXT_PREVIEW_LENGTH = 800;
+const FLOATING_POINT_TOLERANCE = 0.001;
+const KDMA_SLIDER_DEBOUNCE_MS = 500;
+
+// CSS Classes
+const CSS_TABLE_LLM_SELECT = 'table-llm-select';
+const CSS_TABLE_ADM_SELECT = 'table-adm-select';
+const CSS_TABLE_SCENARIO_SELECT = 'table-scenario-select';
+const CSS_TABLE_RUN_VARIANT_SELECT = 'table-run-variant-select';
+
+// HTML Templates
+const HTML_NA_SPAN = '<span class="na-value">N/A</span>';
+const HTML_NO_OPTIONS_SPAN = '<span class="na-value">No options available</span>';
+const HTML_NO_SCENE_SPAN = '<span class="na-value">No scene</span>';
+const HTML_NO_KDMAS_SPAN = '<span class="na-value">No KDMAs</span>';
+
 document.addEventListener("DOMContentLoaded", () => {
   
   // UI state persistence for expandable content
@@ -151,8 +168,6 @@ document.addEventListener("DOMContentLoaded", () => {
     
     return correctedParams;
   }
-  
-  // Initialize the run context system after manifest is loaded
 
   // URL State Management System
   const urlState = {
@@ -232,8 +247,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   
-  
-
   // Generic parameter change handler for simple cases
   async function handleSimpleParameterChange(runId, parameter, value, options = {}) {
     await window.updatePinnedRunState({
@@ -246,12 +259,21 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Handle LLM change for pinned runs - global for onclick access
-  window.handleRunLLMChange = async function(runId, newLLM) {
-    await handleSimpleParameterChange(runId, 'llmBackbone', newLLM, { updateUI: false });
+  // Generic parameter change handler factory
+  const createParameterChangeHandler = (parameterName, options = {}) => {
+    return async function(runId, newValue) {
+      await handleSimpleParameterChange(runId, parameterName, newValue, options);
+    };
   };
 
+  // Simple parameter change handlers - global for onclick access
+  window.handleRunLLMChange = createParameterChangeHandler('llmBackbone', { updateUI: false });
+  window.handleRunVariantChange = createParameterChangeHandler('runVariant');
+  window.handleRunSceneChange = createParameterChangeHandler('scene');
+  window.handleRunScenarioChange = createParameterChangeHandler('scenario');
+
   // Handle ADM type change for pinned runs - global for onclick access
+  // Special case: preserves LLM preferences per ADM type
   window.handleRunADMChange = async function(runId, newADM) {
     const run = appState.pinnedRuns.get(runId);
     
@@ -278,20 +300,6 @@ document.addEventListener("DOMContentLoaded", () => {
       needsReload: true,
       updateUI: true
     });
-  };
-
-  // Handle run variant change for pinned runs - global for onclick access
-  window.handleRunVariantChange = async function(runId, newVariant) {
-    await handleSimpleParameterChange(runId, 'runVariant', newVariant);
-  };
-
-  // Handle base scenario change for pinned runs - global for onclick access
-  window.handleRunSceneChange = async function(runId, newScene) {
-    await handleSimpleParameterChange(runId, 'scene', newScene);
-  };
-
-  window.handleRunScnarioChange = async function(runId, newScenario) {
-    await handleSimpleParameterChange(runId, 'scenario', newScenario);
   };
 
 
@@ -376,7 +384,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const validValues = availableKDMAs[newKdmaType] || [];
       let newValue = currentValue;
       
-      if (validValues.length > 0 && !validValues.some(v => Math.abs(v - newValue) < 0.001)) {
+      if (validValues.length > 0 && !validValues.some(v => Math.abs(v - newValue) < FLOATING_POINT_TOLERANCE)) {
         newValue = validValues[0]; // Use first valid value
       }
       
@@ -404,7 +412,7 @@ document.addEventListener("DOMContentLoaded", () => {
       [kdmaType]: normalizedValue
     }), {
       updateURL: true,
-      debounceMs: 500 // Debounce to avoid too many requests while sliding
+      debounceMs: KDMA_SLIDER_DEBOUNCE_MS // Debounce to avoid too many requests while sliding
     });
   };
 
@@ -660,13 +668,13 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Check pre-condition if provided
     if (preCondition && !preCondition(run)) {
-      return noOptionsMessage || '<span class="na-value">N/A</span>';
+      return noOptionsMessage || HTML_NA_SPAN;
     }
     
     // Get options from the specified path in run.availableOptions
     const availableOptions = optionsPath.split('.').reduce((obj, key) => obj?.[key], run.availableOptions);
     if (!availableOptions || availableOptions.length === 0) {
-      return noOptionsMessage || '<span class="na-value">No options available</span>';
+      return noOptionsMessage || HTML_NO_OPTIONS_SPAN;
     }
     
     const sortedOptions = [...availableOptions].sort();
@@ -685,43 +693,45 @@ document.addEventListener("DOMContentLoaded", () => {
     return html;
   }
 
-  // Create dropdown HTML for LLM selection in table cells
-  function createLLMDropdownForRun(runId, currentValue) {
-    return createDropdownForRun(runId, currentValue, {
+  // Dropdown configuration for different parameter types
+  const DROPDOWN_CONFIGS = {
+    llm: {
       optionsPath: 'llms',
-      cssClass: 'table-llm-select',
+      cssClass: CSS_TABLE_LLM_SELECT,
       onChangeHandler: 'handleRunLLMChange'
-    });
-  }
-
-  // Create dropdown HTML for ADM type selection in table cells
-  function createADMDropdownForRun(runId, currentValue) {
-    return createDropdownForRun(runId, currentValue, {
+    },
+    adm: {
       optionsPath: 'admTypes',
-      cssClass: 'table-adm-select',
+      cssClass: CSS_TABLE_ADM_SELECT,
       onChangeHandler: 'handleRunADMChange'
-    });
-  }
-
-  // Create dropdown HTML for base scenario selection in table cells
-  function createSceneDropdownForRun(runId, currentValue) {
-    return createDropdownForRun(runId, currentValue, {
+    },
+    scene: {
       optionsPath: 'scenes',
-      cssClass: 'table-scenario-select',
+      cssClass: CSS_TABLE_SCENARIO_SELECT,
       onChangeHandler: 'handleRunSceneChange'
-    });
-  }
-
-  // Create dropdown HTML for specific scenario selection in table cells
-  function createSpecificScenarioDropdownForRun(runId, currentValue) {
-    return createDropdownForRun(runId, currentValue, {
+    },
+    scenario: {
       optionsPath: 'scenarios',
-      cssClass: 'table-scenario-select',
-      onChangeHandler: 'handleRunScnarioChange',
+      cssClass: CSS_TABLE_SCENARIO_SELECT,
+      onChangeHandler: 'handleRunScenarioChange',
       preCondition: (run) => run.scene,
-      noOptionsMessage: '<span class="na-value">No scene</span>'
-    });
-  }
+      noOptionsMessage: HTML_NO_SCENE_SPAN
+    }
+  };
+
+  // Generic dropdown creation factory
+  const createDropdownForParameter = (parameterType) => {
+    return (runId, currentValue) => {
+      const config = DROPDOWN_CONFIGS[parameterType];
+      return createDropdownForRun(runId, currentValue, config);
+    };
+  };
+
+  // Create dropdown functions using the factory
+  const createLLMDropdownForRun = createDropdownForParameter('llm');
+  const createADMDropdownForRun = createDropdownForParameter('adm');
+  const createSceneDropdownForRun = createDropdownForParameter('scene');
+  const createSpecificScenarioDropdownForRun = createDropdownForParameter('scenario');
 
   // Create dropdown HTML for run variant selection in table cells
   function createRunVariantDropdownForRun(runId, currentValue) {
@@ -733,7 +743,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     return createDropdownForRun(runId, actualCurrentValue, {
       optionsPath: 'runVariants',
-      cssClass: 'table-run-variant-select',
+      cssClass: CSS_TABLE_RUN_VARIANT_SELECT,
       onChangeHandler: 'handleRunVariantChange'
     });
   }
@@ -809,7 +819,7 @@ document.addEventListener("DOMContentLoaded", () => {
       
       // Check if this combination exists in validCombinations
       const isValidCombination = run.availableOptions.kdmas.validCombinations.some(combination => {
-        return KDMAUtils.objectsEqual(testKDMAs, combination);
+        return KDMAUtils.deepEqual(testKDMAs, combination);
       });
       
       if (isValidCombination) {
@@ -837,7 +847,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Check if the remaining KDMA combination exists in validCombinations
     return kdmaOptions.validCombinations.some(combination => {
-      return KDMAUtils.objectsEqual(remainingKDMAs, combination);
+      return KDMAUtils.deepEqual(remainingKDMAs, combination);
     });
   }
   
@@ -875,7 +885,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // Check if this combination includes all current KDMAs with matching values
       return currentKDMAEntries.every(([kdmaType, value]) => {
         return combination.hasOwnProperty(kdmaType) && 
-               Math.abs(combination[kdmaType] - value) < 0.001;
+               Math.abs(combination[kdmaType] - value) < FLOATING_POINT_TOLERANCE;
       });
     });
   }
@@ -883,7 +893,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Create KDMA controls HTML for table cells
   function createKDMAControlsForRun(runId, currentKDMAs) {
     const run = appState.pinnedRuns.get(runId);
-    if (!run) return '<span class="na-value">N/A</span>';
+    if (!run) return HTML_NA_SPAN;
     
     const currentKDMAEntries = Object.entries(currentKDMAs || {});
     const canAddMore = canAddKDMAToRun(runId, currentKDMAs);
@@ -928,7 +938,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Ensure current value is in the list (in case of data inconsistencies)
     if (value !== undefined && value !== null) {
       // Check with tolerance for floating point
-      const hasValue = validValues.some(v => Math.abs(v - value) < 0.001);
+      const hasValue = validValues.some(v => Math.abs(v - value) < FLOATING_POINT_TOLERANCE);
       if (!hasValue) {
         // Add current value and sort
         validValues.push(value);
@@ -996,7 +1006,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function createExpandableContent(value, id, isLongText = false) {
     const isExpanded = expandableStates[isLongText ? 'text' : 'objects'].get(id) || false;
     const content = isLongText ? value : JSON.stringify(value, null, 2);
-    const preview = isLongText ? `${value.substring(0, 800)}...` : getObjectPreview(value);
+    const preview = isLongText ? `${value.substring(0, TEXT_PREVIEW_LENGTH)}...` : getObjectPreview(value);
     
     const shortDisplay = isExpanded ? 'none' : (isLongText ? 'inline' : 'inline');
     const fullDisplay = isExpanded ? (isLongText ? 'inline' : 'block') : 'none';
@@ -1012,10 +1022,73 @@ document.addEventListener("DOMContentLoaded", () => {
     </div>`;
   }
 
+  // Format KDMA association bar for choice display
+  function formatKDMAAssociationBar(kdma, val) {
+    const percentage = Math.round(val * 100);
+    const color = val >= 0.7 ? '#28a745' : val >= 0.4 ? '#ffc107' : '#dc3545';
+    return `<div class="kdma-bar">
+      <span class="kdma-name">${kdma}</span>
+      <div class="kdma-bar-container">
+        <div class="kdma-bar-fill" style="width: ${percentage}%; background-color: ${color};"></div>
+      </div>
+      <span class="kdma-value">${val.toFixed(2)}</span>
+    </div>`;
+  }
+
+  // Format single choice item with KDMA associations
+  function formatChoiceItem(choice) {
+    let html = `<div class="choice-card">
+      <div class="choice-text">${escapeHtml(choice.unstructured || choice.description || 'No description')}</div>`;
+    
+    // Add KDMA associations if available
+    if (choice.kdma_association) {
+      html += '<div class="kdma-bars">';
+      html += '<div class="kdma-truth-header">KDMA Association Truth</div>';
+      Object.entries(choice.kdma_association).forEach(([kdma, val]) => {
+        html += formatKDMAAssociationBar(kdma, val);
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // Format choices array for display
+  function formatChoicesValue(choices) {
+    if (!Array.isArray(choices)) {
+      return escapeHtml(choices.toString());
+    }
+    
+    let html = '<div class="choices-display">';
+    choices.forEach((choice) => {
+      html += formatChoiceItem(choice);
+    });
+    html += '</div>';
+    return html;
+  }
+
+  // Format KDMA values object for display
+  function formatKDMAValuesObject(kdmaObject) {
+    const kdmaEntries = Object.entries(kdmaObject);
+    if (kdmaEntries.length === 0) {
+      return HTML_NO_KDMAS_SPAN;
+    }
+    
+    let html = '<div class="kdma-values-display">';
+    kdmaEntries.forEach(([kdmaName, kdmaValue]) => {
+      html += `<div class="kdma-value-item">
+        <span class="kdma-name">${escapeHtml(kdmaName)}:</span>
+        <span class="kdma-number">${formatKDMAValue(kdmaValue)}</span>
+      </div>`;
+    });
+    html += '</div>';
+    return html;
+  }
+
   // Format values for display in table cells
   function formatValue(value, type, paramName = '', runId = '') {
     if (value === null || value === undefined || value === 'N/A') {
-      return '<span class="na-value">N/A</span>';
+      return HTML_NA_SPAN;
     }
     
     // Handle dropdown parameters for pinned runs
@@ -1028,7 +1101,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return typeof value === 'number' ? value.toFixed(3) : value.toString();
       
       case 'longtext':
-        if (typeof value === 'string' && value.length > 800) {
+        if (typeof value === 'string' && value.length > TEXT_PREVIEW_LENGTH) {
           const id = `text_${paramName}_${runId}_${type}`;
           return createExpandableContent(value, id, true);
         }
@@ -1038,51 +1111,10 @@ document.addEventListener("DOMContentLoaded", () => {
         return escapeHtml(value.toString());
       
       case 'choices':
-        if (Array.isArray(value)) {
-          let choicesHtml = '<div class="choices-display">';
-          value.forEach((choice) => {
-            choicesHtml += `<div class="choice-card">
-              <div class="choice-text">${escapeHtml(choice.unstructured || choice.description || 'No description')}</div>`;
-            
-            // Add KDMA associations if available
-            if (choice.kdma_association) {
-              choicesHtml += '<div class="kdma-bars">';
-              choicesHtml += '<div class="kdma-truth-header">KDMA Association Truth</div>';
-              Object.entries(choice.kdma_association).forEach(([kdma, val]) => {
-                const percentage = Math.round(val * 100);
-                const color = val >= 0.7 ? '#28a745' : val >= 0.4 ? '#ffc107' : '#dc3545';
-                choicesHtml += `<div class="kdma-bar">
-                  <span class="kdma-name">${kdma}</span>
-                  <div class="kdma-bar-container">
-                    <div class="kdma-bar-fill" style="width: ${percentage}%; background-color: ${color};"></div>
-                  </div>
-                  <span class="kdma-value">${val.toFixed(2)}</span>
-                </div>`;
-              });
-              choicesHtml += '</div>';
-            }
-            choicesHtml += '</div>';
-          });
-          choicesHtml += '</div>';
-          return choicesHtml;
-        }
-        return escapeHtml(value.toString());
+        return formatChoicesValue(value);
       
       case 'kdma_values':
-        const kdmaEntries = Object.entries(value);
-        if (kdmaEntries.length === 0) {
-          return '<span class="na-value">No KDMAs</span>';
-        }
-        
-        let kdmaHtml = '<div class="kdma-values-display">';
-        kdmaEntries.forEach(([kdmaName, kdmaValue]) => {
-          kdmaHtml += `<div class="kdma-value-item">
-            <span class="kdma-name">${escapeHtml(kdmaName)}:</span>
-            <span class="kdma-number">${formatKDMAValue(kdmaValue)}</span>
-          </div>`;
-        });
-        kdmaHtml += '</div>';
-        return kdmaHtml;
+        return formatKDMAValuesObject(value);
       
       case 'object':
         const id = `object_${paramName}_${runId}_${type}`;
@@ -1110,7 +1142,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Handle numeric comparison with floating point tolerance
     if (typeof val1 === 'number' && typeof val2 === 'number') {
-      return Math.abs(val1 - val2) < 0.001;
+      return Math.abs(val1 - val2) < FLOATING_POINT_TOLERANCE;
     }
     
     // Handle string comparison
@@ -1183,8 +1215,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     
     return runConfig.id; // Return the ID for reference
-    
-   
   }
 
   function getObjectPreview(obj) {
@@ -1379,9 +1409,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Make removePinnedRun globally accessible for onclick handlers
   window.removeRun = removeRun;
-
-  // Display name generation uses imported function
-
 
   // Initialize static button event listeners
   const addColumnBtn = document.getElementById('add-column-btn');
