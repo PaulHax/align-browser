@@ -755,74 +755,38 @@ document.addEventListener("DOMContentLoaded", () => {
     // This ensures we show the correct selection after parameter updates
     const actualCurrentValue = run.runVariant;
     
+    // Get available run variants using the parameter update system
+    const result = window.updateAppParameters({
+      scenario: run.scenario,
+      scene: run.scene,
+      kdma_values: run.kdmaValues || {},
+      adm: run.admType,
+      llm: run.llmBackbone,
+      run_variant: run.runVariant
+    }, {});
     
-    // Get available run variants for the current ADM+LLM+KDMA combination
-    // Use the same buildExperimentKey function that's used throughout the app
-    const baseKey = buildExperimentKey(run.admType, run.llmBackbone, run.kdmaValues);
+    const availableVariants = result.options.run_variant || [];
     
-    // Find all experiment keys that match this base pattern AND have data for the current scenario
-    const availableVariants = new Set();
-    let hasExactMatch = false;
+    // Always show a select dropdown, but disable it when there are 0 or 1 variants
+    const sortedVariants = availableVariants.sort();
+    const isDisabled = availableVariants.length <= 1;
+    const disabledAttr = isDisabled ? 'disabled' : '';
     
-    for (const experimentKey of Object.keys(manifest.experiment_keys || {})) {
-      const experiment = manifest.experiment_keys[experimentKey];
-      
-      // Only consider variants that have data for the current scenario
-      if (!experiment.scenarios[run.scenario]) {
-        continue;
-      }
-      
-      if (experimentKey === baseKey) {
-        hasExactMatch = true;
-        availableVariants.add('default');
-      } else if (experimentKey.startsWith(baseKey + '_')) {
-        // Extract potential run variant from the key
-        const suffix = experimentKey.substring(baseKey.length + 1); // Remove base key and underscore
-        
-        // Only consider as run variant if it's NOT a KDMA extension
-        // KDMA extensions follow pattern: kdma-value (e.g., merit-0.0, affiliation-1.0)
-        // Run variants are typically words/phrases (e.g., greedy_w_cache, rerun)
-        const isKDMAExtension = /^[a-z_]+-(0\.?\d*|1\.0?)$/.test(suffix);
-        
-        if (!isKDMAExtension) {
-          availableVariants.add(suffix);
-        }
-      }
+    let html = `<select class="table-run-variant-select" ${disabledAttr} onchange="handleRunVariantChange('${runId}', this.value)">`;
+    
+    if (availableVariants.length === 0) {
+      // No variants available - show current value or N/A
+      const displayValue = actualCurrentValue || 'N/A';
+      html += `<option value="${escapeHtml(actualCurrentValue || '')}" selected>${escapeHtml(displayValue)}</option>`;
+    } else {
+      // Show all available variants
+      sortedVariants.forEach(variant => {
+        const selected = variant === actualCurrentValue ? 'selected' : '';
+        const displayValue = variant === 'default' ? '(default)' : variant;
+        html += `<option value="${escapeHtml(variant)}" ${selected}>${escapeHtml(displayValue)}</option>`;
+      });
     }
     
-    // If no exact match for base key, don't add default option
-    // Just show available variants without auto-selection
-    
-    // Add default option only if base key exists without variant AND has data for current scenario
-    if (hasExactMatch) {
-      availableVariants.add('default');
-    }
-    
-    // If no variants found, try to extract from the current run's experiment key
-    if (availableVariants.size === 0) {
-      // Try to extract run variant from the current experiment key being used
-      if (run.experimentKey && run.experimentKey.startsWith(baseKey + '_')) {
-        const extractedVariant = run.experimentKey.substring(baseKey.length + 1);
-        return escapeHtml(extractedVariant);
-      }
-      return escapeHtml(actualCurrentValue || 'N/A');
-    }
-    
-    // If only one variant, show it without dropdown
-    if (availableVariants.size === 1) {
-      const variant = Array.from(availableVariants)[0];
-      const displayValue = variant === 'default' ? '(default)' : variant;
-      return escapeHtml(displayValue);
-    }
-    
-    const sortedVariants = Array.from(availableVariants).sort();
-    
-    let html = `<select class="table-run-variant-select" onchange="handleRunVariantChange('${runId}', this.value)">`;
-    sortedVariants.forEach(variant => {
-      const selected = variant === actualCurrentValue ? 'selected' : '';
-      const displayValue = variant === 'default' ? '(default)' : variant;
-      html += `<option value="${escapeHtml(variant)}" ${selected}>${escapeHtml(displayValue)}</option>`;
-    });
     html += '</select>';
     
     return html;
