@@ -778,6 +778,47 @@ document.addEventListener("DOMContentLoaded", () => {
     return availableOptions;
   }
   
+  // Get valid KDMA types that can be selected for a specific run  
+  function getValidKDMATypesForRun(runId, currentKdmaType, currentKDMAs) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run?.availableOptions?.kdmas?.validCombinations) {
+      return [currentKdmaType]; // Fallback to just current type
+    }
+    
+    const validTypes = new Set([currentKdmaType]); // Always include current type
+    
+    // For each unused KDMA type, check if replacing current type would create valid combination
+    const availableKDMAs = getValidKDMAsForRun(runId);
+    Object.keys(availableKDMAs).forEach(kdmaType => {
+      // Skip if this type is already used (except current one we're replacing)
+      if (kdmaType !== currentKdmaType && currentKDMAs[kdmaType] !== undefined) {
+        return;
+      }
+      
+      // Test if this type can be used by checking valid combinations
+      const testKDMAs = { ...currentKDMAs };
+      delete testKDMAs[currentKdmaType]; // Remove current type
+      
+      // If we're adding a different type, add it with any valid value
+      if (kdmaType !== currentKdmaType) {
+        const validValues = Array.from(availableKDMAs[kdmaType] || []);
+        if (validValues.length > 0) {
+          testKDMAs[kdmaType] = validValues[0]; // Use first valid value for testing
+        }
+      }
+      
+      // Check if this combination exists in validCombinations
+      const isValidCombination = run.availableOptions.kdmas.validCombinations.some(combination => {
+        return KDMAUtils.objectsEqual(testKDMAs, combination);
+      });
+      
+      if (isValidCombination) {
+        validTypes.add(kdmaType);
+      }
+    });
+    
+    return Array.from(validTypes).sort();
+  }
 
   // Check if a specific KDMA can be removed from a run
   function canRemoveSpecificKDMA(runId, kdmaType) {
@@ -879,10 +920,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const run = appState.pinnedRuns.get(runId);
     const currentKDMAs = run.kdmaValues || {};
     
-    // Get available types (current type + unused types)
-    const availableTypes = Object.keys(availableKDMAs).filter(type => 
-      type === kdmaType || currentKDMAs[type] === undefined
-    );
+    // Get available types (only those that can form valid combinations)
+    const availableTypes = getValidKDMATypesForRun(runId, kdmaType, currentKDMAs);
     
     const validValues = Array.from(availableKDMAs[kdmaType] || []);
     
@@ -914,9 +953,13 @@ document.addEventListener("DOMContentLoaded", () => {
       step = Math.min(...diffs);
     }
     
+    // Always disable KDMA type dropdown when there are few options
+    const isDisabled = availableTypes.length <= 1;
+    const disabledAttr = isDisabled ? 'disabled' : '';
+
     return `
       <div class="table-kdma-control">
-        <select class="table-kdma-type-select" 
+        <select class="table-kdma-type-select" ${disabledAttr}
                 onchange="handleRunKDMATypeChange('${runId}', '${kdmaType}', this.value)">
           ${availableTypes.map(type => 
             `<option value="${type}" ${type === kdmaType ? 'selected' : ''}>${type}</option>`
