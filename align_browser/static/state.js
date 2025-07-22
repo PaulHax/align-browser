@@ -1,6 +1,8 @@
 // Functional State Management Module
 // Pure functions for managing application state without mutations
 
+import { showWarning } from './notifications.js';
+
 // Constants for KDMA processing
 const KDMA_CONSTANTS = {
   DECIMAL_PRECISION: 10, // For 1 decimal place normalization
@@ -200,7 +202,7 @@ export function decodeStateFromURL() {
       const currentManifest = GlobalState.getManifest();
       if (currentManifest && decodedState.manifestCreatedAt && 
           decodedState.manifestCreatedAt !== currentManifest.generated_at) {
-        console.warn('URL parameters are from a different manifest version, ignoring URL state');
+        showWarning('URL parameters are from an older version and have been reset');
         return null;
       }
       
