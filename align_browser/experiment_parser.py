@@ -236,7 +236,6 @@ def build_manifest_from_experiments(
         input_output_files.add(experiment.experiment_path / "input_output.json")
 
     # Calculate checksums for all files
-    print(f"Calculating checksums for {len(input_output_files)} files...")
     source_file_checksums = calculate_file_checksums(list(input_output_files))
 
     # Process experiments with conflict detection similar to original
