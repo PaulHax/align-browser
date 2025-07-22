@@ -72,11 +72,8 @@ def build_frontend(
     print(f"Processing experiments directory: {experiments_root}")
 
     # Determine output directory based on mode
-    if dev_mode:
-        print("Development mode: using provided directory")
-    else:
-        # Production mode: copy static assets
-        print(f"Production mode: creating site in {output_dir}")
+    if not dev_mode:
+        print(f"creating site in {output_dir}")
         output_dir.mkdir(parents=True, exist_ok=True)
         copy_static_assets(output_dir)
 
@@ -98,8 +95,6 @@ def build_frontend(
     # Save manifest in data subdirectory
     with open(data_output_dir / "manifest.json", "w") as f:
         json.dump(manifest.model_dump(), f, indent=2)
-
-    print(f"Data generated in {data_output_dir}")
 
     return output_dir
 
@@ -205,6 +200,9 @@ def serve_directory(directory, host="localhost", port=8000):
         with open(file_path, 'rb') as f:
             return [f.read()]
 
+    if actual_port != port:
+        print(f"Port {port} was busy, using port {actual_port} instead")
+    
     # Display appropriate URL based on host
     if host == "0.0.0.0":
         url = f"http://localhost:{actual_port}"
@@ -214,9 +212,6 @@ def serve_directory(directory, host="localhost", port=8000):
     else:
         url = f"http://{host}:{actual_port}"
         print(f"Serving {directory} at {url}")
-
-    if actual_port != port:
-        print(f"Port {port} was busy, using port {actual_port} instead")
 
     print("Press Ctrl+C to stop the server")
     try:
