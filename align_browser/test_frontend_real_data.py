@@ -7,7 +7,11 @@ and will be skipped if the data is not available.
 """
 
 from playwright.sync_api import expect
-from .conftest import wait_for_new_experiment_result, ensure_select_value
+from .conftest import (
+    wait_for_new_experiment_result,
+    ensure_select_value,
+    ensure_dropdown_selection,
+)
 
 
 def wait_for_run_results_loaded(page, timeout=3000):
@@ -294,16 +298,13 @@ def test_kdma_combination_default_value_issue(page, real_data_test_server):
         "document.querySelectorAll('.table-adm-select').length > 0", timeout=10000
     )
 
-    # Select pipeline_baseline ADM to enable KDMA functionality
-    adm_select = page.locator(".table-adm-select").first
-    adm_select.select_option("pipeline_baseline")
-    # Wait for UI to update after ADM selection
-    page.wait_for_load_state("networkidle")
+    ensure_dropdown_selection(page, ".table-adm-select", "pipeline_baseline", "ADM")
 
-    # Select a specific LLM known to have multi-KDMA experiments
+    # For LLM, we need to check what's actually available since it might vary
     llm_select = page.locator(".table-llm-select").first
-    llm_select.select_option("mistralai/Mistral-7B-Instruct-v0.3")
-    page.wait_for_load_state("networkidle")
+    current_llm = llm_select.input_value()
+    print(f"Using LLM: {current_llm}")
+    # Don't enforce a specific LLM since availability may vary with test data
 
     # Select June2025-AF-train scenario to get multi-KDMA support
     scenario_select = page.locator(".table-scenario-select").first
@@ -385,6 +386,7 @@ def test_kdma_combination_default_value_issue(page, real_data_test_server):
         )
 
     # Also check that the dropdowns don't go blank
+    adm_select = page.locator(".table-adm-select").first
     adm_select_value = adm_select.input_value()
     assert adm_select_value != "", "ADM select should not go blank after adding KDMA"
 

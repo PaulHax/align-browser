@@ -1,20 +1,30 @@
 // Functional State Management Module
 // Pure functions for managing application state without mutations
 
+// Constants for KDMA processing
+const KDMA_CONSTANTS = {
+  DECIMAL_PRECISION: 10, // For 1 decimal place normalization
+  DISPLAY_PRECISION: 1   // For display formatting
+};
+
 // KDMA Utility Functions
 export const KDMAUtils = {
   // Normalize KDMA value to 1 decimal place
-  normalizeValue: (value) => Math.round(parseFloat(value) * 10) / 10,
+  normalizeValue: (value) => Math.round(parseFloat(value) * KDMA_CONSTANTS.DECIMAL_PRECISION) / KDMA_CONSTANTS.DECIMAL_PRECISION,
   
   // Format KDMA value for display (1 decimal place)
-  formatValue: (value) => typeof value === 'number' ? value.toFixed(1) : value,
+  formatValue: (value) => typeof value === 'number' ? value.toFixed(KDMA_CONSTANTS.DISPLAY_PRECISION) : value,
+  
+  // Convert KDMA object to sorted array for serialization
+  toSortedArray: (kdmaObject) => {
+    return Object.entries(kdmaObject)
+      .map(([kdma, value]) => ({ kdma, value: KDMAUtils.normalizeValue(value) }))
+      .sort((a, b) => a.kdma.localeCompare(b.kdma));
+  },
   
   // Convert KDMA object to sorted array and serialize for keys
   serializeToKey: (kdmaObject) => {
-    const kdmaArray = Object.entries(kdmaObject)
-      .map(([kdma, value]) => ({ kdma, value: KDMAUtils.normalizeValue(value) }))
-      .sort((a, b) => a.kdma.localeCompare(b.kdma));
-    return JSON.stringify(kdmaArray);
+    return JSON.stringify(KDMAUtils.toSortedArray(kdmaObject));
   },
   
   // Convert KDMA object to key parts for experiment keys
@@ -24,20 +34,38 @@ export const KDMAUtils = {
       .sort();
   },
   
-  // Compare two KDMA objects for equality
-  objectsEqual: (obj1, obj2) => {
-    if (!obj1 && !obj2) return true;
-    if (!obj1 || !obj2) return false;
+  // Deep equality comparison for objects
+  deepEqual: (obj1, obj2) => {
+    if (obj1 === obj2) return true;
+    if (!obj1 || !obj2) return obj1 === obj2;
     
-    const keys1 = Object.keys(obj1).sort();
-    const keys2 = Object.keys(obj2).sort();
+    const keys1 = Object.keys(obj1);
+    const keys2 = Object.keys(obj2);
     
     if (keys1.length !== keys2.length) return false;
     
     return keys1.every(key => {
-      return keys2.includes(key) && 
-             KDMAUtils.normalizeValue(obj1[key]) === KDMAUtils.normalizeValue(obj2[key]);
+      if (!keys2.includes(key)) return false;
+      const val1 = obj1[key];
+      const val2 = obj2[key];
+      
+      // Handle nested objects recursively
+      if (typeof val1 === 'object' && typeof val2 === 'object') {
+        return KDMAUtils.deepEqual(val1, val2);
+      }
+      
+      // Handle numeric comparison with normalization
+      if (typeof val1 === 'number' && typeof val2 === 'number') {
+        return KDMAUtils.normalizeValue(val1) === KDMAUtils.normalizeValue(val2);
+      }
+      
+      return val1 === val2;
     });
+  },
+  
+  // Backwards compatibility alias
+  objectsEqual: function(obj1, obj2) {
+    return this.deepEqual(obj1, obj2);
   }
 };
 
@@ -173,8 +201,14 @@ export function decodeStateFromURL() {
   return null;
 }
 
-// Priority order for parameter cascading
-const PARAMETER_PRIORITY_ORDER = ['scenario', 'scene', 'kdma_values', 'adm', 'llm', 'run_variant'];
+// Configuration for parameter validation system
+const PARAMETER_CONFIG = {
+  // Priority order for parameter cascading
+  PRIORITY_ORDER: ['scenario', 'scene', 'kdma_values', 'adm', 'llm', 'run_variant'],
+  
+  // Parameters that require special handling
+  SPECIAL_COMPARISON_PARAMS: new Set(['kdma_values'])
+};
 
 // Parameter update system with priority-based cascading
 const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, changes) => {
@@ -197,14 +231,15 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
       
       // Only check constraint if the current selection has a non-null value for this parameter
       if (currentSelection[param] !== null && currentSelection[param] !== undefined) {
-        // Special handling for kdma_values comparison (objects where key order doesn't matter)
-        // This filters manifest entries to find compatible KDMA combinations
-        if (param === 'kdma_values') {
-          const manifestKdmas = manifestEntry[param];
-          const selectionKdmas = currentSelection[param];
-          
-          if (!KDMAUtils.objectsEqual(manifestKdmas, selectionKdmas)) {
-            return false;
+        // Special handling for parameters that need custom comparison
+        if (PARAMETER_CONFIG.SPECIAL_COMPARISON_PARAMS.has(param)) {
+          if (param === 'kdma_values') {
+            const manifestKdmas = manifestEntry[param];
+            const selectionKdmas = currentSelection[param];
+            
+            if (!KDMAUtils.deepEqual(manifestKdmas, selectionKdmas)) {
+              return false;
+            }
           }
         } else if (manifestEntry[param] !== currentSelection[param]) {
           return false;
@@ -246,13 +281,13 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
     // Only change if current value is invalid
     let isValid = validOptions.includes(currentValue);
     
-    // For kdma_values, use normalized comparison since validOptions contains
-    // KDMA objects that might have different object references but same values.
-    // This validates the current value against the filtered valid options
-    if (param === 'kdma_values' && !isValid) {
-      isValid = validOptions.some(option => {
-        return KDMAUtils.objectsEqual(option, currentValue);
-      });
+    // For special parameters, use custom comparison logic
+    if (PARAMETER_CONFIG.SPECIAL_COMPARISON_PARAMS.has(param) && !isValid) {
+      if (param === 'kdma_values') {
+        isValid = validOptions.some(option => {
+          return KDMAUtils.deepEqual(option, currentValue);
+        });
+      }
     }
     
     if (!isValid) {
@@ -274,17 +309,33 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
 };
 
 // Export updateParameters with priority order already curried
-export const updateParameters = updateParametersBase(PARAMETER_PRIORITY_ORDER);
+export const updateParameters = updateParametersBase(PARAMETER_CONFIG.PRIORITY_ORDER);
 
-// Global manifest storage
-let manifest = null;
-
-let parameterRunMap = new Map();
+// Global state encapsulation
+const GlobalState = {
+  manifest: null,
+  parameterRunMap: new Map(),
+  
+  // Getters
+  getManifest: () => GlobalState.manifest,
+  getParameterRunMap: () => GlobalState.parameterRunMap,
+  
+  // Setters
+  setManifest: (newManifest) => { GlobalState.manifest = newManifest; },
+  clearParameterRunMap: () => { GlobalState.parameterRunMap.clear(); },
+  setParameterRun: (key, value) => { GlobalState.parameterRunMap.set(key, value); },
+  getParameterRun: (key) => GlobalState.parameterRunMap.get(key),
+  
+  // State queries
+  hasManifest: () => GlobalState.manifest !== null,
+  isParameterRunMapEmpty: () => GlobalState.parameterRunMap.size === 0
+};
 
 // Load and initialize manifest
 export async function loadManifest() {
     const response = await fetch("./data/manifest.json");
-    manifest = await response.json();
+    const manifest = await response.json();
+    GlobalState.setManifest(manifest);
     
     // Initialize updateParameters with the transformed manifest
     const transformedManifest = transformManifestForUpdateParameters(manifest);
@@ -295,21 +346,17 @@ export async function loadManifest() {
 
 
 function resolveParametersToRun(params) {
-  if (!parameterRunMap || parameterRunMap.size === 0) {
+  if (GlobalState.isParameterRunMapEmpty()) {
     console.warn('parameterRunMap is empty or not initialized');
     return undefined;
   }
   
   const { scenario, scene, kdmaValues, admType, llmBackbone, runVariant } = params;
   
-  
   const kdmaString = KDMAUtils.serializeToKey(kdmaValues || {});
-  
   const mapKey = `${scenario}:${scene}:${kdmaString}:${admType}:${llmBackbone}:${runVariant}`;
   
-  const result = parameterRunMap.get(mapKey);
-  
-  return result;
+  return GlobalState.getParameterRun(mapKey);
 }
 
 export async function fetchRunData(params) {
@@ -345,7 +392,6 @@ export async function fetchRunData(params) {
 
 // Transform hierarchical manifest to flat array for updateParameters
 export function transformManifestForUpdateParameters(manifest) {
-  
   const entries = [];
   
   if (!manifest.experiments) {
@@ -353,7 +399,7 @@ export function transformManifestForUpdateParameters(manifest) {
     return entries;
   }
   
-  parameterRunMap.clear();
+  GlobalState.clearParameterRunMap();
   
   for (const [experimentKey, experiment] of Object.entries(manifest.experiments)) {
     
@@ -386,7 +432,7 @@ export function transformManifestForUpdateParameters(manifest) {
         const kdmaString = KDMAUtils.serializeToKey(kdmaObject);
         const mapKey = `${scenarioId}:${sceneId}:${kdmaString}:${adm.name}:${llm?.model_name || null}:${run_variant}`;
         
-        parameterRunMap.set(mapKey, {
+        GlobalState.setParameterRun(mapKey, {
           experimentKey,
           sourceIndex: sceneInfo.source_index,
           inputOutputPath: scenario.input_output.file,
