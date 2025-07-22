@@ -165,7 +165,9 @@ export function createParameterStructure(params = {}) {
 
 // URL State Management Functions
 export function encodeStateToURL(state) {
+  const manifest = GlobalState.getManifest();
   const urlState = {
+    manifestCreatedAt: manifest?.generated_at,
     pinnedRuns: Array.from(state.pinnedRuns.values()).map(run => ({
       scenario: run.scenario,
       scene: run.scene,
@@ -192,7 +194,17 @@ export function decodeStateFromURL() {
   
   if (stateParam) {
     try {
-      return JSON.parse(atob(stateParam));
+      const decodedState = JSON.parse(atob(stateParam));
+      
+      // Validate manifest creation date if present
+      const currentManifest = GlobalState.getManifest();
+      if (currentManifest && decodedState.manifestCreatedAt && 
+          decodedState.manifestCreatedAt !== currentManifest.generated_at) {
+        console.warn('URL parameters are from a different manifest version, ignoring URL state');
+        return null;
+      }
+      
+      return decodedState;
     } catch (e) {
       console.warn('Invalid URL state, using defaults:', e);
       return null;
