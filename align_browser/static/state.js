@@ -243,11 +243,6 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
     const currentValue = newParams[param];
     const validOptions = getValidOptionsFor(param, newParams);
     
-    console.log(`Parameter ${param}: currentValue=${currentValue}, validOptions=${validOptions.length > 0 ? validOptions.slice(0, 3) : 'empty'}`);
-    if (param === 'kdma_values') {
-      console.log('  -> kdma_values validation using normalized comparison');
-    }
-    
     // Only change if current value is invalid
     let isValid = validOptions.includes(currentValue);
     
@@ -263,7 +258,6 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
     if (!isValid) {
       const newValue = validOptions.length > 0 ? validOptions[0] : null;
       newParams[param] = newValue;
-      console.log(`  -> Updated ${param} from ${currentValue} to ${newValue}`);
     }
   }
   
@@ -308,7 +302,6 @@ function resolveParametersToRun(params) {
   
   const { scenario, scene, kdmaValues, admType, llmBackbone, runVariant } = params;
   
-  console.log('Input kdmaValues:', kdmaValues);
   
   const kdmaString = KDMAUtils.serializeToKey(kdmaValues || {});
   
@@ -352,10 +345,6 @@ export async function fetchRunData(params) {
 
 // Transform hierarchical manifest to flat array for updateParameters
 export function transformManifestForUpdateParameters(manifest) {
-  console.log('transformManifestForUpdateParameters called with:', {
-    hasExperiments: !!manifest.experiments,
-    experimentKeys: manifest.experiments ? Object.keys(manifest.experiments) : []
-  });
   
   const entries = [];
   
@@ -367,19 +356,10 @@ export function transformManifestForUpdateParameters(manifest) {
   parameterRunMap.clear();
   
   for (const [experimentKey, experiment] of Object.entries(manifest.experiments)) {
-    console.log(`Processing experiment ${experimentKey}:`, {
-      hasParameters: !!experiment.parameters,
-      hasScenarios: !!experiment.scenarios,
-      scenarioKeys: experiment.scenarios ? Object.keys(experiment.scenarios) : []
-    });
     
     const { adm, llm, kdma_values, run_variant } = experiment.parameters;
     
     for (const [scenarioId, scenario] of Object.entries(experiment.scenarios)) {
-      console.log(`  Processing scenario ${scenarioId}:`, {
-        hasScenes: !!scenario.scenes,
-        sceneKeys: scenario.scenes ? Object.keys(scenario.scenes) : []
-      });
       
       for (const [sceneId, sceneInfo] of Object.entries(scenario.scenes)) {
         // Convert KDMA array to object format for unified usage
@@ -417,15 +397,6 @@ export function transformManifestForUpdateParameters(manifest) {
     }
   }
   
-  console.log(`Transform complete. Generated ${entries.length} entries:`, 
-    entries.slice(0, 3).map(e => ({ ...e, kdma_values: 'truncated' }))
-  );
-  
-  // Debug: show unique scenarios and scenes
-  const uniqueScenarios = [...new Set(entries.map(e => e.scenario))];
-  const uniqueScenes = [...new Set(entries.map(e => e.scene))];
-  console.log(`Unique scenarios: ${uniqueScenarios.slice(0, 5)} (${uniqueScenarios.length} total)`);
-  console.log(`Unique scenes: ${uniqueScenes.slice(0, 5)} (${uniqueScenes.length} total)`);
   
   return entries;
 }
