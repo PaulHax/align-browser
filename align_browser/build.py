@@ -1,6 +1,5 @@
 import shutil
 import json
-import http.server
 import socket
 from pathlib import Path
 import argparse
@@ -179,45 +178,51 @@ def main():
 
 def serve_directory(directory, host="localhost", port=8000):
     """Start HTTP server to serve the specified directory."""
-    import os
+    from waitress import serve
+    import mimetypes
+    from pathlib import Path
 
-    # Change to the output directory
-    original_dir = os.getcwd()
+    # Find an available port starting from the requested port
+    actual_port = find_available_port(port, host)
+
+    def static_app(environ, start_response):
+        """Simple WSGI app for serving static files."""
+        path_info = environ['PATH_INFO']
+        if path_info == '/':
+            path_info = '/index.html'
+        
+        file_path = Path(directory) / path_info.lstrip('/')
+        
+        if not file_path.exists() or not file_path.is_file():
+            start_response('404 Not Found', [('Content-Type', 'text/plain')])
+            return [b'404 Not Found']
+        
+        content_type, _ = mimetypes.guess_type(str(file_path))
+        if content_type is None:
+            content_type = 'application/octet-stream'
+        
+        start_response('200 OK', [('Content-Type', content_type)])
+        with open(file_path, 'rb') as f:
+            return [f.read()]
+
+    # Display appropriate URL based on host
+    if host == "0.0.0.0":
+        url = f"http://localhost:{actual_port}"
+        print(f"Serving {directory} on all network interfaces at port {actual_port}")
+        print(f"Local access: {url}")
+        print(f"Network access: http://<your-ip>:{actual_port}")
+    else:
+        url = f"http://{host}:{actual_port}"
+        print(f"Serving {directory} at {url}")
+
+    if actual_port != port:
+        print(f"Port {port} was busy, using port {actual_port} instead")
+
+    print("Press Ctrl+C to stop the server")
     try:
-        os.chdir(directory)
-
-        # Find an available port starting from the requested port
-        actual_port = find_available_port(port, host)
-
-        # Create HTTP server
-        handler = http.server.SimpleHTTPRequestHandler
-        with http.server.HTTPServer((host, actual_port), handler) as httpd:
-            # Enable socket reuse to prevent "Address already in use" errors
-            httpd.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            # Display appropriate URL based on host
-            if host == "0.0.0.0":
-                url = f"http://localhost:{actual_port}"
-                print(
-                    f"Serving {directory} on all network interfaces at port {actual_port}"
-                )
-                print(f"Local access: {url}")
-                print(f"Network access: http://<your-ip>:{actual_port}")
-            else:
-                url = f"http://{host}:{actual_port}"
-                print(f"Serving {directory} at {url}")
-
-            if actual_port != port:
-                print(f"Port {port} was busy, using port {actual_port} instead")
-
-            print("Press Ctrl+C to stop the server")
-            try:
-                httpd.serve_forever()
-            except KeyboardInterrupt:
-                print("\nServer stopped")
-
-    finally:
-        # Restore original directory
-        os.chdir(original_dir)
+        serve(static_app, host=host, port=actual_port)
+    except KeyboardInterrupt:
+        print("\nServer stopped")
 
 
 def find_available_port(start_port=8000, host="localhost"):
