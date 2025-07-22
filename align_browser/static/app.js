@@ -321,7 +321,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const kdmaType = availableTypes[0];
     const validValues = Array.from(availableKDMAs[kdmaType] || []);
     const initialValue = validValues.length > 0 ? validValues[0] : 0.0;
-    console.log(`Adding KDMA ${kdmaType} with initial value ${initialValue} to run ${runId}`);
     
     // Update KDMAs through the parameter validation system
     const newKDMAs = { ...currentKDMAs, [kdmaType]: initialValue };
@@ -421,11 +420,8 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // Prevent concurrent reloads for the same run
     if (run.isReloading) {
-      console.log(`Skipping reload for run ${runId} - already in progress`);
       return;
     }
-    
-    console.log(`Reloading data for run ${runId}`);
     
     // Mark as reloading to prevent concurrent requests
     run.isReloading = true;
@@ -468,8 +464,6 @@ document.addEventListener("DOMContentLoaded", () => {
         run.timing = experimentData.timing;
         run.timing_s = experimentData.timing_s;
         run.loadStatus = 'loaded';
-        
-        console.log(`Successfully reloaded run ${runId} with new data`);
       }
       
     } catch (error) {
