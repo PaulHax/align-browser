@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.5.0](https://github.com/ITM-Kitware/align-browser/compare/v0.4.0...v0.5.0) (2025-07-22)
+
+
+### Features
+
+* add multi-KDMA support for experiment parsing and frontend ([ad7a220](https://github.com/ITM-Kitware/align-browser/commit/ad7a220985b08fbf63bcaff36eebdae5723041b3))
+* add URL parameter validation against manifest creation date ([702ae05](https://github.com/ITM-Kitware/align-browser/commit/702ae05ae71d4c3beb35b0dff357df868e06740f))
+
+
+### Bug Fixes
+
+* correct source index usage for mixed KDMA experiments ([be8ce1d](https://github.com/ITM-Kitware/align-browser/commit/be8ce1db95aa96cfd9f7d8e2ed44027129fe71f3))
+* enable KDMA delete buttons when valid combinations exist ([190d073](https://github.com/ITM-Kitware/align-browser/commit/190d0731e9a979eb9a56f2ba6642af1549b03044))
+* improve Add KDMA button logic to check valid combinations ([06be9fa](https://github.com/ITM-Kitware/align-browser/commit/06be9fab3305d5228585b1b9a729e33f512f2aba))
+* remove pypi environment requirement from release workflow ([e87f724](https://github.com/ITM-Kitware/align-browser/commit/e87f72407072f305bd12602121ddfaaafb2ba204))
+* repair run variant dropdown using existing parameter system ([a5e78d6](https://github.com/ITM-Kitware/align-browser/commit/a5e78d6999dc5409d9faa6d49dd6dc46d9762a57))
+* resolve URL state initialization issues for pinned runs ([09d5650](https://github.com/ITM-Kitware/align-browser/commit/09d5650bf4bc4a67e05ff76d6cf5c0e9500e45ad))
+* restrict KDMA sliders to valid values using HTML5 constraints ([75746d8](https://github.com/ITM-Kitware/align-browser/commit/75746d8b300d380bc26d2d5e9e34add3ab236ce2))
+* show only valid KDMA types in dropdown selection ([698abc1](https://github.com/ITM-Kitware/align-browser/commit/698abc1a616162b039b2b6c6d3079ef19a208bfd))
+
 ## [0.4.0](https://github.com/PaulHax/align-browser/compare/v0.3.0...v0.4.0) (2025-07-17)
 
 
