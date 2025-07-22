@@ -659,9 +659,7 @@ document.addEventListener("DOMContentLoaded", () => {
       onChangeHandler,
       sortOptions = false,
       noOptionsMessage = null,
-      preCondition = null,
-      disableWhenFewOptions = false,
-      customDisplayText = null
+      preCondition = null
     } = options;
     
     const run = appState.pinnedRuns.get(runId);
@@ -680,15 +678,14 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const sortedOptions = sortOptions ? [...availableOptions].sort() : availableOptions;
     
-    // Handle disabled state for few options
-    const isDisabled = disableWhenFewOptions && availableOptions.length <= 1;
+    // Always disable dropdowns when there are few options
+    const isDisabled = availableOptions.length <= 1;
     const disabledAttr = isDisabled ? 'disabled' : '';
     
     let html = `<select class="${cssClass}" ${disabledAttr} onchange="${onChangeHandler}('${runId}', this.value)">`;
     sortedOptions.forEach(option => {
       const selected = option === currentValue ? 'selected' : '';
-      const displayText = customDisplayText ? customDisplayText(option) : option;
-      html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(displayText)}</option>`;
+      html += `<option value="${escapeHtml(option)}" ${selected}>${escapeHtml(option)}</option>`;
     });
     html += '</select>';
     
@@ -746,9 +743,7 @@ document.addEventListener("DOMContentLoaded", () => {
       optionsPath: 'runVariants',
       cssClass: 'table-run-variant-select',
       onChangeHandler: 'handleRunVariantChange',
-      sortOptions: true,
-      disableWhenFewOptions: true,
-      customDisplayText: (variant) => variant === 'default' ? '(default)' : variant
+      sortOptions: true
     });
   }
 
