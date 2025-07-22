@@ -19,39 +19,17 @@ from align_browser.experiment_parser import (
 
 def copy_static_assets(output_dir):
     """Copy static assets from package static/ directory to output directory."""
-    try:
-        # Use importlib.resources for robust package data access
-        static_files = files("align_browser.static")
+    # Use importlib.resources for robust package data access
+    static_files = files("align_browser.static")
 
-        for filename in ["index.html", "app.js", "state.js", "style.css"]:
-            try:
-                # Read the file content from the package
-                file_content = (static_files / filename).read_bytes()
-
-                # Write to destination
-                dst_file = output_dir / filename
-                dst_file.write_bytes(file_content)
-
-            except FileNotFoundError:
-                pass
-
-    except Exception as e:
-        # Fallback to filesystem approach for development
-        print(f"Package resource access failed, trying filesystem fallback: {e}")
-        script_dir = Path(__file__).parent
-        static_dir = script_dir / "static"
-
-        if not static_dir.exists():
-            raise FileNotFoundError(f"Static assets directory not found: {static_dir}")
-
-        static_files = ["index.html", "app.js", "state.js", "style.css"]
-
-        for filename in static_files:
-            src_file = static_dir / filename
-            dst_file = output_dir / filename
-
-            if src_file.exists():
-                shutil.copy2(src_file, dst_file)
+    # Copy all files from the static directory, excluding Python files
+    for file_ref in static_files.iterdir():
+        if file_ref.is_file() and not file_ref.name.endswith(".py"):
+            # Read the file content from the package
+            file_content = file_ref.read_bytes()
+            # Write to destination
+            dst_file = output_dir / file_ref.name
+            dst_file.write_bytes(file_content)
 
 
 def build_frontend(
