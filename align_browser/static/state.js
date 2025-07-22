@@ -3,34 +3,18 @@
 
 // KDMA Utility Functions
 export const KDMAUtils = {
-  // Normalize KDMA object - removes extra fields, keeps only kdma and value
-  normalize: (kdma) => ({ kdma: kdma.kdma, value: kdma.value }),
-  
   // Normalize KDMA value to 1 decimal place
   normalizeValue: (value) => Math.round(parseFloat(value) * 10) / 10,
   
   // Format KDMA value for display (1 decimal place)
   formatValue: (value) => typeof value === 'number' ? value.toFixed(1) : value,
   
-  // Sort KDMA array by kdma name
-  sort: (kdmaArray) => [...kdmaArray].sort((a, b) => a.kdma.localeCompare(b.kdma)),
-  
-  // Normalize and sort KDMA array for comparison
-  normalizeAndSort: (kdmaArray) => {
-    return KDMAUtils.sort(kdmaArray.map(KDMAUtils.normalize));
-  },
-  
-  // Compare two KDMA arrays (normalized comparison)
-  arraysEqual: (array1, array2) => {
-    const sorted1 = KDMAUtils.normalizeAndSort(array1);
-    const sorted2 = KDMAUtils.normalizeAndSort(array2);
-    return JSON.stringify(sorted1) === JSON.stringify(sorted2);
-  },
-  
-  // Convert KDMA object to array and serialize for keys
+  // Convert KDMA object to sorted array and serialize for keys
   serializeToKey: (kdmaObject) => {
-    const kdmaArray = Object.entries(kdmaObject).map(([kdma, value]) => ({ kdma, value }));
-    return JSON.stringify(KDMAUtils.sort(kdmaArray));
+    const kdmaArray = Object.entries(kdmaObject)
+      .map(([kdma, value]) => ({ kdma, value: KDMAUtils.normalizeValue(value) }))
+      .sort((a, b) => a.kdma.localeCompare(b.kdma));
+    return JSON.stringify(kdmaArray);
   },
   
   // Convert KDMA object to key parts for experiment keys
@@ -38,6 +22,22 @@ export const KDMAUtils = {
     return Object.entries(kdmaObject)
       .map(([kdma, value]) => `${kdma}-${KDMAUtils.formatValue(value)}`)
       .sort();
+  },
+  
+  // Compare two KDMA objects for equality
+  objectsEqual: (obj1, obj2) => {
+    if (!obj1 && !obj2) return true;
+    if (!obj1 || !obj2) return false;
+    
+    const keys1 = Object.keys(obj1).sort();
+    const keys2 = Object.keys(obj2).sort();
+    
+    if (keys1.length !== keys2.length) return false;
+    
+    return keys1.every(key => {
+      return keys2.includes(key) && 
+             KDMAUtils.normalizeValue(obj1[key]) === KDMAUtils.normalizeValue(obj2[key]);
+    });
   }
 };
 
@@ -51,78 +51,14 @@ export function createInitialState() {
     availableKDMAs: [],
     availableLLMs: [],
     
-    // User selections
-    selectedScenario: null,
-    selectedScene: null,
-    selectedAdmType: null,
-    selectedLLM: null,
-    selectedRunVariant: 'default',
-    activeKDMAs: {},
-    
-    // LLM preferences per ADM type for preservation
-    llmPreferences: {},
-    
-    // UI state
-    isUpdatingProgrammatically: false,
-    isTransitioning: false,
-    
     // Comparison state
-    pinnedRuns: new Map(),
-    currentInputOutput: null,
-    currentScores: null,
-    currentTiming: null,
-    currentInputOutputArray: null
-  };
-}
-
-// Pure state updaters (immutable)
-export function updateUserSelections(state, updates) {
-  const newState = { ...state };
-  
-  if (updates.scenario !== undefined) {
-    newState.selectedScenario = updates.scenario;
-  }
-  if (updates.scene !== undefined) {
-    newState.selectedScene = updates.scene;
-  }
-  if (updates.admType !== undefined) {
-    newState.selectedAdmType = updates.admType;
-  }
-  if (updates.llm !== undefined) {
-    newState.selectedLLM = updates.llm;
-  }
-  if (updates.runVariant !== undefined) {
-    newState.selectedRunVariant = updates.runVariant;
-  }
-  if (updates.kdmas !== undefined) {
-    newState.activeKDMAs = { ...updates.kdmas };
-  }
-  
-  return newState;
-}
-
-export function updateCurrentData(state, updates) {
-  return {
-    ...state,
-    currentInputOutput: updates.inputOutput !== undefined ? updates.inputOutput : state.currentInputOutput,
-    currentScores: updates.scores !== undefined ? updates.scores : state.currentScores,
-    currentTiming: updates.timing !== undefined ? updates.timing : state.currentTiming,
-    currentInputOutputArray: updates.inputOutputArray !== undefined ? updates.inputOutputArray : state.currentInputOutputArray
+    pinnedRuns: new Map()
   };
 }
 
 
-// Pure selectors (computed values)
-function getSelectedKey(state) {
-  const admType = state.selectedAdmType;
-  const llmBackbone = state.selectedLLM;
-  const runVariant = state.selectedRunVariant;
 
-  const kdmaParts = KDMAUtils.toKeyParts(state.activeKDMAs);
-  const kdmaString = kdmaParts.join("_");
 
-  return `${admType}:${llmBackbone}:${kdmaString}:${runVariant}`;
-}
 
 // Generate a unique run ID
 export function generateRunId() {
@@ -144,33 +80,28 @@ export function createRunConfig(params, availableKDMAs) {
   if (availableKDMAs && Array.isArray(availableKDMAs)) {
     // Store all valid combinations and build type/value maps
     availableKDMAs.forEach(kdmaCombination => {
-      if (Array.isArray(kdmaCombination)) {
-        // Store the valid combination
-        kdmaStructure.validCombinations.push([...kdmaCombination]);
+      if (typeof kdmaCombination === 'object' && kdmaCombination !== null) {
+        // Store the valid combination as object for unified usage
+        kdmaStructure.validCombinations.push({ ...kdmaCombination });
         
         // Extract types and values for the maps
-        kdmaCombination.forEach(kdmaItem => {
-          if (kdmaItem.kdma && kdmaItem.value !== undefined) {
-            kdmaStructure.availableTypes.add(kdmaItem.kdma);
-            if (!kdmaStructure.typeValueMap[kdmaItem.kdma]) {
-              kdmaStructure.typeValueMap[kdmaItem.kdma] = new Set();
+        Object.entries(kdmaCombination).forEach(([kdma, value]) => {
+          if (kdma && value !== undefined) {
+            kdmaStructure.availableTypes.add(kdma);
+            if (!kdmaStructure.typeValueMap[kdma]) {
+              kdmaStructure.typeValueMap[kdma] = new Set();
             }
-            kdmaStructure.typeValueMap[kdmaItem.kdma].add(kdmaItem.value);
+            kdmaStructure.typeValueMap[kdma].add(value);
           }
         });
       }
     });
   }
   
-  // Create a temporary state object for getSelectedKey
-  const tempState = {
-    selectedScenario: params.scenario,
-    selectedScene: params.scene,
-    selectedAdmType: params.admType,
-    selectedLLM: params.llmBackbone,
-    selectedRunVariant: params.runVariant,
-    activeKDMAs: params.kdmaValues || {}
-  };
+  // Generate experiment key directly
+  const kdmaParts = KDMAUtils.toKeyParts(params.kdmaValues || {});
+  const kdmaString = kdmaParts.join("_");
+  const experimentKey = `${params.admType}:${params.llmBackbone}:${kdmaString}:${params.runVariant}`;
   
   return {
     id: generateRunId(),
@@ -181,7 +112,7 @@ export function createRunConfig(params, availableKDMAs) {
     llmBackbone: params.llmBackbone,
     runVariant: params.runVariant,
     kdmaValues: { ...params.kdmaValues },
-    experimentKey: getSelectedKey(tempState),
+    experimentKey,
     loadStatus: 'pending',
     // Store available options at time of creation for dropdown population
     availableOptions: {
@@ -209,12 +140,6 @@ export function createParameterStructure(params = {}) {
 // URL State Management Functions
 export function encodeStateToURL(state) {
   const urlState = {
-    scene: state.selectedScene,
-    scenario: state.selectedScenario,
-    admType: state.selectedAdmType,
-    llm: state.selectedLLM,
-    runVariant: state.selectedRunVariant,
-    kdmas: state.activeKDMAs,
     pinnedRuns: Array.from(state.pinnedRuns.values()).map(run => ({
       scenario: run.scenario,
       scene: run.scene,
@@ -274,13 +199,13 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
       
       // Only check constraint if the current selection has a non-null value for this parameter
       if (currentSelection[param] !== null && currentSelection[param] !== undefined) {
-        // Special handling for kdma_values comparison (arrays where order doesn't matter)
+        // Special handling for kdma_values comparison (objects where key order doesn't matter)
         // This filters manifest entries to find compatible KDMA combinations
         if (param === 'kdma_values') {
           const manifestKdmas = manifestEntry[param];
           const selectionKdmas = currentSelection[param];
           
-          if (!KDMAUtils.arraysEqual(manifestKdmas, selectionKdmas)) {
+          if (!KDMAUtils.objectsEqual(manifestKdmas, selectionKdmas)) {
             return false;
           }
         } else if (manifestEntry[param] !== currentSelection[param]) {
@@ -329,12 +254,12 @@ const updateParametersBase = (priorityOrder) => (manifest) => (currentParams, ch
     let isValid = validOptions.includes(currentValue);
     
     // For kdma_values, use normalized comparison since validOptions contains
-    // KDMA arrays that might have different object references but same values.
+    // KDMA objects that might have different object references but same values.
     // This validates the current value against the filtered valid options
-    if (param === 'kdma_values' && !isValid && Array.isArray(currentValue)) {
+    if (param === 'kdma_values' && !isValid && typeof currentValue === 'object') {
       isValid = validOptions.some(option => {
-        if (!Array.isArray(option)) return false;
-        return KDMAUtils.arraysEqual(option, currentValue);
+        if (typeof option !== 'object') return false;
+        return KDMAUtils.objectsEqual(option, currentValue);
       });
     }
     
@@ -377,10 +302,6 @@ export async function loadManifest() {
     return { manifest, updateAppParameters };
 }
 
-// Get the loaded manifest
-export function getManifest() {
-  return manifest;
-}
 
 function resolveParametersToRun(params) {
   if (!parameterRunMap || parameterRunMap.size === 0) {
@@ -464,14 +385,20 @@ export function transformManifestForUpdateParameters(manifest) {
       });
       
       for (const [sceneId, sceneInfo] of Object.entries(scenario.scenes)) {
-        // normalize kdma values
-        const cleanedKdmaValues = (kdma_values || []).map(KDMAUtils.normalize);
-        const kdmaString = JSON.stringify(KDMAUtils.sort(cleanedKdmaValues));
+        // Convert KDMA array to object format for unified usage
+        const kdmaObject = {};
+        if (kdma_values && Array.isArray(kdma_values)) {
+          kdma_values.forEach(kdmaItem => {
+            if (kdmaItem.kdma && kdmaItem.value !== undefined) {
+              kdmaObject[kdmaItem.kdma] = KDMAUtils.normalizeValue(kdmaItem.value);
+            }
+          });
+        }
         
         const entry = {
           scenario: scenarioId,
           scene: sceneId,
-          kdma_values: cleanedKdmaValues,
+          kdma_values: kdmaObject,
           adm: adm.name,
           llm: llm.model_name,
           run_variant: run_variant
@@ -479,6 +406,7 @@ export function transformManifestForUpdateParameters(manifest) {
         
         entries.push(entry);
         
+        const kdmaString = KDMAUtils.serializeToKey(kdmaObject);
         const mapKey = `${scenarioId}:${sceneId}:${kdmaString}:${adm.name}:${llm.model_name}:${run_variant}`;
         
         parameterRunMap.set(mapKey, {
