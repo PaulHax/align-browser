@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/ITM-Kitware/align-browser/compare/v0.5.0...v0.6.0) (2025-07-22)
+
+
+### Features
+
+* add user notification system for manifest version mismatch ([d7705d3](https://github.com/ITM-Kitware/align-browser/commit/d7705d3a746b0ffc8793324ceebc31e4760c7c8f)), closes [#29](https://github.com/ITM-Kitware/align-browser/issues/29)
+
+
+### Bug Fixes
+
+* improve static asset copying to include all files automatically ([d6dd5a1](https://github.com/ITM-Kitware/align-browser/commit/d6dd5a1b4a04634ef7635c425a134bbcb0ac2118))
+* parse personal_safety KDMA names with underscores ([043d99b](https://github.com/ITM-Kitware/align-browser/commit/043d99b7ad2da8f70c21761470305521d0fbf906))
+* replace http.server with waitress to eliminate BrokenPipeError ([c859ea6](https://github.com/ITM-Kitware/align-browser/commit/c859ea61c0c92dc98bc6d84b45c4bfb566f35024))
+
 ## [0.5.0](https://github.com/ITM-Kitware/align-browser/compare/v0.4.0...v0.5.0) (2025-07-22)
 
 
