@@ -310,13 +310,35 @@ document.addEventListener("DOMContentLoaded", () => {
     const availableKDMAs = getValidKDMAsForRun(runId);
     const currentKDMAs = run.kdmaValues || {};
     const maxKDMAs = getMaxKDMAsForRun(runId);
+    const minimumRequired = getMinimumRequiredKDMAs(runId);
     
     if (Object.keys(currentKDMAs).length >= maxKDMAs) {
       console.warn(`Cannot add KDMA: max limit (${maxKDMAs}) reached for run ${runId}`);
       return;
     }
     
-    // Find first available KDMA type
+    // If we have no KDMAs and need to add multiple at once for a valid combination
+    if (Object.keys(currentKDMAs).length === 0 && minimumRequired > 1) {
+      // Add a complete valid combination
+      const validCombinations = run.availableOptions?.kdmas?.validCombinations || [];
+      if (validCombinations.length > 0) {
+        // Find the first non-empty combination (skip unaligned empty combinations)
+        const firstNonEmptyCombination = validCombinations.find(combination => Object.keys(combination).length > 0);
+        
+        if (firstNonEmptyCombination) {
+          await updatePinnedRunState({
+            runId,
+            parameter: 'kdmas',
+            value: { ...firstNonEmptyCombination },
+            needsReload: true,
+            updateUI: true
+          });
+          return;
+        }
+      }
+    }
+    
+    // Standard single-KDMA addition logic
     const availableTypes = Object.keys(availableKDMAs).filter(type => 
       currentKDMAs[type] === undefined
     );
@@ -362,10 +384,31 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Handle removing KDMA from pinned run - global for onclick access
   window.removeKDMAFromRun = async function(runId, kdmaType) {
+    const run = appState.pinnedRuns.get(runId);
+    const kdmaOptions = run?.availableOptions?.kdmas;
+    
     await updateKDMAsForRun(runId, (kdmas) => {
       const updated = { ...kdmas };
       delete updated[kdmaType];
-      return updated;
+      
+      // Check if the remaining combination is valid
+      const hasValidRemaining = kdmaOptions?.validCombinations?.some(combination => {
+        return KDMAUtils.deepEqual(updated, combination);
+      });
+      
+      // If remaining combination is not valid but empty combination is available,
+      // clear all KDMAs to reach the unaligned state
+      if (!hasValidRemaining) {
+        const hasEmptyOption = kdmaOptions?.validCombinations?.some(combination => {
+          return Object.keys(combination).length === 0;
+        });
+        
+        if (hasEmptyOption) {
+          return {}; // Clear all KDMAs to reach unaligned state
+        }
+      }
+      
+      return updated; // Normal removal
     });
   };
 
@@ -767,6 +810,38 @@ document.addEventListener("DOMContentLoaded", () => {
     return Math.max(maxKDMAs, 1); // At least 1 KDMA should be possible
   }
 
+  // Get minimum required KDMAs for a run - if all combinations have the same count, return that count
+  function getMinimumRequiredKDMAs(runId) {
+    const run = appState.pinnedRuns.get(runId);
+    if (!run?.availableOptions?.kdmas?.validCombinations) {
+      return 1; // Default to 1 if no options available
+    }
+    
+    const combinations = run.availableOptions.kdmas.validCombinations;
+    if (combinations.length === 0) {
+      return 1;
+    }
+    
+    // Filter out empty combinations (unaligned cases with 0 KDMAs)
+    const nonEmptyCombinations = combinations.filter(combination => Object.keys(combination).length > 0);
+    
+    if (nonEmptyCombinations.length === 0) {
+      return 1; // Only empty combinations available
+    }
+    
+    // Get the count of KDMAs in each non-empty combination
+    const kdmaCounts = nonEmptyCombinations.map(combination => Object.keys(combination).length);
+    
+    // Check if all non-empty combinations have the same number of KDMAs
+    const firstCount = kdmaCounts[0];
+    const allSameCount = kdmaCounts.every(count => count === firstCount);
+    
+    if (allSameCount && firstCount > 1) {
+      return firstCount; // All non-empty combinations require the same number > 1
+    }
+    return 1; // Either mixed counts or all require 1, use single-add behavior
+  }
+
   // Get valid KDMAs for a specific run
   function getValidKDMAsForRun(runId) {
     const run = appState.pinnedRuns.get(runId);
@@ -846,9 +921,25 @@ document.addEventListener("DOMContentLoaded", () => {
     delete remainingKDMAs[kdmaType];
     
     // Check if the remaining KDMA combination exists in validCombinations
-    return kdmaOptions.validCombinations.some(combination => {
+    const hasValidRemaining = kdmaOptions.validCombinations.some(combination => {
       return KDMAUtils.deepEqual(remainingKDMAs, combination);
     });
+    
+    if (hasValidRemaining) {
+      return true; // Normal case - remaining combination is valid
+    }
+    
+    // Special case: If empty combination {} is valid (unaligned case), 
+    // allow removal of any KDMA (will result in clearing all KDMAs)
+    const hasEmptyOption = kdmaOptions.validCombinations.some(combination => {
+      return Object.keys(combination).length === 0;
+    });
+    
+    if (hasEmptyOption) {
+      return true;
+    }
+    
+    return false;
   }
   
   // Format KDMA value consistently across the application

@@ -2,7 +2,6 @@
 
 import json
 import yaml
-import re
 import hashlib
 import os
 from pathlib import Path
@@ -44,13 +43,15 @@ def parse_alignment_target_id(alignment_target_id: str) -> List[KDMAValue]:
     """
     Parse alignment_target_id string to extract KDMA values.
 
-    Examples:
-        "ADEPT-June2025-merit-0.0" -> [KDMAValue(kdma="merit", value=0.0)]
-        "ADEPT-June2025-affiliation-0.5" -> [KDMAValue(kdma="affiliation", value=0.5)]
-        "unaligned" -> [] (no KDMAs)
+    Supports both single and multi-KDMA formats:
+    - Single: "ADEPT-June2025-merit-0.0" -> [KDMAValue(kdma="merit", value=0.0)]
+    - Multi: "ADEPT-June2025-affiliation_merit-0.0_0.0" ->
+             [KDMAValue(kdma="affiliation", value=0.0), KDMAValue(kdma="merit", value=0.0)]
+    - Unaligned: "unaligned" -> [] (no KDMAs)
 
     Args:
-        alignment_target_id: String like "ADEPT-June2025-merit-0.0" or "unaligned"
+        alignment_target_id: String like "ADEPT-June2025-merit-0.0",
+                           "ADEPT-June2025-affiliation_merit-0.0_0.0", or "unaligned"
 
     Returns:
         List of KDMAValue objects
@@ -58,17 +59,35 @@ def parse_alignment_target_id(alignment_target_id: str) -> List[KDMAValue]:
     if not alignment_target_id or alignment_target_id == "unaligned":
         return []
 
-    # Pattern: {prefix}-{scenario}-{kdma}-{value}
-    pattern = r"^[^-]+-[^-]+-(.+)-(\d+(?:\.\d+)?)$"
-    match = re.match(pattern, alignment_target_id)
-
-    if not match:
+    # Split by hyphens: [prefix, scenario, kdma_part, value_part]
+    parts = alignment_target_id.split("-")
+    if len(parts) < 4:
         return []
 
-    kdma_name = match.group(1)
-    value = float(match.group(2))
+    # Extract KDMA names and values from the last two parts
+    kdma_part = parts[-2]  # e.g., "affiliation_merit" or "merit"
+    value_part = parts[-1]  # e.g., "0.0_0.0" or "0.0"
 
-    return [KDMAValue(kdma=kdma_name, value=value)]
+    # Split KDMA names by underscore
+    kdma_names = kdma_part.split("_")
+
+    # Split values by underscore and convert to float
+    try:
+        value_strings = value_part.split("_")
+        values = [float(v) for v in value_strings]
+    except ValueError:
+        return []
+
+    # Ensure we have the same number of KDMAs and values
+    if len(kdma_names) != len(values):
+        return []
+
+    # Create KDMAValue objects
+    kdma_values = []
+    for kdma_name, value in zip(kdma_names, values):
+        kdma_values.append(KDMAValue(kdma=kdma_name, value=value))
+
+    return kdma_values
 
 
 class AlignmentTarget(BaseModel):
