@@ -2,9 +2,13 @@
 
 A static web application for visualizing [align-system](https://github.com/ITM-Kitware/align-system) experiment results.
 
+[Demo Video <img width="2560" height="1528" alt="align-browser" src="https://github.com/user-attachments/assets/0873d6e6-9a43-408f-b912-59b4558cc4eb" />](https://drive.google.com/file/d/19GlO54je_NBF-xnni-mCt8lLiicU-kQH/view?usp=sharing)
+
+
+
 ## Usage
 
-Generate site from experiment data in align-browser-site directory and serves the website:
+Generate site from experiment data in `align-browser-site` directory and serves the website:
 
 ```bash
 uvx align-browser ./experiment-data
