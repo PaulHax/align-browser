@@ -214,11 +214,11 @@ def frontend_with_real_data():
 
     # Ensure experiment data is downloaded
     experiment_data_dir = project_root / "experiment-data"
-    combined_rerun_dir = experiment_data_dir / "combined_rerun"
+    test_experiments_dir = experiment_data_dir / "test-experiments"
     lock_file = experiment_data_dir / ".download_lock"
 
-    # Download experiments if combined_rerun directory doesn't exist
-    if not combined_rerun_dir.exists():
+    # Download experiments if test-experiments directory doesn't exist
+    if not test_experiments_dir.exists():
         # Use file-based locking to prevent race conditions in parallel tests
         experiment_data_dir.mkdir(exist_ok=True)
 
@@ -230,7 +230,7 @@ def frontend_with_real_data():
             time.sleep(0.5)
             wait_time += 0.5
 
-        if not combined_rerun_dir.exists():
+        if not test_experiments_dir.exists():
             try:
                 # Create lock file
                 lock_file.touch()
@@ -248,10 +248,41 @@ def frontend_with_real_data():
                 urllib.request.urlretrieve(url, zip_path)
                 print(f"Downloaded to {zip_path}")
 
-                # Extract the zip file
+                # Extract the zip file to a temporary directory first
                 print(f"Extracting {zip_path}...")
+                temp_extract_dir = experiment_data_dir / "temp_extract"
+                temp_extract_dir.mkdir(exist_ok=True)
+
                 with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                    zip_ref.extractall(experiment_data_dir)
+                    zip_ref.extractall(temp_extract_dir)
+
+                # Find extracted directories in temp location
+                extracted_items = list(temp_extract_dir.iterdir())
+                extracted_dirs = [item for item in extracted_items if item.is_dir()]
+
+                if len(extracted_dirs) == 1:
+                    # Single directory - rename it to test-experiments
+                    original_dir = extracted_dirs[0]
+                    original_dir.rename(test_experiments_dir)
+                    print(f"Renamed {original_dir.name} to test-experiments")
+                elif len(extracted_dirs) > 1:
+                    # Multiple directories - create test-experiments and move all under it
+                    test_experiments_dir.mkdir(exist_ok=True)
+                    for extracted_dir in extracted_dirs:
+                        target_path = test_experiments_dir / extracted_dir.name
+                        extracted_dir.rename(target_path)
+                    print(
+                        f"Moved {len(extracted_dirs)} directories under test-experiments"
+                    )
+                else:
+                    # No directories found - this shouldn't happen but handle gracefully
+                    print("Warning: No directories found in extracted zip")
+
+                # Clean up temporary extraction directory
+                import shutil
+
+                if temp_extract_dir.exists():
+                    shutil.rmtree(temp_extract_dir)
 
                 # Delete the zip file after extraction
                 zip_path.unlink()
@@ -259,12 +290,19 @@ def frontend_with_real_data():
                 print("Experiment data ready for testing!")
 
             finally:
+                # Clean up temporary extraction directory if it exists
+                temp_extract_dir = experiment_data_dir / "temp_extract"
+                if temp_extract_dir.exists():
+                    import shutil
+
+                    shutil.rmtree(temp_extract_dir)
+
                 # Always remove lock file
                 if lock_file.exists():
                     lock_file.unlink()
 
-    # Use the combined_rerun directory for real experiment data
-    real_experiments_root = experiment_data_dir / "combined_rerun"
+    # Use the test-experiments directory for real experiment data
+    real_experiments_root = experiment_data_dir / "test-experiments"
 
     if not real_experiments_root.exists() or not any(real_experiments_root.iterdir()):
         pytest.skip(f"Real experiment data not found at {real_experiments_root}")
