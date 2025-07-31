@@ -599,7 +599,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (isDifferent) {
           td.style.borderLeft = '3px solid #007bff';
         }
-        td.innerHTML = formatValue(pinnedValue, paramInfo.type, paramName, runData.id, appState.pinnedRuns, KDMAUtils);
+        td.innerHTML = formatValue(pinnedValue, paramInfo.type, paramName, runData.id, appState.pinnedRuns);
         
         row.appendChild(td);
         
