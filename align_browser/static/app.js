@@ -10,6 +10,11 @@ import {
   KDMAUtils,
 } from './state.js';
 
+import {
+  formatChoiceInfoValue,
+  createExpandableContent,
+} from './table-formatter.js';
+
 // Constants
 const TEXT_PREVIEW_LENGTH = 800;
 const FLOATING_POINT_TOLERANCE = 0.001;
@@ -624,6 +629,7 @@ document.addEventListener("DOMContentLoaded", () => {
     parameters.set("scenario", { type: "string", required: true });
     parameters.set("scenario_state", { type: "longtext", required: false });
     parameters.set("available_choices", { type: "choices", required: false });
+    parameters.set("choice_info", { type: "choice_info", required: false });
     parameters.set("kdma_values", { type: "kdma_values", required: false });
     parameters.set("adm_type", { type: "string", required: true });
     parameters.set("llm_backbone", { type: "string", required: true });
@@ -666,6 +672,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // Available choices
     if (paramName === 'available_choices' && run.inputOutput?.input?.choices) {
       return run.inputOutput.input.choices;
+    }
+    
+    // Choice info
+    if (paramName === 'choice_info' && run.inputOutput?.choice_info) {
+      return run.inputOutput.choice_info;
     }
     
     // ADM Decision - proper extraction using Pydantic model structure
@@ -1093,25 +1104,6 @@ document.addEventListener("DOMContentLoaded", () => {
     'kdma_values': createKDMAControlsForRun
   };
 
-  // Create expandable content for long text or objects
-  function createExpandableContent(value, id, isLongText = false) {
-    const isExpanded = expandableStates[isLongText ? 'text' : 'objects'].get(id) || false;
-    const content = isLongText ? value : JSON.stringify(value, null, 2);
-    const preview = isLongText ? `${value.substring(0, TEXT_PREVIEW_LENGTH)}...` : getObjectPreview(value);
-    
-    const shortDisplay = isExpanded ? 'none' : (isLongText ? 'inline' : 'inline');
-    const fullDisplay = isExpanded ? (isLongText ? 'inline' : 'block') : 'none';
-    const buttonText = isExpanded ? (isLongText ? 'Show Less' : 'Show Preview') : (isLongText ? 'Show More' : 'Show Details');
-    const toggleFunction = isLongText ? 'toggleText' : 'toggleObject';
-    const shortTag = isLongText ? 'span' : 'span';
-    const fullTag = isLongText ? 'span' : 'pre';
-
-    return `<div class="${isLongText ? 'expandable-text' : 'object-display'}" ${isLongText ? `data-full-text="${escapeHtml(content)}"` : ''} data-param-id="${id}">
-      <${shortTag} id="${id}_${isLongText ? 'short' : 'preview'}" style="display: ${shortDisplay};">${escapeHtml(preview)}</${shortTag}>
-      <${fullTag} id="${id}_full" style="display: ${fullDisplay};">${escapeHtml(content)}</${fullTag}>
-      <button class="show-more-btn" onclick="${toggleFunction}('${id}')">${buttonText}</button>
-    </div>`;
-  }
 
   // Format KDMA association bar for choice display
   function formatKDMAAssociationBar(kdma, val) {
@@ -1158,6 +1150,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return html;
   }
 
+
   // Format KDMA values object for display
   function formatKDMAValuesObject(kdmaObject) {
     const kdmaEntries = Object.entries(kdmaObject);
@@ -1203,6 +1196,9 @@ document.addEventListener("DOMContentLoaded", () => {
       
       case 'choices':
         return formatChoicesValue(value);
+      
+      case 'choice_info':
+        return formatChoiceInfoValue(value, runId);
       
       case 'kdma_values':
         return formatKDMAValuesObject(value);
@@ -1308,15 +1304,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return runConfig.id; // Return the ID for reference
   }
 
-  function getObjectPreview(obj) {
-    if (!obj) return 'N/A';
-    const keys = Object.keys(obj);
-    if (keys.length === 0) return '{}';
-    if (keys.length === 1) {
-      return `${keys[0]}: ${obj[keys[0]]}`;
-    }
-    return `{${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '...' : ''}}`;
-  }
 
   // Copy the rightmost column's parameters to create a new column
   async function copyColumn() {
@@ -1368,6 +1355,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Save state for persistence
     expandableStates.text.set(id, newExpanded);
   };
+
 
   window.toggleObject = function(id) {
     const preview = document.getElementById(`${id}_preview`);
