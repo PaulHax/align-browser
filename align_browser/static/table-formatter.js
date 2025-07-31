@@ -1,5 +1,7 @@
 // Table formatting functions for displaying experiment data
 
+import { KDMAUtils } from './state.js';
+
 // HTML Templates
 const HTML_NA_SPAN = '<span class="na-value">N/A</span>';
 const HTML_NO_OPTIONS_SPAN = '<span class="na-value">No options available</span>';
@@ -269,11 +271,8 @@ const TEXT_PREVIEW_LENGTH = 800;
 const FLOATING_POINT_TOLERANCE = 0.001;
 
 // Format KDMA value consistently across the application
-export function formatKDMAValue(value, KDMAUtils = null) {
-  if (KDMAUtils) {
-    return KDMAUtils.formatValue(value);
-  }
-  return typeof value === 'number' ? value.toFixed(2) : value.toString();
+export function formatKDMAValue(value) {
+  return KDMAUtils.formatValue(value);
 }
 
 // Format KDMA association bar for choice display
@@ -381,7 +380,7 @@ export function compareValues(val1, val2) {
 }
 
 // Main value formatting function for table cells
-export function formatValue(value, type, paramName = '', runId = '', pinnedRuns = null, KDMAUtils = null) {
+export function formatValue(value, type, paramName = '', runId = '', pinnedRuns = null) {
   if (value === null || value === undefined || value === 'N/A') {
     return HTML_NA_SPAN;
   }
@@ -389,11 +388,7 @@ export function formatValue(value, type, paramName = '', runId = '', pinnedRuns 
   // Handle dropdown parameters for pinned runs
   if (runId !== '' && pinnedRuns && PARAMETER_DROPDOWN_HANDLERS[paramName]) {
     const handler = PARAMETER_DROPDOWN_HANDLERS[paramName];
-    if (paramName === 'kdma_values') {
-      return handler(runId, value, pinnedRuns, KDMAUtils);
-    } else {
-      return handler(runId, value, pinnedRuns);
-    }
+    return handler(runId, value, pinnedRuns);
   }
   
   switch (type) {
@@ -613,7 +608,7 @@ export function getValidKDMAsForRun(runId, pinnedRuns) {
 }
 
 // Get valid KDMA types that can be selected for a specific run  
-export function getValidKDMATypesForRun(runId, currentKdmaType, currentKDMAs, pinnedRuns, KDMAUtils) {
+export function getValidKDMATypesForRun(runId, currentKdmaType, currentKDMAs, pinnedRuns) {
   const run = pinnedRuns.get(runId);
   if (!run?.availableOptions?.kdmas?.validCombinations) {
     return [currentKdmaType]; // Fallback to just current type
@@ -655,7 +650,7 @@ export function getValidKDMATypesForRun(runId, currentKdmaType, currentKDMAs, pi
 }
 
 // Check if a specific KDMA can be removed from a run
-export function canRemoveSpecificKDMA(runId, kdmaType, pinnedRuns, KDMAUtils) {
+export function canRemoveSpecificKDMA(runId, kdmaType, pinnedRuns) {
   const run = pinnedRuns.get(runId);
   if (!run) return false;
   
@@ -692,7 +687,7 @@ export function canRemoveSpecificKDMA(runId, kdmaType, pinnedRuns, KDMAUtils) {
 }
 
 // Check if we can add another KDMA given current KDMA values
-export function canAddKDMAToRun(runId, currentKDMAs, pinnedRuns, KDMAUtils) {
+export function canAddKDMAToRun(runId, currentKDMAs, pinnedRuns) {
   const run = pinnedRuns.get(runId);
   if (!run?.availableOptions?.kdmas?.validCombinations) {
     return false;
@@ -725,18 +720,18 @@ export function canAddKDMAToRun(runId, currentKDMAs, pinnedRuns, KDMAUtils) {
 }
 
 // Create KDMA controls HTML for table cells
-export function createKDMAControlsForRun(runId, currentKDMAs, pinnedRuns, KDMAUtils) {
+export function createKDMAControlsForRun(runId, currentKDMAs, pinnedRuns) {
   const run = pinnedRuns.get(runId);
   if (!run) return HTML_NA_SPAN;
   
   const currentKDMAEntries = Object.entries(currentKDMAs || {});
-  const canAddMore = canAddKDMAToRun(runId, currentKDMAs, pinnedRuns, KDMAUtils);
+  const canAddMore = canAddKDMAToRun(runId, currentKDMAs, pinnedRuns);
   
   let html = `<div class="table-kdma-container" data-run-id="${runId}">`;
   
   // Render existing KDMA controls
-  currentKDMAEntries.forEach(([kdmaType, value], index) => {
-    html += createSingleKDMAControlForRun(runId, kdmaType, value, index, pinnedRuns, KDMAUtils);
+  currentKDMAEntries.forEach(([kdmaType, value]) => {
+    html += createSingleKDMAControlForRun(runId, kdmaType, value, pinnedRuns);
   });
   
   // Add button - always show but enable/disable based on availability
@@ -759,13 +754,13 @@ export function createKDMAControlsForRun(runId, currentKDMAs, pinnedRuns, KDMAUt
 }
 
 // Create individual KDMA control for table cell
-export function createSingleKDMAControlForRun(runId, kdmaType, value, index, pinnedRuns, KDMAUtils) {
+export function createSingleKDMAControlForRun(runId, kdmaType, value, pinnedRuns) {
   const availableKDMAs = getValidKDMAsForRun(runId, pinnedRuns);
   const run = pinnedRuns.get(runId);
   const currentKDMAs = run.kdmaValues || {};
   
   // Get available types (only those that can form valid combinations)
-  const availableTypes = getValidKDMATypesForRun(runId, kdmaType, currentKDMAs, pinnedRuns, KDMAUtils);
+  const availableTypes = getValidKDMATypesForRun(runId, kdmaType, currentKDMAs, pinnedRuns);
   
   const validValues = Array.from(availableKDMAs[kdmaType] || []);
   
@@ -816,12 +811,12 @@ export function createSingleKDMAControlForRun(runId, kdmaType, value, index, pin
              min="${minVal}" max="${maxVal}" step="${step}" 
              value="${value}"
              oninput="handleRunKDMASliderInput('${runId}', '${kdmaType}', this)">
-      <span class="table-kdma-value-display" id="kdma-value-${runId}-${kdmaType}">${formatKDMAValue(value, KDMAUtils)}</span>
+      <span class="table-kdma-value-display" id="kdma-value-${runId}-${kdmaType}">${formatKDMAValue(value)}</span>
       
       <button class="table-kdma-remove-btn" 
               onclick="removeKDMAFromRun('${runId}', '${kdmaType}')" 
-              ${!canRemoveSpecificKDMA(runId, kdmaType, pinnedRuns, KDMAUtils) ? 'disabled' : ''}
-              title="${!canRemoveSpecificKDMA(runId, kdmaType, pinnedRuns, KDMAUtils) ? 'No valid experiments exist without this KDMA' : 'Remove KDMA'}">×</button>
+              ${!canRemoveSpecificKDMA(runId, kdmaType, pinnedRuns) ? 'disabled' : ''}
+              title="${!canRemoveSpecificKDMA(runId, kdmaType, pinnedRuns) ? 'No valid experiments exist without this KDMA' : 'Remove KDMA'}">×</button>
     </div>
   `;
 }
