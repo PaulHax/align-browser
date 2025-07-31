@@ -161,12 +161,13 @@ def parse_experiments_directory(experiments_root: Path) -> List[ExperimentData]:
     """
     Parse the experiments directory structure and return a list of ExperimentData.
 
-    Recursively searches through the directory structure to find all directories
+    First checks if the given path itself is an experiment directory, then
+    recursively searches through the directory structure to find all directories
     that contain the required experiment files (input_output.json, timing.json,
     and .hydra/config.yaml). scores.json is optional.
 
     Args:
-        experiments_root: Path to the root experiments directory
+        experiments_root: Path to the root experiments directory or a direct experiment directory
 
     Returns:
         List of successfully parsed ExperimentData objects
@@ -176,6 +177,18 @@ def parse_experiments_directory(experiments_root: Path) -> List[ExperimentData]:
     directories_found = 0
     directories_with_files = 0
     directories_processed = 0
+
+    # First check if the root path itself is an experiment directory
+    if ExperimentData.has_required_files(experiments_root):
+        directories_found += 1
+        directories_with_files += 1
+
+        try:
+            directory_experiments = _create_experiments_from_directory(experiments_root)
+            experiments.extend(directory_experiments)
+            directories_processed += 1
+        except Exception as e:
+            print(f"Error processing {experiments_root}: {e}")
 
     # Recursively find all directories that have required experiment files
     for experiment_dir in experiments_root.rglob("*"):
